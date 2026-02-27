@@ -1,0 +1,8 @@
+node_modules/
+dist/
+data/*.db
+public/uploads/*
+!public/uploads/.gitkeep
+.env
+.env.local
+*.log
