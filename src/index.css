@@ -720,6 +720,48 @@ a {
   }
 }
 
+@keyframes panel-fade-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes panel-slide-in-from-bottom-2 {
+  from {
+    opacity: 0;
+    transform: translateY(0.5rem);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-in {
+  animation-duration: 300ms;
+  animation-fill-mode: both;
+  animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.fade-in {
+  animation-name: panel-fade-in;
+}
+
+.slide-in-from-bottom-2 {
+  animation-name: panel-slide-in-from-bottom-2;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-in {
+    animation-duration: 1ms;
+  }
+}
+
 /* ─── Premium Utility Classes ─── */
 
 .animated-border {

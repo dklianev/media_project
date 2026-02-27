@@ -102,11 +102,6 @@ const FOOTER_FIELDS = [
   { key: 'footer_premium_experience', label: 'Английски текст вдясно отдолу (Premium...)' },
 ];
 
-const STREAM_FIELDS = [
-  { key: 'stream_channel', label: 'Име на канал (напр. username)' },
-  { key: 'stream_offline_message', label: 'Съобщение при офлайн' },
-];
-
 export default function ManageSettings() {
   const [settings, setSettings] = useState({});
   const [loading, setLoading] = useState(true);
@@ -334,6 +329,11 @@ export default function ManageSettings() {
                   <label className="text-sm text-[var(--text-muted)] block mb-1">Съобщение при поддръжка</label>
                   <textarea value={settings.maintenance_message || ''} onChange={(e) => updateField('maintenance_message', e.target.value)} className="input-dark" rows={2} />
                 </div>
+                {settings.maintenance_mode === 'true' && (
+                  <p className="text-xs text-[var(--warning)] rounded-lg border border-[var(--warning)]/30 bg-[var(--warning)]/10 p-2">
+                    Внимание: Всички потребители (без админи) ще виждат страница за поддръжка.
+                  </p>
+                )}
               </div>
             </div>
 
