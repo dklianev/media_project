@@ -1,15 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Play, Pause, RotateCcw, RotateCw, Volume2, VolumeX, Maximize } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Play, Pause, RotateCcw, RotateCw, Volume2, VolumeX, Maximize, SkipForward } from 'lucide-react';
 
-export default function VideoPlayer({ embedUrl, youtubeVideoId, title, siteName = 'Платформа' }) {
+export default function VideoPlayer({ embedUrl, youtubeVideoId, title, siteName = 'Платформа', nextEpisodeId }) {
+  const navigate = useNavigate();
   const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
   const [isMuted, setIsMuted] = useState(false);
   const [volume, setVolume] = useState(100);
-  const [isHoveringVolume, setIsHoveringVolume] = useState(false);
-  const [isAdjustingVolume, setIsAdjustingVolume] = useState(false);
   const [playerReady, setPlayerReady] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
@@ -114,22 +114,6 @@ export default function VideoPlayer({ embedUrl, youtubeVideoId, title, siteName 
     document.addEventListener('fullscreenchange', handleFullscreenChange);
     return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
   }, []);
-
-  useEffect(() => {
-    if (!isAdjustingVolume) return undefined;
-
-    const stopAdjustingVolume = () => {
-      setIsAdjustingVolume(false);
-    };
-
-    window.addEventListener('pointerup', stopAdjustingVolume);
-    window.addEventListener('pointercancel', stopAdjustingVolume);
-
-    return () => {
-      window.removeEventListener('pointerup', stopAdjustingVolume);
-      window.removeEventListener('pointercancel', stopAdjustingVolume);
-    };
-  }, [isAdjustingVolume]);
 
   const togglePlay = (e) => {
     if (e) e.stopPropagation();
@@ -335,14 +319,22 @@ export default function VideoPlayer({ embedUrl, youtubeVideoId, title, siteName 
               <RotateCw className="w-4 h-4" />
               <span className="hidden text-[11px] font-semibold tracking-wide sm:inline">10s</span>
             </button>
+            {nextEpisodeId && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  navigate(`/episodes/${nextEpisodeId}`);
+                }}
+                className="hover:text-white transition-colors focus:outline-none flex items-center gap-1 opacity-70 hover:opacity-100 ml-1 sm:ml-2"
+                aria-label="Следващ епизод"
+              >
+                <SkipForward className="w-5 h-5 fill-current" />
+              </button>
+            )}
           </div>
 
           {/* Volume Control */}
-          <div
-            className="flex items-center group/volume relative ml-1 py-4 sm:-my-4 sm:py-4 pr-4 sm:-mr-4 sm:pr-4"
-            onMouseEnter={() => setIsHoveringVolume(true)}
-            onMouseLeave={() => setIsHoveringVolume(false)}
-          >
+          <div className="group/volume relative ml-1 flex items-center gap-2">
             <button
               onClick={toggleMute}
               className="hover:text-white transition-colors focus:outline-none opacity-80 hover:opacity-100"
@@ -352,19 +344,15 @@ export default function VideoPlayer({ embedUrl, youtubeVideoId, title, siteName 
             </button>
 
             <div
-              className={`ml-2 flex w-20 items-center opacity-100 sm:absolute sm:left-full sm:top-1/2 sm:z-10 sm:-translate-y-1/2 sm:bg-black/40 sm:backdrop-blur-sm sm:rounded-full sm:pl-2 sm:pr-3 sm:py-1.5 sm:transition-[width,opacity,margin] sm:duration-300 sm:ease-out ${isHoveringVolume || isAdjustingVolume ? 'sm:w-16 sm:ml-2 sm:opacity-100' : 'sm:w-0 sm:ml-0 sm:opacity-0 sm:pointer-events-none'
-                }`}
-              onMouseEnter={() => setIsHoveringVolume(true)}
+              className="flex w-16 items-center rounded-full bg-black/30 px-2 py-1.5 backdrop-blur-sm transition-colors duration-200 group-hover/volume:bg-black/45 sm:w-20"
             >
               <input
                 type="range"
                 min="0"
                 max="100"
                 value={isMuted ? 0 : volume}
-                onPointerDown={() => setIsAdjustingVolume(true)}
                 onInput={handleVolumeChange}
                 onChange={handleVolumeChange}
-                onBlur={() => setIsAdjustingVolume(false)}
                 className="w-full h-1 p-0 m-0 bg-white/30 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-2.5 [&::-webkit-slider-thumb]:h-2.5 [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:-mt-[3px] [&::-webkit-slider-runnable-track]:h-1 [&::-webkit-slider-runnable-track]:rounded-full [&::-moz-range-thumb]:w-2.5 [&::-moz-range-thumb]:h-2.5 [&::-moz-range-thumb]:bg-white [&::-moz-range-thumb]:border-none [&::-moz-range-thumb]:rounded-full accent-white"
                 style={{
                   background: `linear-gradient(to right, white ${isMuted ? 0 : volume}%, rgba(255,255,255,0.3) ${isMuted ? 0 : volume}%)`
