@@ -5,6 +5,7 @@ import { Play, Pause, RotateCcw, RotateCw, Volume2, VolumeX, Maximize, SkipForwa
 
 export default function VideoPlayer({ embedUrl, youtubeVideoId, title, siteName = 'Платформа', nextEpisodeId }) {
   const navigate = useNavigate();
+  const DOUBLE_TAP_DELAY_MS = 260;
   const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -25,6 +26,8 @@ export default function VideoPlayer({ embedUrl, youtubeVideoId, title, siteName 
   const progressInterval = useRef(null);
   const speedMenuRef = useRef(null);
   const animTimeoutRef = useRef(null);
+  const singleTapTimeoutRef = useRef(null);
+  const lastInteractionRef = useRef(null);
 
   // Parse YouTube video ID from URL
   const getYouTubeId = (url) => {
@@ -131,6 +134,11 @@ export default function VideoPlayer({ embedUrl, youtubeVideoId, title, siteName 
     }
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  useEffect(() => () => {
+    if (animTimeoutRef.current) clearTimeout(animTimeoutRef.current);
+    if (singleTapTimeoutRef.current) clearTimeout(singleTapTimeoutRef.current);
   }, []);
 
   const triggerAnimation = (type) => {
@@ -260,12 +268,7 @@ export default function VideoPlayer({ embedUrl, youtubeVideoId, title, siteName 
     setHoverPos(null);
   };
 
-  const handleDoubleClick = (e) => {
-    e.stopPropagation();
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const width = rect.width;
-
+  const handleOverlayDoubleAction = (x, width) => {
     if (x < width / 3) {
       handleRewind();
     } else if (x > (width / 3) * 2) {
@@ -273,6 +276,44 @@ export default function VideoPlayer({ embedUrl, youtubeVideoId, title, siteName 
     } else {
       toggleFullscreen();
     }
+  };
+
+  const handleOverlayPointerUp = (e) => {
+    if ((e.pointerType === 'mouse' && e.button !== 0) || !e.isPrimary) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const width = rect.width;
+    const now = Date.now();
+    const lastInteraction = lastInteractionRef.current;
+    const isDoubleInteraction =
+      lastInteraction &&
+      lastInteraction.pointerType === e.pointerType &&
+      now - lastInteraction.timestamp <= DOUBLE_TAP_DELAY_MS;
+
+    if (singleTapTimeoutRef.current) {
+      clearTimeout(singleTapTimeoutRef.current);
+      singleTapTimeoutRef.current = null;
+    }
+
+    if (isDoubleInteraction) {
+      lastInteractionRef.current = null;
+      handleOverlayDoubleAction(x, width);
+      return;
+    }
+
+    lastInteractionRef.current = {
+      pointerType: e.pointerType,
+      timestamp: now,
+    };
+
+    singleTapTimeoutRef.current = setTimeout(() => {
+      lastInteractionRef.current = null;
+      togglePlay();
+    }, DOUBLE_TAP_DELAY_MS);
   };
 
   const handleContextMenu = useCallback((event) => {
@@ -328,9 +369,8 @@ export default function VideoPlayer({ embedUrl, youtubeVideoId, title, siteName 
 
       {/* Invisible Overlay to block iframe clicks and prevent visiting YouTube */}
       <div
-        className="absolute inset-0 z-10 cursor-pointer flex items-center justify-center overflow-hidden"
-        onClick={togglePlay}
-        onDoubleClick={handleDoubleClick}
+        className="absolute inset-0 z-10 cursor-pointer touch-manipulation flex items-center justify-center overflow-hidden"
+        onPointerUp={handleOverlayPointerUp}
       >
         <AnimatePresence>
           {animState === 'play' && (

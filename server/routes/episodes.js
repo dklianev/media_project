@@ -74,6 +74,27 @@ function getEpisodeWithProduction(id, { includeUnpublished = false } = {}) {
   `).get(id);
 }
 
+function getSiblingEpisodeId(productionId, episodeNumber, direction, { includeUnpublished = false } = {}) {
+  if (!productionId || !Number.isFinite(Number(episodeNumber))) return null;
+
+  const operator = direction === 'next' ? '>' : '<';
+  const order = direction === 'next' ? 'ASC' : 'DESC';
+  const visibilitySql = includeUnpublished
+    ? ''
+    : "AND (published_at IS NULL OR published_at <= datetime('now'))";
+
+  return db.prepare(`
+    SELECT id
+    FROM episodes
+    WHERE production_id = ?
+      AND is_active = 1
+      AND episode_number ${operator} ?
+      ${visibilitySql}
+    ORDER BY episode_number ${order}, id ${order}
+    LIMIT 1
+  `).get(productionId, episodeNumber)?.id || null;
+}
+
 function hashUserAgent(userAgent) {
   const ua = String(userAgent || '').trim();
   if (!ua) return '';
@@ -291,21 +312,18 @@ router.get('/:id', requireAuth, (req, res) => {
   let previousEpisodeId = null;
 
   if (episode.production_id) {
-    const nextEp = db.prepare(`
-      SELECT id FROM episodes 
-      WHERE production_id = ? AND episode_number > ? 
-      ${!admin ? 'AND is_published = 1 AND release_date <= CURRENT_TIMESTAMP' : ''}
-      ORDER BY episode_number ASC LIMIT 1
-    `).get(episode.production_id, episode.episode_number);
-    if (nextEp) nextEpisodeId = nextEp.id;
-
-    const prevEp = db.prepare(`
-      SELECT id FROM episodes 
-      WHERE production_id = ? AND episode_number < ? 
-      ${!admin ? 'AND is_published = 1 AND release_date <= CURRENT_TIMESTAMP' : ''}
-      ORDER BY episode_number DESC LIMIT 1
-    `).get(episode.production_id, episode.episode_number);
-    if (prevEp) previousEpisodeId = prevEp.id;
+    nextEpisodeId = getSiblingEpisodeId(
+      episode.production_id,
+      episode.episode_number,
+      'next',
+      { includeUnpublished: admin }
+    );
+    previousEpisodeId = getSiblingEpisodeId(
+      episode.production_id,
+      episode.episode_number,
+      'previous',
+      { includeUnpublished: admin }
+    );
   }
 
   const responsePayload = {
