@@ -72,6 +72,7 @@ export default function VideoPlayer({ embedUrl, youtubeVideoId, title, siteName 
             setDuration(event.target.getDuration());
             setPlayerReady(true);
             setIsMuted(event.target.isMuted());
+            setVolume(event.target.getVolume() || 100);
           },
           onStateChange: (event) => {
             if (event.data === window.YT.PlayerState.PLAYING) {
@@ -342,10 +343,11 @@ export default function VideoPlayer({ embedUrl, youtubeVideoId, title, siteName 
                 min="0"
                 max="100"
                 value={volume}
+                onInput={handleVolumeChange}
                 onChange={handleVolumeChange}
-                className="w-16 h-1 bg-white/30 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:rounded-sm [&::-moz-range-thumb]:w-3 [&::-moz-range-thumb]:h-3 [&::-moz-range-thumb]:bg-white [&::-moz-range-thumb]:border-none [&::-moz-range-thumb]:rounded-sm accent-white"
+                className="w-full h-1 bg-white/30 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-2.5 [&::-webkit-slider-thumb]:h-2.5 [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:rounded-full [&::-moz-range-thumb]:w-2.5 [&::-moz-range-thumb]:h-2.5 [&::-moz-range-thumb]:bg-white [&::-moz-range-thumb]:border-none [&::-moz-range-thumb]:rounded-full accent-white"
                 style={{
-                  background: `linear-gradient(to right, white ${volume}%, rgba(150,150,150,0.5) ${volume}%)`
+                  background: `linear-gradient(to right, white ${volume}%, rgba(255,255,255,0.3) ${volume}%)`
                 }}
               />
             </div>
