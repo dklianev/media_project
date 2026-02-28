@@ -19,6 +19,8 @@ const DEFAULT_PILLS = [
     { value: 'watchlist', label: 'Любими' },
 ];
 
+
+
 export default function ProductionsPage() {
     const { showToast } = useToastContext();
     const [productions, setProductions] = useState([]);
@@ -26,6 +28,8 @@ export default function ProductionsPage() {
     const [error, setError] = useState('');
     const [query, setQuery] = useState('');
     const [groupFilter, setGroupFilter] = useState('all');
+    const [genreFilter, setGenreFilter] = useState('all');
+    const [sortOption, setSortOption] = useState('default');
     const [watchlistIds, setWatchlistIds] = useState(new Set());
     const [s, setS] = useState({});
     const [filterPills, setFilterPills] = useState(DEFAULT_PILLS);
@@ -92,9 +96,19 @@ export default function ProductionsPage() {
         }
     }, [watchlistIds, showToast]);
 
+    const availableGenres = useMemo(() => {
+        const genres = new Set();
+        productions.forEach(p => {
+            if (Array.isArray(p.genres)) {
+                p.genres.forEach(g => genres.add(g));
+            }
+        });
+        return Array.from(genres).sort();
+    }, [productions]);
+
     const filtered = useMemo(() => {
         const search = debouncedQuery.trim().toLowerCase();
-        return productions.filter((production) => {
+        let result = productions.filter((production) => {
             const group = production.access_group || (production.required_tier > 0 ? 'subscription' : 'free');
 
             if (groupFilter === 'watchlist') {
@@ -103,13 +117,34 @@ export default function ProductionsPage() {
                 return false;
             }
 
+            if (genreFilter !== 'all') {
+                if (!Array.isArray(production.genres) || !production.genres.includes(genreFilter)) {
+                    return false;
+                }
+            }
+
             const textOk =
                 !search ||
                 (production.title || '').toLowerCase().includes(search) ||
                 (production.description || '').toLowerCase().includes(search);
             return textOk;
         });
-    }, [productions, debouncedQuery, groupFilter, watchlistIds]);
+
+        // Sorting
+        if (sortOption === 'newest') {
+            result.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+        } else if (sortOption === 'alphabetical') {
+            result.sort((a, b) => a.title.localeCompare(b.title));
+        } else {
+            // default is by sort_order + created_at
+            result.sort((a, b) => {
+                if (a.sort_order !== b.sort_order) return a.sort_order - b.sort_order;
+                return new Date(b.created_at) - new Date(a.created_at);
+            });
+        }
+
+        return result;
+    }, [productions, debouncedQuery, groupFilter, genreFilter, sortOption, watchlistIds]);
 
     return (
         <div className="relative max-w-7xl mx-auto px-4 py-8 overflow-hidden">
@@ -139,7 +174,7 @@ export default function ProductionsPage() {
                                 <input
                                     value={query}
                                     onChange={(event) => setQuery(event.target.value)}
-                                    className="input-dark pl-11"
+                                    className="input-dark pl-11 w-full"
                                     placeholder={s.catalog_search_placeholder || 'Търси заглавие...'}
                                     aria-label="Търсене в каталога"
                                 />
@@ -149,21 +184,46 @@ export default function ProductionsPage() {
 
                     {/* Filtering & Listing */}
                     <div className="mt-8">
-                        <div className="flex flex-wrap gap-2 mb-6">
-                            {filterPills.map((pill) => (
-                                <button
-                                    key={pill.value}
-                                    type="button"
-                                    onClick={() => setGroupFilter(pill.value)}
-                                    aria-pressed={groupFilter === pill.value}
-                                    className={`px-5 py-2 rounded-full text-sm font-medium transition-all ${groupFilter === pill.value
+                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+                            <div className="flex flex-wrap gap-2">
+                                {filterPills.map((pill) => (
+                                    <button
+                                        key={pill.value}
+                                        type="button"
+                                        onClick={() => setGroupFilter(pill.value)}
+                                        aria-pressed={groupFilter === pill.value}
+                                        className={`px-5 py-2 rounded-full text-sm font-medium transition-all ${groupFilter === pill.value
                                             ? 'bg-[var(--accent-gold)] text-[#0a0b11] shadow-[0_0_15px_rgba(212,175,55,0.3)]'
                                             : 'bg-[var(--bg-secondary)]/80 text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)] hover:text-[var(--text-primary)] border border-[var(--border)]'
-                                        }`}
+                                            }`}
+                                    >
+                                        {pill.label}
+                                    </button>
+                                ))}
+                            </div>
+
+                            <div className="flex items-center gap-3">
+                                <select
+                                    className="input-dark text-sm py-2 px-3 border border-[var(--border)] rounded-lg min-w-[140px]"
+                                    value={genreFilter}
+                                    onChange={(e) => setGenreFilter(e.target.value)}
                                 >
-                                    {pill.label}
-                                </button>
-                            ))}
+                                    <option value="all">Всички жанрове</option>
+                                    {availableGenres.map(g => (
+                                        <option key={g} value={g}>{g}</option>
+                                    ))}
+                                </select>
+
+                                <select
+                                    className="input-dark text-sm py-2 px-3 border border-[var(--border)] rounded-lg min-w-[140px]"
+                                    value={sortOption}
+                                    onChange={(e) => setSortOption(e.target.value)}
+                                >
+                                    <option value="default">Препоръчани</option>
+                                    <option value="newest">Най-нови</option>
+                                    <option value="alphabetical">А-Я</option>
+                                </select>
+                            </div>
                         </div>
 
                         {loading ? (

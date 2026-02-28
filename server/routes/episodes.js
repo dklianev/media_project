@@ -241,6 +241,46 @@ router.get('/latest', requireAuth, (req, res) => {
   res.json(episodes);
 });
 
+router.get('/calendar', requireAuth, (req, res) => {
+  const admin = isUserAdmin(req.user);
+
+  const rawEpisodes = db.prepare(`
+    SELECT e.id, e.title, e.thumbnail_url, e.episode_number, e.published_at, e.created_at, e.is_active,
+           e.access_group,
+           p.title as production_title, p.slug as production_slug,
+           p.required_tier, p.access_group as production_access_group
+    FROM episodes e
+    JOIN productions p ON e.production_id = p.id
+    WHERE e.published_at IS NOT NULL
+      ${admin ? '' : "AND e.is_active = 1 AND p.is_active = 1"}
+      AND e.published_at >= datetime('now', '-14 days')
+      AND e.published_at <= datetime('now', '+60 days')
+    ORDER BY e.published_at ASC
+  `).all();
+
+  const episodes = rawEpisodes.map((episode) => {
+    const productionGroup = normalizeProductionGroup(episode.production_access_group);
+    const episodeGroup = normalizeEpisodeGroup(episode.access_group);
+    const effectiveGroup = resolveEffectiveGroup(episodeGroup, productionGroup);
+    const hasAccess = hasGroupAccess(
+      effectiveGroup,
+      req.user.tier_level || 0,
+      admin,
+      episode.required_tier || 0
+    );
+
+    return {
+      ...episode,
+      access_group: episodeGroup,
+      effective_access_group: effectiveGroup,
+      has_access: hasAccess,
+    };
+  });
+
+  res.set('Cache-Control', 'private, max-age=60');
+  res.json(episodes);
+});
+
 router.get('/:id/embed', (req, res) => {
   const token = req.query.t ? String(req.query.t) : '';
   const decoded = verifyEmbedToken(token, req.params.id, req.get('user-agent'));
@@ -544,6 +584,23 @@ router.post(
     );
 
     const episode = db.prepare('SELECT * FROM episodes WHERE id = ?').get(result.lastInsertRowid);
+
+    // GENERATE NOTIFICATIONS for active episodes
+    if (episode.is_active) {
+      try {
+        db.prepare(`
+          INSERT INTO notifications (user_id, title, message, link)
+          SELECT id, ?, ?, ? FROM users WHERE role != 'banned'
+        `).run(
+          `Нов епизод: ${prod.title}`,
+          `Епизод ${episode.episode_number} на "${prod.title}" е добавен в платформата.`,
+          `/episodes/${episode.id}`
+        );
+      } catch (err) {
+        console.error('Неуспешно създаване на известия:', err);
+      }
+    }
+
     logAdminAction(req, {
       action: 'episode.create',
       entity_type: 'episode',

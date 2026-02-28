@@ -22,21 +22,39 @@ const PROD_SORT_MAP = {
 const normalizeGroup = normalizeProductionGroup;
 
 router.get('/', requireAuth, (req, res) => {
+  const genreFilter = req.query.genre ? String(req.query.genre).trim() : null;
+  const sortParam = req.query.sort ? String(req.query.sort).trim() : '';
+
+  let orderBy = 'sort_order ASC, created_at DESC';
+  if (sortParam === 'newest') orderBy = 'created_at DESC, id DESC';
+  if (sortParam === 'popular') orderBy = 'id DESC'; // Assuming lower ID is older, we don't have views per production yet, so fallback or maybe sort by title if alphabet. Let's add 'alphabetical'
+  if (sortParam === 'alphabetical') orderBy = 'title ASC';
+
   const productions = db.prepare(`
     SELECT id, title, slug, description, thumbnail_url, cover_image_url,
-           required_tier, access_group, sort_order, created_at
+           required_tier, access_group, sort_order, created_at, genres
     FROM productions
     WHERE is_active = 1
-    ORDER BY sort_order ASC, created_at DESC
+    ORDER BY ${orderBy}
   `).all();
 
   const userTier = req.user.tier_level || 0;
   const isAdmin = req.user.role === 'admin' || req.user.role === 'superadmin';
 
-  const result = productions.map((item) => {
+  const result = productions.filter(item => {
+    if (!genreFilter) return true;
+    try {
+      const parsedGenres = JSON.parse(item.genres || '[]');
+      return parsedGenres.includes(genreFilter);
+    } catch { return false; }
+  }).map((item) => {
     const group = normalizeGroup(item.access_group);
+    let parsedGenres = [];
+    try { parsedGenres = JSON.parse(item.genres || '[]'); } catch { }
+
     return {
       ...item,
+      genres: parsedGenres,
       access_group: group,
       has_access: hasGroupAccess(group, userTier, isAdmin, item.required_tier || 0),
     };
@@ -155,6 +173,7 @@ router.post(
       access_group,
       sort_order,
       is_active,
+      genres,
     } = req.body;
 
     if (!title || title.trim().length < 2) {
@@ -180,9 +199,9 @@ router.post(
     const result = db.prepare(`
       INSERT INTO productions (
         title, slug, description, thumbnail_url, cover_image_url,
-        required_tier, access_group, sort_order, is_active
+        required_tier, access_group, sort_order, is_active, genres
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       title.trim(),
       slug,
@@ -192,7 +211,8 @@ router.post(
       tier,
       group,
       toInt(sort_order, 0),
-      is_active === 'false' ? 0 : 1
+      is_active === 'false' ? 0 : 1,
+      genres || '[]'
     );
 
     const production = db.prepare('SELECT * FROM productions WHERE id = ?').get(result.lastInsertRowid);
@@ -234,6 +254,7 @@ router.put(
       access_group,
       sort_order,
       is_active,
+      genres,
     } = req.body;
 
     const thumbnailUrl = req.files?.thumbnail?.[0]
@@ -259,6 +280,7 @@ router.put(
         access_group = ?,
         sort_order = ?,
         is_active = ?,
+        genres = ?,
         updated_at = datetime('now')
       WHERE id = ?
     `).run(
@@ -270,6 +292,7 @@ router.put(
       group,
       toInt(sort_order, existing.sort_order),
       is_active === undefined ? existing.is_active : (is_active === 'false' ? 0 : 1),
+      genres ?? existing.genres,
       req.params.id
     );
 

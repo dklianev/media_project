@@ -9,6 +9,7 @@ import AdBanner from '../components/AdBanner';
 import EpisodeCard from '../components/EpisodeCard';
 import ReactionBar from '../components/ReactionBar';
 import VideoPlayer from '../components/VideoPlayer';
+import CommentsSection from '../components/CommentsSection';
 import ScrollReveal from '../components/ScrollReveal';
 import { StaggerContainer, StaggerItem } from '../components/StaggerContainer';
 import PageBackground from '../components/PageBackground';
@@ -272,6 +273,13 @@ export default function EpisodePage() {
                   userReaction={episode.user_reaction}
                 />
               </article>
+            </ScrollReveal>
+          )}
+
+          {/* Comments */}
+          {!isLocked && (
+            <ScrollReveal variant="fadeUp" delay={0.25}>
+              <CommentsSection episodeId={episode.id} />
             </ScrollReveal>
           )}
         </section>

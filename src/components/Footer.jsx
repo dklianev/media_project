@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Crown, Film, Heart, Home, Sparkles } from 'lucide-react';
+import { Crown, Film, Heart, Home, Sparkles, HelpCircle } from 'lucide-react';
 import { getPublicSettings, subscribeToPublicSettingsUpdates } from '../utils/settings';
 
 const footerLinks = [
   { to: '/', label: 'Начало', icon: Home },
   { to: '/productions', label: 'Каталог', icon: Film },
   { to: '/subscribe', label: 'Абонаменти', icon: Crown },
+  { to: '/faq', label: 'ЧЗВ', icon: HelpCircle },
 ];
 
 const ease = [0.16, 1, 0.3, 1];

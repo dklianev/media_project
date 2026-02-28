@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Calendar, Shield, Sparkles, UserRound, ListVideo } from 'lucide-react';
+import { Calendar, Shield, Sparkles, UserRound, ListVideo, Clock, PlayCircle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import SubscriptionBadge from '../components/SubscriptionBadge';
 import ScrollReveal from '../components/ScrollReveal';
@@ -18,6 +18,7 @@ export default function ProfilePage() {
   const [watchlist, setWatchlist] = useState([]);
   const [watchlistIds, setWatchlistIds] = useState(new Set());
   const [loadingWatchlist, setLoadingWatchlist] = useState(true);
+  const [stats, setStats] = useState(null);
 
   useEffect(() => {
     getPublicSettings().then((data) => setS(data || {})).catch(() => { });
@@ -32,6 +33,10 @@ export default function ProfilePage() {
         setWatchlist(filtered);
       }
     }).catch(console.error).finally(() => setLoadingWatchlist(false));
+
+    api.get('/users/me/stats')
+      .then(data => setStats(data))
+      .catch(console.error);
   }, []);
 
   const toggleWatchlist = async (productionId) => {
@@ -159,6 +164,71 @@ export default function ProfilePage() {
               </StaggerContainer>
             </section>
           </ScrollReveal>
+
+          {/* Stats Section */}
+          {stats && (
+            <ScrollReveal variant="fadeUp" delay={0.15}>
+              <section className="grid grid-cols-2 gap-4 mb-5">
+                <div className="glass-card p-5 flex flex-col items-center justify-center text-center">
+                  <div className="w-12 h-12 rounded-full bg-[var(--accent-gold)]/10 flex items-center justify-center mb-3">
+                    <Clock className="w-6 h-6 text-[var(--accent-gold)]" />
+                  </div>
+                  <h3 className="text-2xl font-bold mb-1">
+                    {Math.floor((stats.total_watched_seconds || 0) / 3600)}ч {Math.floor(((stats.total_watched_seconds || 0) % 3600) / 60)}м
+                  </h3>
+                  <p className="text-xs uppercase tracking-[0.1em] text-[var(--text-muted)]">{s.profile_stat_time || 'Гледано време'}</p>
+                </div>
+
+                <div className="glass-card p-5 flex flex-col items-center justify-center text-center">
+                  <div className="w-12 h-12 rounded-full bg-[var(--accent-cyan)]/10 flex items-center justify-center mb-3">
+                    <PlayCircle className="w-6 h-6 text-[var(--accent-cyan)]" />
+                  </div>
+                  <h3 className="text-2xl font-bold mb-1">{stats.total_episodes || 0}</h3>
+                  <p className="text-xs uppercase tracking-[0.1em] text-[var(--text-muted)]">{s.profile_stat_episodes || 'Започнати епизоди'}</p>
+                </div>
+              </section>
+
+              {stats.recently_watched?.length > 0 && (
+                <section className="glass-card p-6 mb-5">
+                  <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                    <PlayCircle className="w-5 h-5 text-[var(--accent-cyan)]" />
+                    {s.profile_stat_recent || 'Последно гледани'}
+                  </h2>
+                  <div className="space-y-3">
+                    {stats.recently_watched.map(item => (
+                      <Link
+                        key={item.episode_id}
+                        to={`/episodes/${item.episode_id}`}
+                        className="flex items-center gap-3 p-3 rounded-xl bg-[var(--bg-secondary)]/50 border border-[var(--border)]/50 hover:bg-white/5 hover:border-[var(--border)] transition-colors no-underline group"
+                      >
+                        <div className="w-16 h-10 shrink-0 rounded bg-[var(--bg-tertiary)] overflow-hidden relative">
+                          {item.thumbnail_url ? (
+                            <img src={item.thumbnail_url} alt="" className="w-full h-full object-cover" />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center text-[10px] text-[var(--text-muted)] border border-[var(--border)]">Липсва</div>
+                          )}
+                          <div className="absolute inset-x-0 bottom-0 h-1 bg-black/50">
+                            <div
+                              className="h-full bg-[var(--accent-gold)]"
+                              style={{ width: `${Math.min(100, Math.max(0, (item.progress_seconds / Math.max(1, item.duration_seconds || 1)) * 100))}%` }}
+                            />
+                          </div>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-[var(--text-primary)] truncate group-hover:text-[var(--accent-gold-light)] transition-colors">
+                            {item.production_title}
+                          </p>
+                          <p className="text-xs text-[var(--text-secondary)] truncate">
+                            {item.episode_title}
+                          </p>
+                        </div>
+                      </Link>
+                    ))}
+                  </div>
+                </section>
+              )}
+            </ScrollReveal>
+          )}
 
           {/* Watchlist Section */}
           <ScrollReveal variant="fadeUp" delay={0.2}>

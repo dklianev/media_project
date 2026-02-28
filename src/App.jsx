@@ -24,6 +24,8 @@ const SubscribePage = lazy(() => import('./pages/SubscribePage'));
 const ProfilePage = lazy(() => import('./pages/ProfilePage'));
 const NotFoundPage = lazy(() => import('./pages/NotFoundPage'));
 const LiveStreamPage = lazy(() => import('./pages/LiveStreamPage'));
+const FAQPage = lazy(() => import('./pages/FAQPage'));
+const CalendarPage = lazy(() => import('./pages/CalendarPage'));
 
 // Admin pages
 const AdminLayout = lazy(() => import('./pages/admin/AdminLayout'));
@@ -163,6 +165,8 @@ export default function App() {
                 <Route path="/login" element={<AnimatedPage><LoginPage /></AnimatedPage>} />
                 <Route path="/auth/callback" element={<AuthCallback />} />
                 <Route path="/character-name" element={<AnimatedPage><CharacterNamePage /></AnimatedPage>} />
+                <Route path="/faq" element={<AnimatedPage><FAQPage /></AnimatedPage>} />
+                <Route path="/calendar" element={<AnimatedPage><CalendarPage /></AnimatedPage>} />
 
                 {/* Protected */}
                 <Route path="/" element={<ProtectedRoute><AnimatedPage><HomePage /></AnimatedPage></ProtectedRoute>} />

@@ -1,15 +1,17 @@
 import { useEffect, useState } from 'react';
 import { Link, NavLink, useLocation } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Crown, Film, Home, LogOut, Menu, Moon, Settings, Sparkles, Sun, User, X } from 'lucide-react';
+import { Calendar as CalendarIcon, Crown, Film, Home, LogOut, Menu, Moon, Settings, Sparkles, Sun, User, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import SubscriptionBadge from './SubscriptionBadge';
+import NotificationDropdown from './NotificationDropdown';
 import { getPublicSettings, subscribeToPublicSettingsUpdates } from '../utils/settings';
 
 const DEFAULT_NAV = [
   { to: '/', key: 'nav_label_home', fallback: 'Начало', icon: Home },
   { to: '/productions', key: 'nav_label_catalog', fallback: 'Каталог', icon: Film },
+  { to: '/calendar', key: 'nav_label_calendar', fallback: 'График', icon: CalendarIcon },
   { to: '/subscribe', key: 'nav_label_subscribe', fallback: 'Абонаменти', icon: Crown },
   { to: '/profile', key: 'nav_label_profile', fallback: 'Профил', icon: User },
 ];
@@ -21,7 +23,7 @@ function NavPill({ to, label, icon: Icon, onClick }) {
       end={to === '/'}
       onClick={onClick}
       className={({ isActive }) =>
-        `relative inline-flex items-center gap-2 rounded-full px-3.5 py-2 text-sm font-semibold z-10 ${isActive
+        `relative inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[13px] font-semibold whitespace-nowrap z-10 ${isActive
           ? 'text-[var(--text-primary)] border border-[var(--border-light)] bg-[linear-gradient(135deg,rgba(212,175,55,0.16),rgba(75,197,255,0.1))] shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]'
           : 'text-[var(--text-secondary)] border border-transparent hover:text-[var(--text-primary)] hover:bg-white/5'
         }`
@@ -29,12 +31,12 @@ function NavPill({ to, label, icon: Icon, onClick }) {
     >
       {({ isActive }) => (
         <motion.span
-          className="inline-flex items-center gap-2"
+          className="inline-flex items-center gap-1.5"
           whileHover={!isActive ? { scale: 1.05 } : {}}
           whileTap={{ scale: 0.95 }}
           transition={{ type: 'spring', stiffness: 400, damping: 20 }}
         >
-          <Icon className="w-4 h-4" aria-hidden="true" />
+          <Icon className="w-4 h-4 shrink-0" aria-hidden="true" />
           <span>{label}</span>
         </motion.span>
       )}
@@ -234,7 +236,7 @@ export default function Navbar() {
         <div className="absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-[var(--accent-cyan)]/45 to-transparent" />
 
         <div className="max-w-7xl mx-auto px-4 py-3">
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center justify-between gap-1.5 lg:gap-3">
             <Link to="/" className="no-underline flex items-center gap-2.5">
               {ui.siteLogo ? (
                 <motion.img
@@ -259,14 +261,14 @@ export default function Navbar() {
               </div>
             </Link>
 
-            <nav className="hidden xl:flex items-center gap-2">
+            <nav className="hidden xl:flex items-center gap-1">
               {navLinks.map((link) => (
                 <NavPill key={link.to} {...link} />
               ))}
               {isAdmin && <NavPill to="/admin" label={ui.adminZoneLabel || 'Админ'} icon={Settings} />}
             </nav>
 
-            <div className="flex items-center gap-2 sm:gap-3">
+            <div className="flex items-center gap-1.5 sm:gap-2">
               <Link
                 to="/live"
                 className={`flex items-center gap-1.5 rounded-full px-2 sm:px-3 py-1 sm:py-1.5 text-[11px] font-bold uppercase tracking-[0.08em] transition-all no-underline ${ui.stream_is_live === 'true'
@@ -278,6 +280,9 @@ export default function Navbar() {
                 <span className={`w-2 h-2 sm:w-1.5 sm:h-1.5 rounded-full shrink-0 ${ui.stream_is_live === 'true' ? 'bg-[var(--danger)] animate-ping' : 'bg-[var(--text-muted)]'}`} />
                 <span className="hidden sm:inline whitespace-nowrap">{ui.stream_is_live === 'true' ? 'На живо' : 'Офлайн'}</span>
               </Link>
+
+              <NotificationDropdown />
+
               {user?.discord_avatar ? (
                 <motion.img
                   src={user.discord_avatar}
@@ -288,12 +293,14 @@ export default function Navbar() {
               ) : (
                 <div className="w-9 h-9 rounded-full border border-[var(--border)] bg-[var(--bg-tertiary)]" />
               )}
-              <div className="hidden md:block">
-                <p className="text-sm font-semibold leading-tight">{user?.character_name || 'Без име'}</p>
-                <div className="flex items-center gap-1.5">
-                  <SubscriptionBadge planName={user?.plan_name} tierLevel={user?.tier_level} />
+              <div className="hidden md:block max-w-[110px] lg:max-w-[150px]">
+                <p className="text-[13px] font-semibold leading-tight truncate">{user?.character_name || 'Без име'}</p>
+                <div className="flex items-center gap-1 mt-0.5">
+                  <div className="shrink-0 scale-90 origin-left">
+                    <SubscriptionBadge planName={user?.plan_name} tierLevel={user?.tier_level} />
+                  </div>
                   {expiryWarning && (
-                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[var(--warning)]/15 text-[var(--warning)] border border-[var(--warning)]/30 font-bold">
+                    <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-[var(--warning)]/15 text-[var(--warning)] border border-[var(--warning)]/30 font-bold hidden lg:inline-block">
                       {expiryWarning}
                     </span>
                   )}

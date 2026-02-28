@@ -43,6 +43,7 @@ const SUBSCRIBE_FIELDS = [
 const NAV_FIELDS = [
   { key: 'nav_label_home', label: 'Начало' },
   { key: 'nav_label_catalog', label: 'Каталог' },
+  { key: 'nav_label_calendar', label: 'График' },
   { key: 'nav_label_subscribe', label: 'Абонаменти' },
   { key: 'nav_label_profile', label: 'Профил' },
   { key: 'nav_label_admin_zone', label: 'Административна зона' },
@@ -101,6 +102,38 @@ const CHARACTER_NAME_FIELDS = [
 const FOOTER_FIELDS = [
   { key: 'footer_made_with', label: 'Направено с [сърце] ... (напр. "за общността")' },
   { key: 'footer_premium_experience', label: 'Английски текст вдясно отдолу (Premium...)' },
+];
+
+const CALENDAR_FIELDS = [
+  { key: 'calendar_title', label: 'Заглавие на графика' },
+  { key: 'calendar_subtitle', label: 'Подзаглавие на графика' },
+  { key: 'calendar_empty', label: 'Текст при липса на график' },
+];
+
+const FAQ_FIELDS = [
+  { key: 'faq_title', label: 'Заглавие на FAQ' },
+  { key: 'faq_description', label: 'Описание под заглавието на FAQ' },
+  { key: 'faq_discord_link', label: 'Текст на бутона за Discord' },
+  { key: 'faq_discord_url', label: 'URL линк към Discord сървъра' },
+];
+
+const COMMENTS_FIELDS = [
+  { key: 'comments_title', label: 'Заглавие на дискусията' },
+  { key: 'comments_placeholder', label: 'Placeholder на текстовото поле' },
+  { key: 'comments_empty', label: 'Текст при липса на коментари' },
+];
+
+const NOTIFICATIONS_FIELDS = [
+  { key: 'notifications_title', label: 'Заглавие на известията' },
+  { key: 'notifications_mark_read', label: 'Бутон за маркиране като прочетени' },
+  { key: 'notifications_empty', label: 'Текст при липса на известия' },
+  { key: 'notifications_view', label: 'Бутон за преглед на известието' },
+];
+
+const PROFILE_STAT_FIELDS = [
+  { key: 'profile_stat_time', label: 'Заглавие: Гледано време' },
+  { key: 'profile_stat_episodes', label: 'Заглавие: Започнати епизоди' },
+  { key: 'profile_stat_recent', label: 'Заглавие: Последно гледани' },
 ];
 
 export default function ManageSettings() {
@@ -222,14 +255,15 @@ export default function ManageSettings() {
           { id: 'design', label: 'Дизайн & Начална' },
           { id: 'auth', label: 'Вход & Профил' },
           { id: 'subs', label: 'Абонаменти & Каталог' },
-          { id: 'live', label: 'Live Стрийм' }
+          { id: 'live', label: 'Live Стрийм' },
+          { id: 'community', label: 'Общност & Разни' }
         ].map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
             className={`px-5 py-3 text-sm font-medium rounded-t-lg transition-colors whitespace-nowrap ${activeTab === tab.id
-                ? 'bg-[var(--bg-primary)] text-[var(--text-primary)] border-t border-x border-[var(--border)] -mb-[1px]'
-                : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)]'
+              ? 'bg-[var(--bg-primary)] text-[var(--text-primary)] border-t border-x border-[var(--border)] -mb-[1px]'
+              : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)]'
               }`}
           >
             {tab.label}
@@ -476,6 +510,36 @@ export default function ManageSettings() {
                   <textarea value={settings.stream_offline_message || ''} onChange={(e) => updateField('stream_offline_message', e.target.value)} className="input-dark" rows={2} />
                 </div>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* --- TAB: COMMUNITY --- */}
+        {activeTab === 'community' && (
+          <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 space-y-6">
+            <div className="glass-card p-5">
+              <h2 className="text-lg font-semibold mb-3">График (Календар)</h2>
+              {renderFields(CALENDAR_FIELDS)}
+            </div>
+
+            <div className="glass-card p-5">
+              <h2 className="text-lg font-semibold mb-3">Често задавани въпроси (FAQ)</h2>
+              {renderFields(FAQ_FIELDS)}
+            </div>
+
+            <div className="glass-card p-5">
+              <h2 className="text-lg font-semibold mb-3">Секция Коментари</h2>
+              {renderFields(COMMENTS_FIELDS)}
+            </div>
+
+            <div className="glass-card p-5">
+              <h2 className="text-lg font-semibold mb-3">Известия (Нотификации)</h2>
+              {renderFields(NOTIFICATIONS_FIELDS)}
+            </div>
+
+            <div className="glass-card p-5">
+              <h2 className="text-lg font-semibold mb-3">Профилна статистика</h2>
+              {renderFields(PROFILE_STAT_FIELDS)}
             </div>
           </div>
         )}

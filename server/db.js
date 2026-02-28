@@ -182,6 +182,28 @@ db.exec(`
     FOREIGN KEY (user_id) REFERENCES users(id),
     FOREIGN KEY (episode_id) REFERENCES episodes(id)
   );
+
+  CREATE TABLE IF NOT EXISTS comments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    episode_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    content TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (episode_id) REFERENCES episodes(id),
+    FOREIGN KEY (user_id) REFERENCES users(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS notifications (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    message TEXT,
+    link TEXT,
+    is_read INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (user_id) REFERENCES users(id)
+  );
 `);
 
 function hasColumn(table, column) {
@@ -238,6 +260,10 @@ if (!hasColumn('subscription_plans', 'is_popular')) {
   db.exec(`ALTER TABLE subscription_plans ADD COLUMN is_popular INTEGER DEFAULT 0`);
 }
 
+if (!hasColumn('productions', 'genres')) {
+  db.exec(`ALTER TABLE productions ADD COLUMN genres TEXT DEFAULT '[]'`);
+}
+
 db.exec(`
   CREATE INDEX IF NOT EXISTS idx_watchlist_user ON watchlist(user_id, created_at);
   CREATE INDEX IF NOT EXISTS idx_watchlist_prod ON watchlist(production_id);
@@ -262,6 +288,8 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_admin_audit_admin_created ON admin_audit_logs(admin_user_id, created_at);
   CREATE INDEX IF NOT EXISTS idx_admin_audit_entity_created ON admin_audit_logs(entity_type, created_at);
   CREATE INDEX IF NOT EXISTS idx_admin_audit_action_created ON admin_audit_logs(action, created_at);
+  CREATE INDEX IF NOT EXISTS idx_comments_episode ON comments(episode_id, created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_notifications_user_unread ON notifications(user_id, is_read, created_at DESC);
   `);
 
 db.exec(`
