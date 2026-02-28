@@ -35,6 +35,12 @@ button:hover,
   --accent-gold-light: #f5db8d;
   --accent-cyan: #4bc5ff;
   --accent-crimson: #c5457a;
+  --accent-primary: #0284c7;
+  /* Sky 600 */
+  --accent-primary-rgb: 2, 132, 199;
+  --accent-hover: #0369a1;
+  /* Sky 700 */
+  --accent-foreground: #ffffff;
   --text-primary: #edf2ff;
   --text-secondary: #a8b2cc;
   --text-muted: #647193;
@@ -1035,6 +1041,12 @@ a {
   --accent-gold-light: #8a6d10;
   --accent-cyan: #0d7aad;
   --accent-crimson: #b03060;
+  --accent-primary: #0ea5e9;
+  /* Sky 500 equivalent */
+  --accent-primary-rgb: 14, 165, 233;
+  --accent-hover: #0284c7;
+  /* Sky 600 */
+  --accent-foreground: #ffffff;
   --text-primary: #1a1a2e;
   --text-secondary: #4d4d6a;
   --text-muted: #6b6b85;

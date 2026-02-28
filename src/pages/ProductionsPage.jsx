@@ -202,9 +202,9 @@ export default function ProductionsPage() {
                                 ))}
                             </div>
 
-                            <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-3 w-full sm:w-auto overflow-x-auto">
                                 <select
-                                    className="input-dark text-sm py-2 px-3 border border-[var(--border)] rounded-lg min-w-[140px]"
+                                    className="input-dark text-sm py-2 px-3 border border-[var(--border)] rounded-lg min-w-[170px]"
                                     value={genreFilter}
                                     onChange={(e) => setGenreFilter(e.target.value)}
                                 >
@@ -215,7 +215,7 @@ export default function ProductionsPage() {
                                 </select>
 
                                 <select
-                                    className="input-dark text-sm py-2 px-3 border border-[var(--border)] rounded-lg min-w-[140px]"
+                                    className="input-dark text-sm py-2 px-3 border border-[var(--border)] rounded-lg min-w-[160px]"
                                     value={sortOption}
                                     onChange={(e) => setSortOption(e.target.value)}
                                 >

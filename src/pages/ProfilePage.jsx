@@ -173,8 +173,9 @@ export default function ProfilePage() {
                   <div className="w-12 h-12 rounded-full bg-[var(--accent-gold)]/10 flex items-center justify-center mb-3">
                     <Clock className="w-6 h-6 text-[var(--accent-gold)]" />
                   </div>
-                  <h3 className="text-2xl font-bold mb-1">
-                    {Math.floor((stats.total_watch_seconds || 0) / 3600)}ч {Math.floor(((stats.total_watch_seconds || 0) % 3600) / 60)}м
+                  <h3 className="text-2xl font-bold mb-1 tracking-tight">
+                    <span className="font-sans">{Math.floor((stats.total_watch_seconds || 0) / 3600)}</span><span className="text-lg text-[var(--text-secondary)] ml-0.5 lowercase">ч</span>{' '}
+                    <span className="font-sans ml-1">{Math.floor(((stats.total_watch_seconds || 0) % 3600) / 60)}</span><span className="text-lg text-[var(--text-secondary)] ml-0.5 lowercase">м</span>
                   </h3>
                   <p className="text-xs uppercase tracking-[0.1em] text-[var(--text-muted)]">{s.profile_stat_time || 'Гледано време'}</p>
                 </div>
@@ -183,7 +184,7 @@ export default function ProfilePage() {
                   <div className="w-12 h-12 rounded-full bg-[var(--accent-cyan)]/10 flex items-center justify-center mb-3">
                     <PlayCircle className="w-6 h-6 text-[var(--accent-cyan)]" />
                   </div>
-                  <h3 className="text-2xl font-bold mb-1">{stats.episodes_started || 0}</h3>
+                  <h3 className="text-2xl font-bold mb-1 font-sans tracking-tight">{stats.episodes_started || 0}</h3>
                   <p className="text-xs uppercase tracking-[0.1em] text-[var(--text-muted)]">{s.profile_stat_episodes || 'Започнати епизоди'}</p>
                 </div>
               </section>
@@ -255,9 +256,10 @@ export default function ProfilePage() {
                   ))}
                 </div>
               ) : (
-                <div className="text-center py-10 bg-[var(--bg-secondary)]/50 rounded-xl border border-[var(--border)]">
-                  <p className="text-[var(--text-muted)] mb-3">Още нямате добавени продукции.</p>
-                  <Link to="/productions" className="text-[var(--accent-gold-light)] hover:text-[var(--accent-gold)] text-sm font-medium transition-colors">
+                <div className="text-center py-12 bg-[var(--bg-secondary)]/30 rounded-2xl border border-[var(--border)]/50">
+                  <ListVideo className="w-10 h-10 text-[var(--text-muted)] opacity-30 mx-auto mb-3" />
+                  <p className="text-[var(--text-secondary)] mb-4">Още нямате добавени продукции.</p>
+                  <Link to="/productions" className="btn-outline no-underline inline-flex items-center gap-2 text-sm">
                     Към каталога &rarr;
                   </Link>
                 </div>
