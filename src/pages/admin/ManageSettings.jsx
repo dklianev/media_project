@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Save, Upload } from 'lucide-react';
 import { api } from '../../utils/api';
 import { useToastContext } from '../../context/ToastContext';
+import { invalidatePublicSettingsCache } from '../../utils/settings';
 
 const LANDING_FIELDS = [
   { key: 'landing_badge_text', label: 'Лента над заглавието' },
@@ -133,6 +134,7 @@ export default function ManageSettings() {
     setSaving(true);
     try {
       await api.put('/settings', settings);
+      invalidatePublicSettingsCache(true);
       showToast('Настройките са запазени');
     } catch (err) {
       showToast(err.message, 'error');
@@ -151,6 +153,7 @@ export default function ManageSettings() {
     try {
       const result = await api.upload('/settings/hero-image', fd);
       setSettings((prev) => ({ ...prev, hero_image: result.url }));
+      invalidatePublicSettingsCache(true);
       showToast('Hero изображението е качено');
     } catch (err) {
       showToast(err.message, 'error');
@@ -165,6 +168,7 @@ export default function ManageSettings() {
     try {
       const result = await api.upload(endpoint, fd);
       setSettings((prev) => ({ ...prev, [settingKey]: result.url }));
+      invalidatePublicSettingsCache(true);
       showToast(`${label} е качено`);
     } catch (err) {
       showToast(err.message, 'error');

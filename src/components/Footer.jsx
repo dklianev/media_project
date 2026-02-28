@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Crown, Film, Heart, Home, Sparkles } from 'lucide-react';
-import { getPublicSettings } from '../utils/settings';
+import { getPublicSettings, subscribeToPublicSettingsUpdates } from '../utils/settings';
 
 const footerLinks = [
   { to: '/', label: 'Начало', icon: Home },
@@ -16,7 +16,18 @@ export default function Footer() {
   const [settings, setSettings] = useState({});
 
   useEffect(() => {
-    getPublicSettings().then(setSettings).catch(() => setSettings({}));
+    const loadSettings = (force = false) => {
+      getPublicSettings(force).then(setSettings).catch(() => setSettings({}));
+    };
+
+    loadSettings();
+    const unsubscribe = subscribeToPublicSettingsUpdates(() => {
+      loadSettings(true);
+    });
+
+    return () => {
+      unsubscribe();
+    };
   }, []);
 
   return (

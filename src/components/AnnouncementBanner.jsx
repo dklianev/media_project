@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Info, AlertTriangle, CheckCircle2, X } from 'lucide-react';
-import { getPublicSettings } from '../utils/settings';
+import { getPublicSettings, subscribeToPublicSettingsUpdates } from '../utils/settings';
 
 const TYPE_CONFIG = {
   info: {
@@ -40,16 +40,30 @@ export default function AnnouncementBanner() {
   const [dismissed, setDismissed] = useState(false);
 
   useEffect(() => {
-    getPublicSettings()
-      .then((s) => {
-        if (s?.announcement_enabled !== 'true' || !s?.announcement_text?.trim()) return;
-        const text = s.announcement_text.trim();
-        const type = s.announcement_type || 'info';
-        const key = `announcement_dismissed_${hashStr(text)}`;
-        if (sessionStorage.getItem(key) === '1') return;
-        setBanner({ text, type, dismissKey: key });
-      })
-      .catch(() => {});
+    const loadBanner = (force = false) => {
+      getPublicSettings(force)
+        .then((s) => {
+          setBanner(null);
+          setDismissed(false);
+
+          if (s?.announcement_enabled !== 'true' || !s?.announcement_text?.trim()) return;
+          const text = s.announcement_text.trim();
+          const type = s.announcement_type || 'info';
+          const key = `announcement_dismissed_${hashStr(text)}`;
+          if (sessionStorage.getItem(key) === '1') return;
+          setBanner({ text, type, dismissKey: key });
+        })
+        .catch(() => {});
+    };
+
+    loadBanner();
+    const unsubscribe = subscribeToPublicSettingsUpdates(() => {
+      loadBanner(true);
+    });
+
+    return () => {
+      unsubscribe();
+    };
   }, []);
 
   const handleDismiss = () => {

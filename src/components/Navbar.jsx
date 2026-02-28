@@ -5,7 +5,7 @@ import { Crown, Film, Home, LogOut, Menu, Moon, Settings, Sparkles, Sun, User, X
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import SubscriptionBadge from './SubscriptionBadge';
-import { getPublicSettings } from '../utils/settings';
+import { getPublicSettings, subscribeToPublicSettingsUpdates } from '../utils/settings';
 
 const DEFAULT_NAV = [
   { to: '/', key: 'nav_label_home', fallback: 'Начало', icon: Home },
@@ -172,25 +172,36 @@ export default function Navbar() {
   );
 
   useEffect(() => {
-    getPublicSettings()
-      .then((settings) => {
-        setUi((prev) => ({
-          siteName: settings?.site_name || prev.siteName,
-          siteTagline: settings?.site_tagline || prev.siteTagline,
-          liveBadgeText: settings?.live_badge_text || prev.liveBadgeText,
-          adminZoneLabel: settings?.nav_label_admin_zone || 'Административна зона',
-          siteLogo: settings?.site_logo || '',
-          stream_is_live: settings?.stream_is_live || 'false',
-        }));
-        setNavLinks(
-          DEFAULT_NAV.map((n) => ({
-            to: n.to,
-            label: settings?.[n.key] || n.fallback,
-            icon: n.icon,
-          }))
-        );
-      })
-      .catch(() => { });
+    const loadSettings = (force = false) => {
+      getPublicSettings(force)
+        .then((settings) => {
+          setUi((prev) => ({
+            siteName: settings?.site_name || prev.siteName,
+            siteTagline: settings?.site_tagline || prev.siteTagline,
+            liveBadgeText: settings?.live_badge_text || prev.liveBadgeText,
+            adminZoneLabel: settings?.nav_label_admin_zone || 'Административна зона',
+            siteLogo: settings?.site_logo || '',
+            stream_is_live: settings?.stream_is_live || 'false',
+          }));
+          setNavLinks(
+            DEFAULT_NAV.map((n) => ({
+              to: n.to,
+              label: settings?.[n.key] || n.fallback,
+              icon: n.icon,
+            }))
+          );
+        })
+        .catch(() => { });
+    };
+
+    loadSettings();
+    const unsubscribe = subscribeToPublicSettingsUpdates(() => {
+      loadSettings(true);
+    });
+
+    return () => {
+      unsubscribe();
+    };
   }, []);
 
   useEffect(() => {

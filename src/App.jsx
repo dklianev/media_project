@@ -10,7 +10,7 @@ import AnnouncementBanner from './components/AnnouncementBanner';
 import ErrorBoundary from './components/ErrorBoundary';
 import ScrollToTop from './components/ScrollToTop';
 import MaintenancePage from './pages/MaintenancePage';
-import { getPublicSettings } from './utils/settings';
+import { getPublicSettings, subscribeToPublicSettingsUpdates } from './utils/settings';
 
 // ─── Lazy-loaded pages ───
 const LoginPage = lazy(() => import('./pages/LoginPage'));
@@ -98,33 +98,44 @@ export default function App() {
 
   useEffect(() => {
     let active = true;
-    getPublicSettings()
-      .then((settings) => {
-        if (!active) return;
-        document.title = settings?.site_name || 'Платформа';
+    const applySettings = (settings) => {
+      if (!active) return;
+      document.title = settings?.site_name || 'Платформа';
 
-        // Dynamic favicon
-        if (settings?.site_favicon) {
-          let link = document.querySelector("link[rel~='icon']");
-          if (!link) {
-            link = document.createElement('link');
-            link.rel = 'icon';
-            document.head.appendChild(link);
-          }
-          link.href = settings.site_favicon;
+      // Dynamic favicon
+      if (settings?.site_favicon) {
+        let link = document.querySelector("link[rel~='icon']");
+        if (!link) {
+          link = document.createElement('link');
+          link.rel = 'icon';
+          document.head.appendChild(link);
         }
+        link.href = settings.site_favicon;
+      }
 
-        // Maintenance mode check
-        if (settings?.maintenance_mode === 'true') {
-          setMaintenance(settings.maintenance_message || '');
-        }
-      })
-      .catch(() => {
-        if (!active) return;
-        document.title = 'Платформа';
-      });
+      setMaintenance(settings?.maintenance_mode === 'true' ? (settings.maintenance_message || '') : null);
+    };
+
+    const loadSettings = (force = false) => {
+      getPublicSettings(force)
+        .then((settings) => {
+          applySettings(settings);
+        })
+        .catch(() => {
+          if (!active) return;
+          document.title = 'Платформа';
+          setMaintenance(null);
+        });
+    };
+
+    loadSettings();
+    const unsubscribe = subscribeToPublicSettingsUpdates(() => {
+      loadSettings(true);
+    });
+
     return () => {
       active = false;
+      unsubscribe();
     };
   }, []);
 

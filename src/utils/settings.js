@@ -2,6 +2,7 @@ import { api } from './api';
 
 const SETTINGS_CACHE_KEY = 'public_settings_cache_v1';
 const SETTINGS_CACHE_TTL_MS = 60 * 1000;
+const SETTINGS_UPDATED_EVENT = 'public-settings-updated';
 let memoryCache = null;
 let memoryCacheAt = 0;
 let inflight = null;
@@ -25,6 +26,31 @@ function writeSessionCache(data) {
   } catch {
     // ignore storage failures
   }
+}
+
+function clearSessionCache() {
+  try {
+    sessionStorage.removeItem(SETTINGS_CACHE_KEY);
+  } catch {
+    // ignore storage failures
+  }
+}
+
+export function invalidatePublicSettingsCache(notify = false) {
+  memoryCache = null;
+  memoryCacheAt = 0;
+  inflight = null;
+  clearSessionCache();
+
+  if (notify && typeof window !== 'undefined') {
+    window.dispatchEvent(new Event(SETTINGS_UPDATED_EVENT));
+  }
+}
+
+export function subscribeToPublicSettingsUpdates(callback) {
+  if (typeof window === 'undefined') return () => {};
+  window.addEventListener(SETTINGS_UPDATED_EVENT, callback);
+  return () => window.removeEventListener(SETTINGS_UPDATED_EVENT, callback);
 }
 
 export async function getPublicSettings(force = false) {
