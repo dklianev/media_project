@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Play, Pause, RotateCcw, RotateCw, Volume2, VolumeX, Maximize } from 'lucide-react';
 
-export default function VideoPlayer({ embedUrl, youtubeVideoId, title, siteName = 'ELITE MEDIA' }) {
+export default function VideoPlayer({ embedUrl, youtubeVideoId, title, siteName = 'Платформа' }) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -334,19 +334,18 @@ export default function VideoPlayer({ embedUrl, youtubeVideoId, title, siteName 
             </button>
 
             <div
-              className={`overflow-hidden transition-[width,opacity] duration-300 ease-out flex items-center absolute left-full top-1/2 -translate-y-1/2 z-10 bg-black/40 backdrop-blur-sm rounded-full pl-2 pr-3 py-1.5 ${isHoveringVolume ? 'w-20 opacity-100' : 'w-0 opacity-0 pointer-events-none'
-                } sm:relative sm:left-auto sm:top-auto sm:translate-y-0 sm:bg-transparent sm:p-0 sm:z-auto sm:group-hover/volume:w-16 sm:group-hover/volume:ml-2 sm:focus-within:w-16 sm:focus-within:ml-2 sm:opacity-100 ${isHoveringVolume ? 'sm:w-16 sm:ml-2' : 'sm:w-0 sm:ml-0'
+              className={`overflow-hidden transition-[width,opacity] duration-300 ease-out flex items-center absolute left-full top-1/2 -translate-y-1/2 z-10 bg-black/40 backdrop-blur-sm rounded-full pl-2 pr-3 py-1.5 w-20 opacity-100 sm:relative sm:left-auto sm:top-auto sm:translate-y-0 sm:bg-transparent sm:p-0 sm:z-auto sm:group-hover/volume:w-16 sm:group-hover/volume:ml-2 sm:focus-within:w-16 sm:focus-within:ml-2 sm:opacity-100 ${isHoveringVolume ? 'sm:w-16 sm:ml-2' : 'sm:w-0 sm:ml-0 sm:opacity-0 sm:pointer-events-none'
                 }`}
             >
               <input
                 type="range"
                 min="0"
                 max="100"
-                value={isMuted ? 0 : volume}
+                value={volume}
                 onChange={handleVolumeChange}
                 className="w-16 h-1 bg-white/30 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:rounded-sm [&::-moz-range-thumb]:w-3 [&::-moz-range-thumb]:h-3 [&::-moz-range-thumb]:bg-white [&::-moz-range-thumb]:border-none [&::-moz-range-thumb]:rounded-sm accent-white"
                 style={{
-                  background: `linear-gradient(to right, white ${isMuted ? 0 : volume}%, rgba(150,150,150,0.5) ${isMuted ? 0 : volume}%)`
+                  background: `linear-gradient(to right, white ${volume}%, rgba(150,150,150,0.5) ${volume}%)`
                 }}
               />
             </div>

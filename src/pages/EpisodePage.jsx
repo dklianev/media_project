@@ -51,8 +51,15 @@ export default function EpisodePage() {
   const { id } = useParams();
   const { isAdmin } = useAuth();
   const [episode, setEpisode] = useState(null);
+  const [settings, setSettings] = useState({});
   const [loading, setLoading] = useState(true);
   const [fetchStatus, setFetchStatus] = useState(null);
+
+  useEffect(() => {
+    api.get('/settings/public')
+      .then(data => setSettings(data))
+      .catch(() => { });
+  }, []);
 
   useEffect(() => {
     setLoading(true);
@@ -158,7 +165,7 @@ export default function EpisodePage() {
             <div className="film-frame relative">
               <div className="film-grain rounded-2xl" />
               {hasPlayableVideo ? (
-                <VideoPlayer embedUrl={episode.video_embed_url} youtubeVideoId={episode.youtube_video_id} title={episode.title} />
+                <VideoPlayer embedUrl={episode.video_embed_url} youtubeVideoId={episode.youtube_video_id} title={episode.title} siteName={settings.site_name || 'Платформа'} />
               ) : (
                 <div className="relative w-full overflow-hidden rounded-2xl border border-[var(--border)] bg-[linear-gradient(160deg,#0a0d17,#111626)] shadow-premium-md" style={{ paddingBottom: '56.25%' }}>
                   <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-6">
