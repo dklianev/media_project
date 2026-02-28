@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Play, Pause, RotateCcw, Volume2, VolumeX } from 'lucide-react';
 
-export default function VideoPlayer({ embedUrl, title, siteName = 'Платформа' }) {
+export default function VideoPlayer({ embedUrl, youtubeVideoId, title, siteName = 'Платформа' }) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -20,7 +20,10 @@ export default function VideoPlayer({ embedUrl, title, siteName = 'Платфо�
     return match ? match[1] : null;
   };
 
-  const videoId = getYouTubeId(embedUrl);
+  const normalizedYoutubeVideoId = typeof youtubeVideoId === 'string' && youtubeVideoId.trim()
+    ? youtubeVideoId.trim()
+    : null;
+  const videoId = normalizedYoutubeVideoId || getYouTubeId(embedUrl);
 
   const formatTime = (seconds) => {
     if (!seconds || isNaN(seconds)) return '0:00';
@@ -147,7 +150,7 @@ export default function VideoPlayer({ embedUrl, title, siteName = 'Платфо�
     event.preventDefault();
   }, []);
 
-  if (!embedUrl) return null;
+  if (!embedUrl && !videoId) return null;
 
   // Fallback for non-YouTube videos (or if no embedUrl but fallback is somehow requested)
   // If we have an embedUrl but it's not a YouTube video (videoId is missing), we use the normal iframe

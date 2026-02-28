@@ -289,7 +289,7 @@ router.get('/:id', requireAuth, (req, res) => {
 
   const responsePayload = {
     ...episode,
-    youtube_video_id: episode.youtube_video_id || undefined,
+    youtube_video_id: access.hasAccess ? (episode.youtube_video_id || undefined) : undefined,
     video_embed_url: null,
     access_group: access.episodeGroup,
     effective_access_group: access.effectiveGroup,
