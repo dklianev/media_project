@@ -13,6 +13,7 @@ import {
   Ticket,
   Tv,
   Users,
+  Headphones,
 } from 'lucide-react';
 import PageBackground from '../../components/PageBackground';
 
@@ -26,6 +27,7 @@ const sidebarLinks = [
   { to: '/admin/plans', icon: Tags, label: 'Планове' },
   { to: '/admin/promo-codes', icon: Ticket, label: 'Промо кодове' },
   { to: '/admin/audit', icon: History, label: 'Одит лог' },
+  { to: '/admin/support', icon: Headphones, label: 'Запитвания' },
   { to: '/admin/settings', icon: Settings, label: 'Настройки' },
 ];
 

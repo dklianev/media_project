@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MessageSquare, Send, Trash2, User } from 'lucide-react';
+import { MessageSquare, Send, Trash2, User, Smile } from 'lucide-react';
+import EmojiPicker, { Theme } from 'emoji-picker-react';
 import { api } from '../utils/api';
 import { useAuth } from '../context/AuthContext';
 import { useToastContext } from '../context/ToastContext';
@@ -13,6 +14,7 @@ export default function CommentsSection({ episodeId }) {
     const [newComment, setNewComment] = useState('');
     const [loading, setLoading] = useState(true);
     const [submitting, setSubmitting] = useState(false);
+    const [showEmojiPicker, setShowEmojiPicker] = useState(false);
     const [ui, setUi] = useState({
         comments_title: 'Дискусия',
         comments_placeholder: 'Напиши коментар...',
@@ -61,6 +63,7 @@ export default function CommentsSection({ episodeId }) {
             showToast(err.message || 'Грешка при публикуване.', 'error');
         } finally {
             setSubmitting(false);
+            setShowEmojiPicker(false);
         }
     };
 
@@ -86,9 +89,20 @@ export default function CommentsSection({ episodeId }) {
 
     return (
         <div className="mt-8 pt-8 border-t border-[var(--border)]">
-            <div className="flex items-center gap-2 mb-6">
-                <MessageSquare className="w-5 h-5 text-[var(--accent-gold)]" />
-                <h3 className="text-xl font-semibold">{ui.comments_title} ({comments.length})</h3>
+            <div className="flex items-center justify-between mb-8">
+                <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-[var(--accent-gold)]/10 flex items-center justify-center border border-[var(--accent-gold)]/20 shadow-[0_0_15px_rgba(212,175,55,0.15)]">
+                        <MessageSquare className="w-5 h-5 text-[var(--accent-gold)]" />
+                    </div>
+                    <div>
+                        <h3 className="text-xl font-bold text-[var(--text-primary)] tracking-wide flex items-center gap-2">
+                            {ui.comments_title}
+                            <span className="text-sm font-medium px-2.5 py-0.5 rounded-full bg-[var(--bg-tertiary)] text-[var(--text-secondary)] border border-[var(--border)]">
+                                {comments.length}
+                            </span>
+                        </h3>
+                    </div>
+                </div>
             </div>
 
             <form onSubmit={handleSubmit} className="mb-8">
@@ -96,17 +110,51 @@ export default function CommentsSection({ episodeId }) {
                     <textarea
                         value={newComment}
                         onChange={(e) => setNewComment(e.target.value)}
-                        className="input-dark w-full min-h-[100px] resize-y py-3 px-4"
+                        className="input-dark w-full min-h-[100px] resize-y py-3 px-4 pb-12"
                         placeholder={ui.comments_placeholder}
                         disabled={submitting}
                     />
+
+                    {/* Toolbar inside textarea area */}
+                    <div className="absolute left-3 bottom-3 flex items-center gap-2">
+                        <button
+                            type="button"
+                            onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                            className="p-1.5 text-[var(--text-muted)] hover:text-[var(--accent-gold)] rounded-md hover:bg-[var(--bg-tertiary)] transition-colors"
+                            title="Вмъкни емоджи"
+                        >
+                            <Smile className="w-5 h-5" />
+                        </button>
+                    </div>
+
                     <button
                         type="submit"
                         disabled={!newComment.trim() || submitting}
-                        className="absolute right-3 bottom-3 p-2 bg-[var(--accent-gold)] text-black rounded-lg hover:bg-[var(--accent-gold-light)] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        className="absolute right-3 bottom-3 p-2 bg-[var(--accent-gold)] text-black rounded-lg hover:bg-[var(--accent-gold-light)] disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium flex items-center gap-1 shadow-[0_0_15px_rgba(212,175,55,0.2)]"
+                        title="Изпрати"
                     >
-                        <Send className="w-4 h-4" />
+                        {submitting ? <div className="w-4 h-4 border-2 border-black/30 border-t-black rounded-full animate-spin" /> : <><Send className="w-4 h-4" /></>}
                     </button>
+
+                    {/* Emoji Picker Popover */}
+                    <AnimatePresence>
+                        {showEmojiPicker && (
+                            <motion.div
+                                initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                                animate={{ opacity: 1, y: 0, scale: 1 }}
+                                exit={{ opacity: 0, scale: 0.95 }}
+                                className="absolute left-0 bottom-full mb-2 z-50"
+                            >
+                                <EmojiPicker
+                                    theme={Theme.DARK}
+                                    onEmojiClick={(emojiData) => {
+                                        setNewComment(prev => prev + emojiData.emoji);
+                                    }}
+                                    lazyLoadEmojis={true}
+                                />
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
                 </div>
             </form>
 

@@ -30,6 +30,7 @@ import watchHistoryRoutes from './routes/watch-history.js';
 import exportRoutes from './routes/export.js';
 import commentsRoutes from './routes/comments.js';
 import notificationsRoutes from './routes/notifications.js';
+import supportRoutes from './routes/support.js';
 import { optimizeUploadedImages, upload } from './middleware/upload.js';
 import { requireAdmin } from './middleware/auth.js';
 import { logAdminAction } from './utils/audit.js';
@@ -205,6 +206,7 @@ export function createApp() {
   app.use('/api/watch-history', watchHistoryRoutes);
   app.use('/api/comments', commentsRoutes);
   app.use('/api/notifications', notificationsRoutes);
+  app.use('/api/support', supportRoutes);
 
   // Generic upload endpoint for admin
   app.post('/api/admin/upload', requireAdmin, upload.single('file'), optimizeUploadedImages, (req, res) => {

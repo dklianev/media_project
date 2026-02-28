@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import { Clapperboard, Clock, Play } from 'lucide-react';
 import Tooltip from './Tooltip';
 
-export default function EpisodeCard({ episode, showProgress = false, showProductionTitle = true }) {
+export default function EpisodeCard({ episode, showProgress = false, showProductionTitle = true, asGridItem = false }) {
     const href = `/episodes/${episode.episode_id || episode.id}`;
     const title = episode.title || 'Епизод';
     const thumbnail = episode.thumbnail_url;
@@ -13,7 +13,7 @@ export default function EpisodeCard({ episode, showProgress = false, showProduct
     const duration = episode.duration_seconds || 3600;
 
     return (
-        <div className="min-w-[240px] sm:min-w-[265px] flex-shrink-0" style={{ scrollSnapAlign: 'start' }}>
+        <div className={`flex-shrink-0 ${asGridItem ? 'w-full h-full' : 'min-w-[240px] sm:min-w-[265px]'}`} style={{ scrollSnapAlign: 'start' }}>
             <Link to={href} className="no-underline group block h-full">
                 <motion.article
                     whileHover={{ y: -6 }}

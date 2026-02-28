@@ -149,6 +149,7 @@ export default function CalendarPage() {
                                             <EpisodeCard
                                                 episode={episode}
                                                 showProgress={false}
+                                                asGridItem={true}
                                             />
                                         </StaggerItem>
                                     ))}

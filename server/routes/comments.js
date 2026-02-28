@@ -84,13 +84,13 @@ function validateEpisodeAccess(episodeId, user) {
 
 // Get comments for an episode
 router.get('/episode/:episodeId', requireAuth, (req, res) => {
-    const { episodeId } = req.params;
-    const access = validateEpisodeAccess(episodeId, req.user);
-    if (!access.ok) {
-        return res.status(access.status).json({ error: access.error });
-    }
+  const { episodeId } = req.params;
+  const access = validateEpisodeAccess(episodeId, req.user);
+  if (!access.ok) {
+    return res.status(access.status).json({ error: access.error });
+  }
 
-    const comments = db.prepare(`
+  const comments = db.prepare(`
     SELECT c.id, c.content, c.created_at, c.user_id,
            u.discord_username, u.discord_avatar, u.character_name, u.role
     FROM comments c
@@ -100,55 +100,55 @@ router.get('/episode/:episodeId', requireAuth, (req, res) => {
     ORDER BY c.created_at DESC
   `).all(episodeId);
 
-    res.json(comments);
+  res.json(comments);
 });
 
 router.get('/admin', requireAdmin, (req, res) => {
-    const { page, pageSize, offset } = parsePagination(req.query, { defaultPageSize: 20, maxPageSize: 100 });
-    const q = String(req.query.q || '').trim();
-    const status = normalizeCommentStatus(req.query.status, '');
-    const episodeId = toInt(req.query.episode_id, null);
+  const { page, pageSize, offset } = parsePagination(req.query, { defaultPageSize: 20, maxPageSize: 100 });
+  const q = String(req.query.q || '').trim();
+  const status = normalizeCommentStatus(req.query.status, '');
+  const episodeId = toInt(req.query.episode_id, null);
 
-    const where = [];
-    const params = [];
+  const where = [];
+  const params = [];
 
-    if (status) {
-        where.push('c.status = ?');
-        params.push(status);
-    }
+  if (status) {
+    where.push('c.status = ?');
+    params.push(status);
+  }
 
-    if (episodeId !== null) {
-        where.push('c.episode_id = ?');
-        params.push(episodeId);
-    }
+  if (episodeId !== null) {
+    where.push('c.episode_id = ?');
+    params.push(episodeId);
+  }
 
-    if (q) {
-        const pattern = `%${q}%`;
-        where.push(`(
+  if (q) {
+    const pattern = `%${q}%`;
+    where.push(`(
           c.content LIKE ?
           OR u.character_name LIKE ?
           OR u.discord_username LIKE ?
           OR e.title LIKE ?
           OR p.title LIKE ?
         )`);
-        params.push(pattern, pattern, pattern, pattern, pattern);
-    }
+    params.push(pattern, pattern, pattern, pattern, pattern);
+  }
 
-    const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
-    const baseFrom = `
+  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+  const baseFrom = `
       FROM comments c
       JOIN users u ON c.user_id = u.id
       JOIN episodes e ON c.episode_id = e.id
       JOIN productions p ON e.production_id = p.id
     `;
 
-    const total = db.prepare(`
+  const total = db.prepare(`
       SELECT COUNT(*) as count
       ${baseFrom}
       ${whereSql}
     `).get(...params)?.count || 0;
 
-    const items = db.prepare(`
+  const items = db.prepare(`
       SELECT
         c.id,
         c.episode_id,
@@ -172,30 +172,30 @@ router.get('/admin', requireAdmin, (req, res) => {
       LIMIT ? OFFSET ?
     `).all(...params, pageSize, offset);
 
-    res.json(buildPageResult(items, page, pageSize, total));
+  res.json(buildPageResult(items, page, pageSize, total));
 });
 
 // Create a new comment
 router.post('/', requireAuth, (req, res) => {
-    const { episode_id, content } = req.body;
-    if (!episode_id || !content || content.trim().length === 0) {
-        return res.status(400).json({ error: 'Епизодът и съдържанието са задължителни' });
-    }
-    if (content.trim().length > 2000) {
-        return res.status(400).json({ error: 'Коментарът е твърде дълъг' });
-    }
+  const { episode_id, content } = req.body;
+  if (!episode_id || !content || content.trim().length === 0) {
+    return res.status(400).json({ error: 'Епизодът и съдържанието са задължителни' });
+  }
+  if (content.trim().length > 2000) {
+    return res.status(400).json({ error: 'Коментарът е твърде дълъг' });
+  }
 
-    const access = validateEpisodeAccess(episode_id, req.user);
-    if (!access.ok) {
-        return res.status(access.status).json({ error: access.error });
-    }
+  const access = validateEpisodeAccess(episode_id, req.user);
+  if (!access.ok) {
+    return res.status(access.status).json({ error: access.error });
+  }
 
-    const result = db.prepare(`
+  const result = db.prepare(`
     INSERT INTO comments (episode_id, user_id, content)
     VALUES (?, ?, ?)
   `).run(episode_id, req.user.id, content.trim());
 
-    const newComment = db.prepare(`
+  const newComment = db.prepare(`
     SELECT c.id, c.content, c.created_at, c.user_id,
            u.discord_username, u.discord_avatar, u.character_name, u.role
     FROM comments c
@@ -203,25 +203,25 @@ router.post('/', requireAuth, (req, res) => {
     WHERE c.id = ?
   `).get(result.lastInsertRowid);
 
-    res.status(201).json(newComment);
+  res.status(201).json(newComment);
 });
 
 router.put('/admin/:id/status', requireAdmin, (req, res) => {
-    const nextStatus = normalizeCommentStatus(req.body?.status, '');
-    if (!nextStatus) {
-        return res.status(400).json({ error: 'Невалиден статус на коментара' });
-    }
+  const nextStatus = normalizeCommentStatus(req.body?.status, '');
+  if (!nextStatus) {
+    return res.status(400).json({ error: 'Невалиден статус на коментара' });
+  }
 
-    const comment = getCommentById(req.params.id);
-    if (!comment) {
-        return res.status(404).json({ error: 'Коментарът не е намерен' });
-    }
+  const comment = getCommentById(req.params.id);
+  if (!comment) {
+    return res.status(404).json({ error: 'Коментарът не е намерен' });
+  }
 
-    const moderationReason = String(req.body?.reason || '').trim() || null;
-    const deletedAt = nextStatus === 'deleted' ? "datetime('now')" : 'NULL';
-    const deletedBy = nextStatus === 'deleted' ? '?' : 'NULL';
+  const moderationReason = String(req.body?.reason || '').trim() || null;
+  const deletedAt = nextStatus === 'deleted' ? "datetime('now')" : 'NULL';
+  const deletedBy = nextStatus === 'deleted' ? '?' : 'NULL';
 
-    const query = `
+  const query = `
       UPDATE comments
       SET status = ?,
           moderation_reason = ?,
@@ -232,44 +232,44 @@ router.put('/admin/:id/status', requireAdmin, (req, res) => {
           updated_at = datetime('now')
       WHERE id = ?
     `;
-    const queryParams = nextStatus === 'deleted'
-        ? [nextStatus, moderationReason, req.user.id, req.user.id, req.params.id]
-        : [nextStatus, moderationReason, req.user.id, req.params.id];
+  const queryParams = nextStatus === 'deleted'
+    ? [nextStatus, moderationReason, req.user.id, req.user.id, req.params.id]
+    : [nextStatus, moderationReason, req.user.id, req.params.id];
 
-    db.prepare(query).run(...queryParams);
+  db.prepare(query).run(...queryParams);
 
-    const updated = getCommentById(req.params.id);
-    logAdminAction(req, {
-        action: 'comment.status.update',
-        entity_type: 'comment',
-        entity_id: req.params.id,
-        target_user_id: comment.user_id,
-        metadata: {
-            previous_status: comment.status,
-            next_status: updated.status,
-            episode_id: comment.episode_id,
-            reason: moderationReason,
-        },
-    });
+  const updated = getCommentById(req.params.id);
+  logAdminAction(req, {
+    action: 'comment.status.update',
+    entity_type: 'comment',
+    entity_id: req.params.id,
+    target_user_id: comment.user_id,
+    metadata: {
+      previous_status: comment.status,
+      next_status: updated.status,
+      episode_id: comment.episode_id,
+      reason: moderationReason,
+    },
+  });
 
-    res.json(updated);
+  res.json(updated);
 });
 
 // Delete a comment
 router.delete('/:id', requireAuth, (req, res) => {
-    const commentId = req.params.id;
-    const comment = getCommentById(commentId);
+  const commentId = req.params.id;
+  const comment = getCommentById(commentId);
 
-    if (!comment) {
-        return res.status(404).json({ error: 'Коментарът не е намерен' });
-    }
+  if (!comment) {
+    return res.status(404).json({ error: 'Коментарът не е намерен' });
+  }
 
-    const isAdmin = req.user.role === 'admin' || req.user.role === 'superadmin';
-    if (comment.user_id !== req.user.id && !isAdmin) {
-        return res.status(403).json({ error: 'Нямате права да изтриете този коментар' });
-    }
+  const isAdmin = req.user.role === 'admin' || req.user.role === 'superadmin';
+  if (comment.user_id !== req.user.id && !isAdmin) {
+    return res.status(403).json({ error: 'Нямате права да изтриете този коментар' });
+  }
 
-    db.prepare(`
+  db.prepare(`
       UPDATE comments
       SET status = 'deleted',
           deleted_at = datetime('now'),
@@ -280,20 +280,45 @@ router.delete('/:id', requireAuth, (req, res) => {
       WHERE id = ?
     `).run(req.user.id, isAdmin ? 1 : 0, isAdmin ? 1 : 0, req.user.id, commentId);
 
-    if (isAdmin) {
-        logAdminAction(req, {
-            action: 'comment.delete',
-            entity_type: 'comment',
-            entity_id: commentId,
-            target_user_id: comment.user_id,
-            metadata: {
-                previous_status: comment.status,
-                episode_id: comment.episode_id,
-            },
-        });
-    }
+  if (isAdmin) {
+    logAdminAction(req, {
+      action: 'comment.delete',
+      entity_type: 'comment',
+      entity_id: commentId,
+      target_user_id: comment.user_id,
+      metadata: {
+        previous_status: comment.status,
+        episode_id: comment.episode_id,
+      },
+    });
+  }
 
-    res.json({ success: true });
+  res.json({ success: true });
+});
+
+// Hard delete a comment (Admin only)
+router.delete('/admin/:id/hard', requireAdmin, (req, res) => {
+  const commentId = req.params.id;
+  const comment = getCommentById(commentId);
+
+  if (!comment) {
+    return res.status(404).json({ error: 'Коментарът не е намерен' });
+  }
+
+  db.prepare(`DELETE FROM comments WHERE id = ?`).run(commentId);
+
+  logAdminAction(req, {
+    action: 'comment.hard_delete',
+    entity_type: 'comment',
+    entity_id: commentId,
+    target_user_id: comment.user_id,
+    metadata: {
+      previous_status: comment.status,
+      episode_id: comment.episode_id,
+    },
+  });
+
+  res.json({ success: true });
 });
 
 export default router;

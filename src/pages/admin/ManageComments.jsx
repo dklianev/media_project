@@ -84,6 +84,20 @@ export default function ManageComments() {
     }
   };
 
+  const hardDelete = async (commentId) => {
+    if (!window.confirm('Сигурни ли сте? Това ще изтрие коментара завинаги от базата данни!')) return;
+    setWorkingId(commentId);
+    try {
+      await api.delete(`/comments/admin/${commentId}/hard`);
+      showToast('Коментарът е изтрит окончателно');
+      fetchComments();
+    } catch (err) {
+      showToast(err.message || 'Неуспешно изтриване', 'error');
+    } finally {
+      setWorkingId(null);
+    }
+  };
+
   return (
     <div>
       <div className="flex items-center gap-3 mb-6">
@@ -169,6 +183,17 @@ export default function ManageComments() {
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                       Изтрий
+                    </button>
+                  )}
+                  {comment.status === 'deleted' && (
+                    <button
+                      onClick={() => hardDelete(comment.id)}
+                      disabled={workingId === comment.id}
+                      className="btn-outline text-xs inline-flex items-center gap-1.5 text-[var(--danger)] border-[var(--danger)]/30 hover:bg-[var(--danger)]/10"
+                      title="Окончателно изтриване от базата данни"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      Изтрий завинаги
                     </button>
                   )}
                 </div>

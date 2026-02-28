@@ -3,6 +3,7 @@ import { Save, Upload } from 'lucide-react';
 import { api } from '../../utils/api';
 import { useToastContext } from '../../context/ToastContext';
 import { invalidatePublicSettingsCache } from '../../utils/settings';
+import FaqEditor from '../../components/FaqEditor';
 
 const LANDING_FIELDS = [
   { key: 'landing_badge_text', label: 'Лента над заглавието' },
@@ -113,8 +114,6 @@ const CALENDAR_FIELDS = [
 const FAQ_FIELDS = [
   { key: 'faq_title', label: 'Заглавие на FAQ' },
   { key: 'faq_description', label: 'Описание под заглавието на FAQ' },
-  { key: 'faq_discord_link', label: 'Текст на бутона за Discord' },
-  { key: 'faq_discord_url', label: 'URL линк към Discord сървъра' },
 ];
 
 const COMMENTS_FIELDS = [
@@ -249,7 +248,7 @@ export default function ManageSettings() {
       )}
 
       {/* Tabs Layout */}
-      <div className="flex bg-[var(--bg-secondary)] border-b border-[var(--border)] gap-1 mb-6 rounded-t-xl px-2 pt-2 overflow-x-auto hide-scrollbar">
+      <div className="flex border-b border-[var(--border)] gap-6 mb-6 overflow-x-auto hide-scrollbar">
         {[
           { id: 'general', label: 'Общи настройки' },
           { id: 'design', label: 'Дизайн & Начална' },
@@ -261,9 +260,9 @@ export default function ManageSettings() {
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
-            className={`px-5 py-3 text-sm font-medium rounded-t-lg transition-colors whitespace-nowrap ${activeTab === tab.id
-              ? 'bg-[var(--bg-primary)] text-[var(--text-primary)] border-t border-x border-[var(--border)] -mb-[1px]'
-              : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)]'
+            className={`pb-3 text-sm font-medium transition-colors whitespace-nowrap border-b-2 ${activeTab === tab.id
+              ? 'text-[var(--accent-gold)] border-[var(--accent-gold)]'
+              : 'text-[var(--text-muted)] border-transparent hover:text-[var(--text-secondary)] hover:border-[var(--border)]'
               }`}
           >
             {tab.label}
@@ -525,6 +524,13 @@ export default function ManageSettings() {
             <div className="glass-card p-5">
               <h2 className="text-lg font-semibold mb-3">Често задавани въпроси (FAQ)</h2>
               {renderFields(FAQ_FIELDS)}
+              <div className="mt-6 pt-6 border-t border-[var(--border)]">
+                <h3 className="text-sm font-medium mb-3">Списък с въпроси</h3>
+                <FaqEditor
+                  value={settings.faq_items || ''}
+                  onChange={(val) => updateField('faq_items', val)}
+                />
+              </div>
             </div>
 
             <div className="glass-card p-5">

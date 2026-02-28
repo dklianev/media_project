@@ -26,6 +26,7 @@ const NotFoundPage = lazy(() => import('./pages/NotFoundPage'));
 const LiveStreamPage = lazy(() => import('./pages/LiveStreamPage'));
 const FAQPage = lazy(() => import('./pages/FAQPage'));
 const CalendarPage = lazy(() => import('./pages/CalendarPage'));
+const TicketPage = lazy(() => import('./pages/TicketPage'));
 
 // Admin pages
 const AdminLayout = lazy(() => import('./pages/admin/AdminLayout'));
@@ -39,6 +40,7 @@ const ManagePromoCodes = lazy(() => import('./pages/admin/ManagePromoCodes'));
 const ManagePayments = lazy(() => import('./pages/admin/ManagePayments'));
 const ManageSettings = lazy(() => import('./pages/admin/ManageSettings'));
 const ManageAuditLogs = lazy(() => import('./pages/admin/ManageAuditLogs'));
+const ManageSupport = lazy(() => import('./pages/admin/ManageSupport'));
 
 function PageLoader() {
   return (
@@ -177,6 +179,7 @@ export default function App() {
                 <Route path="/subscribe" element={<ProtectedRoute><AnimatedPage><SubscribePage /></AnimatedPage></ProtectedRoute>} />
                 <Route path="/profile" element={<ProtectedRoute><AnimatedPage><ProfilePage /></AnimatedPage></ProtectedRoute>} />
                 <Route path="/live" element={<ProtectedRoute><AnimatedPage><LiveStreamPage /></AnimatedPage></ProtectedRoute>} />
+                <Route path="/support/:id" element={<ProtectedRoute><AnimatedPage><TicketPage /></AnimatedPage></ProtectedRoute>} />
 
                 {/* Admin */}
                 <Route path="/admin" element={<AdminRoute><AdminLayout /></AdminRoute>}>
@@ -190,6 +193,7 @@ export default function App() {
                   <Route path="payments" element={<ManagePayments />} />
                   <Route path="settings" element={<ManageSettings />} />
                   <Route path="audit" element={<ManageAuditLogs />} />
+                  <Route path="support" element={<ManageSupport />} />
                 </Route>
 
                 {/* Fallback */}

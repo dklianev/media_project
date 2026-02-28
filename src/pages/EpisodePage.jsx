@@ -322,7 +322,7 @@ export default function EpisodePage() {
             <StaggerContainer className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
               {episode.latest_episodes.map((item) => (
                 <StaggerItem key={item.id}>
-                  <EpisodeCard episode={item} showProgress={false} showProductionTitle={false} />
+                  <EpisodeCard episode={item} showProgress={false} showProductionTitle={false} asGridItem={true} />
                 </StaggerItem>
               ))}
             </StaggerContainer>

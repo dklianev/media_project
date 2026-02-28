@@ -10,12 +10,72 @@ function formatDate(value) {
   return date.toLocaleString('bg-BG');
 }
 
+const ACTION_MAP = {
+  'payment.confirm': 'Потвърдено плащане',
+  'payment.reject': 'Отказано плащане',
+  'payment.cancel': 'Анулирано плащане',
+  'payment.delete': 'Изтрито плащане',
+  'user.update_tier': 'Промяна на абонамент',
+  'user.ban': 'Блокиран потребител',
+  'user.unban': 'Разблокиран потребител',
+  'settings.update': 'Промяна на настройки',
+  'production.create': 'Добавена продукция',
+  'production.update': 'Редактирана продукция',
+  'production.delete': 'Изтрита продукция',
+  'episode.create': 'Добавен епизод',
+  'episode.update': 'Редактиран епизод',
+  'episode.delete': 'Изтрит епизод',
+  'comment.status.update': 'Промяна статус на коментар',
+  'comment.delete': 'Скриване на коментар (софт)',
+  'comment.hard_delete': 'Окончателно изтриване на коментар',
+  'promo_code.create': 'Създаден промо код',
+  'promo_code.update': 'Редактиран промо код',
+  'promo_code.delete': 'Изтрит промо код',
+  'plan.create': 'Създаден план',
+  'plan.update': 'Редактиран план',
+  'plan.delete': 'Изтрит план',
+  'admin.login': 'Админ вход'
+};
+
+const ENTITY_MAP = {
+  'payment_reference': 'Плащане',
+  'user': 'Потребител',
+  'site_settings': 'Настройки',
+  'production': 'Продукция',
+  'episode': 'Епизод',
+  'comment': 'Коментар',
+  'promo_code': 'Промо код',
+  'subscription_plan': 'Абонаментен план',
+  'admin': 'Администратор'
+};
+
+function translateAction(action) {
+  return ACTION_MAP[action] || action;
+}
+
+function translateEntity(entity) {
+  return ENTITY_MAP[entity] || entity;
+}
+
 function formatMetadata(metadata) {
-  if (!metadata) return '—';
+  if (!metadata) return <span className="text-[var(--text-muted)]">—</span>;
   try {
-    return JSON.stringify(metadata, null, 2);
+    const obj = typeof metadata === 'string' ? JSON.parse(metadata) : metadata;
+    if (Object.keys(obj).length === 0) return <span className="text-[var(--text-muted)]">—</span>;
+    return (
+      <div className="space-y-0.5 mt-1">
+        {Object.entries(obj).map(([key, val]) => (
+          <div key={key} className="flex flex-col sm:flex-row sm:items-baseline sm:gap-2 text-[11px] leading-relaxed">
+            <span className="text-[var(--text-muted)] opacity-80 sm:w-32 shrink-0">{key}:</span>
+            <span className="text-[var(--accent-gold-light)] break-all font-mono">
+              {typeof val === 'object' ? JSON.stringify(val) : String(val)}
+            </span>
+          </div>
+        ))}
+      </div>
+    );
   } catch {
-    return '—';
+    return <span className="text-[var(--text-secondary)]">{String(metadata)}</span>;
   }
 }
 
@@ -161,9 +221,12 @@ export default function ManageAuditLogs() {
                       {item.admin_discord_username ? `@${item.admin_discord_username}` : '—'}
                     </div>
                   </td>
-                  <td className="font-mono text-xs">{item.action}</td>
                   <td>
-                    <div className="font-medium">{item.entity_type}</div>
+                    <div className="font-semibold text-sm">{translateAction(item.action)}</div>
+                    <div className="text-[10px] font-mono text-[var(--text-muted)] opacity-60 uppercase">{item.action}</div>
+                  </td>
+                  <td>
+                    <div className="font-medium">{translateEntity(item.entity_type)}</div>
                     <div className="text-xs text-[var(--text-muted)]">{item.entity_id || '—'}</div>
                   </td>
                   <td>
@@ -174,9 +237,9 @@ export default function ManageAuditLogs() {
                   </td>
                   <td className="text-xs font-mono">{item.ip_address || '—'}</td>
                   <td className="min-w-[320px]">
-                    <pre className="text-xs text-[var(--text-secondary)] whitespace-pre-wrap break-words">
+                    <div className="bg-[var(--bg-tertiary)]/50 rounded-md p-2 m-1 border border-[var(--border)]/50">
                       {formatMetadata(item.metadata)}
-                    </pre>
+                    </div>
                   </td>
                 </tr>
               ))}

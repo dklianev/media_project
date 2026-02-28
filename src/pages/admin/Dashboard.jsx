@@ -210,39 +210,46 @@ export default function Dashboard() {
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.6, duration: 0.4 }}
-          className="mt-6 glass-card p-4"
+          className="mt-6"
         >
-          <h3 className="text-sm font-semibold text-[var(--text-muted)] uppercase tracking-[0.12em] mb-3">Експорт на данни</h3>
-          <p className="text-xs text-[var(--text-secondary)] mb-3">Изтегли CSV файлове за счетоводство и отчети.</p>
-          <div className="flex flex-wrap gap-3">
-            <button
-              disabled={exporting === 'users'}
-              onClick={async () => {
-                setExporting('users');
-                try {
-                  await downloadCsv('users', `users-${new Date().toISOString().slice(0, 10)}.csv`);
-                } catch { /* ignore */ }
-                setExporting(null);
-              }}
-              className="btn-outline inline-flex items-center gap-2 text-sm disabled:opacity-50 hover:scale-[1.02] active:scale-[0.97]"
-            >
-              {exporting === 'users' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-              Потребители (CSV)
-            </button>
-            <button
-              disabled={exporting === 'payments'}
-              onClick={async () => {
-                setExporting('payments');
-                try {
-                  await downloadCsv('payments', `payments-${new Date().toISOString().slice(0, 10)}.csv`);
-                } catch { /* ignore */ }
-                setExporting(null);
-              }}
-              className="btn-outline inline-flex items-center gap-2 text-sm disabled:opacity-50 hover:scale-[1.02] active:scale-[0.97]"
-            >
-              {exporting === 'payments' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-              Плащания (CSV)
-            </button>
+          <div className="glass-card p-5 sm:p-6 flex flex-col md:flex-row md:items-center justify-between gap-5 border-l-4 border-l-[var(--accent-cyan)]">
+            <div>
+              <h3 className="text-lg font-bold text-[var(--text-primary)] mb-1 flex items-center gap-2">
+                <Download className="w-5 h-5 text-[var(--accent-cyan)]" />
+                Експорт на данни
+              </h3>
+              <p className="text-sm text-[var(--text-secondary)]">Изтеглете таблични (CSV) файлове със списък на всички потребители или плащания.</p>
+            </div>
+            <div className="flex flex-wrap items-center gap-3 shrink-0">
+              <button
+                disabled={exporting === 'users'}
+                onClick={async () => {
+                  setExporting('users');
+                  try {
+                    await downloadCsv('users', `users-${new Date().toISOString().slice(0, 10)}.csv`);
+                  } catch { /* ignore */ }
+                  setExporting(null);
+                }}
+                className="btn-outline inline-flex items-center gap-2 text-sm disabled:opacity-50 hover:scale-[1.02] active:scale-[0.97]"
+              >
+                {exporting === 'users' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                Потребители (CSV)
+              </button>
+              <button
+                disabled={exporting === 'payments'}
+                onClick={async () => {
+                  setExporting('payments');
+                  try {
+                    await downloadCsv('payments', `payments-${new Date().toISOString().slice(0, 10)}.csv`);
+                  } catch { /* ignore */ }
+                  setExporting(null);
+                }}
+                className="btn-outline inline-flex items-center gap-2 text-sm disabled:opacity-50 hover:scale-[1.02] active:scale-[0.97]"
+              >
+                {exporting === 'payments' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                Плащания (CSV)
+              </button>
+            </div>
           </div>
         </motion.div>
       )}
