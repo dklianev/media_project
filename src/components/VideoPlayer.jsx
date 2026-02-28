@@ -1,9 +1,39 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { Play, Pause, RotateCcw, RotateCw, Volume2, VolumeX, Maximize, SkipForward, Settings } from 'lucide-react';
+import { Info, Play, Pause, RotateCcw, RotateCw, Volume2, VolumeX, Maximize, SkipForward, SkipBack, Settings } from 'lucide-react';
 
-export default function VideoPlayer({ embedUrl, youtubeVideoId, title, siteName = 'Платформа', nextEpisodeId }) {
+const CONTROL_HIDE_DELAY_MS = 2400;
+const END_AUTOPLAY_DELAY_SECONDS = 8;
+const SWIPE_VOLUME_RANGE = 120;
+const QUALITY_LABELS = {
+  auto: 'Авто',
+  tiny: '144p',
+  small: '240p',
+  medium: '360p',
+  large: '480p',
+  hd720: '720p',
+  hd1080: '1080p',
+  highres: 'Високо',
+};
+
+const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+const formatQuality = (quality) => QUALITY_LABELS[quality] || (quality ? quality : 'Авто');
+const formatEpisodeLabel = (episode) => {
+  if (!episode) return 'Няма';
+  return episode.episode_number ? `Еп. ${episode.episode_number} — ${episode.title}` : episode.title;
+};
+
+export default function VideoPlayer({
+  embedUrl,
+  youtubeVideoId,
+  title,
+  siteName = 'Платформа',
+  nextEpisode = null,
+  previousEpisode = null,
+  initialProgressSeconds = 0,
+  onProgressSample = null,
+}) {
   const navigate = useNavigate();
   const DOUBLE_TAP_DELAY_MS = 260;
   const [isPlaying, setIsPlaying] = useState(false);
@@ -15,21 +45,34 @@ export default function VideoPlayer({ embedUrl, youtubeVideoId, title, siteName 
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
   const [showSpeedMenu, setShowSpeedMenu] = useState(false);
+  const [showInfoPanel, setShowInfoPanel] = useState(false);
+  const [controlsVisible, setControlsVisible] = useState(true);
   const [animState, setAnimState] = useState(null);
   const [animKey, setAnimKey] = useState(0);
   const [hoverTime, setHoverTime] = useState(null);
   const [hoverPos, setHoverPos] = useState(null);
+  const [hasEnded, setHasEnded] = useState(false);
+  const [autoplayCountdown, setAutoplayCountdown] = useState(null);
+  const [currentQuality, setCurrentQuality] = useState('auto');
+  const [availableQualities, setAvailableQualities] = useState([]);
+  const [gestureLabel, setGestureLabel] = useState('');
+  const [playerStatus, setPlayerStatus] = useState('ready');
 
   const playerRef = useRef(null);
   const containerRef = useRef(null);
   const wrapperRef = useRef(null);
   const progressInterval = useRef(null);
   const speedMenuRef = useRef(null);
+  const infoPanelRef = useRef(null);
   const animTimeoutRef = useRef(null);
   const singleTapTimeoutRef = useRef(null);
   const lastInteractionRef = useRef(null);
+  const controlsHideTimeoutRef = useRef(null);
+  const autoplayIntervalRef = useRef(null);
+  const gestureTimeoutRef = useRef(null);
+  const touchGestureRef = useRef(null);
+  const resumeAppliedRef = useRef(false);
 
-  // Parse YouTube video ID from URL
   const getYouTubeId = (url) => {
     if (!url) return null;
     const match = url.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/i);
@@ -40,6 +83,10 @@ export default function VideoPlayer({ embedUrl, youtubeVideoId, title, siteName 
     ? youtubeVideoId.trim()
     : null;
   const videoId = normalizedYoutubeVideoId || getYouTubeId(embedUrl);
+  const nextEpisodeId = nextEpisode?.id || null;
+  const previousEpisodeId = previousEpisode?.id || null;
+  const shouldShowControls = controlsVisible || !isPlaying || hasEnded || showSpeedMenu || showInfoPanel;
+  const currentVolume = isMuted ? 0 : volume;
 
   const formatTime = (seconds) => {
     if (!seconds || isNaN(seconds)) return '0:00';
@@ -48,10 +95,150 @@ export default function VideoPlayer({ embedUrl, youtubeVideoId, title, siteName 
     return `${m}:${s.toString().padStart(2, '0')}`;
   };
 
+  const clearControlsHideTimer = () => {
+    if (controlsHideTimeoutRef.current) {
+      clearTimeout(controlsHideTimeoutRef.current);
+      controlsHideTimeoutRef.current = null;
+    }
+  };
+
+  const clearAutoplayTimer = () => {
+    if (autoplayIntervalRef.current) {
+      clearInterval(autoplayIntervalRef.current);
+      autoplayIntervalRef.current = null;
+    }
+  };
+
+  const clearGestureTimer = () => {
+    if (gestureTimeoutRef.current) {
+      clearTimeout(gestureTimeoutRef.current);
+      gestureTimeoutRef.current = null;
+    }
+  };
+
+  const focusPlayerSurface = () => {
+    if (wrapperRef.current && document.activeElement !== wrapperRef.current) {
+      wrapperRef.current.focus({ preventScroll: true });
+    }
+  };
+
+  const reportProgress = (currentTime, totalDuration) => {
+    if (typeof onProgressSample === 'function') {
+      onProgressSample(currentTime, totalDuration);
+    }
+  };
+
+  const syncPlayerDiagnostics = (player = playerRef.current) => {
+    if (!player) return;
+    if (typeof player.getPlaybackQuality === 'function') {
+      const quality = player.getPlaybackQuality();
+      if (quality) setCurrentQuality(quality);
+    }
+    if (typeof player.getAvailableQualityLevels === 'function') {
+      const qualityLevels = player.getAvailableQualityLevels();
+      if (Array.isArray(qualityLevels) && qualityLevels.length > 0) {
+        setAvailableQualities(qualityLevels);
+      }
+    }
+  };
+
+  const scheduleControlsHide = () => {
+    clearControlsHideTimer();
+    if (!isPlaying || hasEnded || showSpeedMenu || showInfoPanel) return;
+    controlsHideTimeoutRef.current = setTimeout(() => {
+      setControlsVisible(false);
+    }, CONTROL_HIDE_DELAY_MS);
+  };
+
+  const revealControls = (persist = false) => {
+    setControlsVisible(true);
+    if (persist) {
+      clearControlsHideTimer();
+      return;
+    }
+    scheduleControlsHide();
+  };
+
+  const showGestureHint = (label) => {
+    setGestureLabel(label);
+    clearGestureTimer();
+    gestureTimeoutRef.current = setTimeout(() => {
+      setGestureLabel('');
+    }, 900);
+  };
+
+  const maybeApplyResume = useCallback((player, detectedDuration = 0) => {
+    if (!player || resumeAppliedRef.current) return false;
+
+    const requestedResume = Math.max(0, Number(initialProgressSeconds) || 0);
+    const resolvedDuration = Math.max(
+      0,
+      Number(
+        detectedDuration ||
+        (typeof player.getDuration === 'function' ? player.getDuration() : 0) ||
+        0
+      )
+    );
+
+    if (requestedResume <= 5) {
+      if (resolvedDuration > 0) resumeAppliedRef.current = true;
+      return false;
+    }
+
+    if (resolvedDuration <= 0) {
+      return false;
+    }
+
+    const safeResumePoint = clamp(requestedResume, 0, Math.max(0, resolvedDuration - 3));
+
+    if (safeResumePoint <= 5 || safeResumePoint >= resolvedDuration - 3) {
+      resumeAppliedRef.current = true;
+      return false;
+    }
+
+    player.seekTo(safeResumePoint, true);
+    setProgress(safeResumePoint);
+    reportProgress(safeResumePoint, resolvedDuration);
+    resumeAppliedRef.current = true;
+    return true;
+  }, [initialProgressSeconds]);
+
+  const applyVolume = (nextVolume, { muteAtZero = true } = {}) => {
+    const normalized = clamp(Number(nextVolume) || 0, 0, 100);
+    setVolume(normalized);
+    if (!playerRef.current || !playerReady) return;
+
+    playerRef.current.setVolume(normalized);
+    if (normalized === 0 && muteAtZero) {
+      playerRef.current.mute();
+      setIsMuted(true);
+    } else {
+      playerRef.current.unMute();
+      setIsMuted(false);
+    }
+  };
+
+  const navigateToEpisode = (episode, event) => {
+    if (event) event.stopPropagation();
+    if (!episode?.id) return;
+    clearAutoplayTimer();
+    setAutoplayCountdown(null);
+    navigate(`/episodes/${episode.id}`);
+  };
+
   useEffect(() => {
+    resumeAppliedRef.current = false;
+    setControlsVisible(true);
+    setHasEnded(false);
+    setAutoplayCountdown(null);
+    setShowSpeedMenu(false);
+    setShowInfoPanel(false);
+    setCurrentQuality('auto');
+    setAvailableQualities([]);
+    setPlayerStatus('ready');
+
     if (!videoId) return;
 
-    // Load YouTube IFrame API if not already loaded
     if (!window.YT) {
       const tag = document.createElement('script');
       tag.src = 'https://www.youtube.com/iframe_api';
@@ -62,7 +249,6 @@ export default function VideoPlayer({ embedUrl, youtubeVideoId, title, siteName 
     const initPlayer = () => {
       if (!containerRef.current) return;
 
-      // Cleanup previous player if exists
       if (playerRef.current) {
         playerRef.current.destroy();
       }
@@ -70,35 +256,85 @@ export default function VideoPlayer({ embedUrl, youtubeVideoId, title, siteName 
       playerRef.current = new window.YT.Player(containerRef.current, {
         videoId: videoId,
         playerVars: {
-          controls: 0, // Hide original controls
-          disablekb: 1, // Disable keyboard controls
-          fs: 0, // Disable fullscreen button
-          rel: 0, // Hide related videos
-          modestbranding: 1, // Hide YouTube logo
+          controls: 0,
+          disablekb: 1,
+          fs: 0,
+          rel: 0,
+          modestbranding: 1,
           playsinline: 1,
-          iv_load_policy: 3, // Hide annotations
+          iv_load_policy: 3,
           showinfo: 0
         },
         events: {
           onReady: (event) => {
-            setDuration(event.target.getDuration());
+            const detectedDuration = event.target.getDuration();
+            setDuration(detectedDuration);
             setPlayerReady(true);
             setIsMuted(event.target.isMuted());
             setVolume(event.target.getVolume() || 100);
+            syncPlayerDiagnostics(event.target);
+
+            const resumed = maybeApplyResume(event.target, detectedDuration);
+            if (!resumed) {
+              const currentTime = event.target.getCurrentTime() || 0;
+              setProgress(currentTime);
+              reportProgress(currentTime, detectedDuration);
+            }
           },
           onStateChange: (event) => {
+            clearInterval(progressInterval.current);
+            const totalDuration = event.target.getDuration?.() || duration;
+
+            if (
+              !resumeAppliedRef.current &&
+              event.data !== window.YT.PlayerState.ENDED
+            ) {
+              maybeApplyResume(event.target, totalDuration);
+            }
+
             if (event.data === window.YT.PlayerState.PLAYING) {
               setIsPlaying(true);
-              setDuration(event.target.getDuration());
-
-              // Start progress polling
+              setHasEnded(false);
+              setPlayerStatus('playing');
+              setDuration(totalDuration);
               progressInterval.current = setInterval(() => {
-                setProgress(event.target.getCurrentTime());
+                const currentTime = event.target.getCurrentTime();
+                const totalDuration = event.target.getDuration();
+                setProgress(currentTime);
+                setDuration(totalDuration);
+                reportProgress(currentTime, totalDuration);
+                syncPlayerDiagnostics(event.target);
               }, 500);
+              revealControls();
+            } else if (event.data === window.YT.PlayerState.PAUSED) {
+              const currentTime = event.target.getCurrentTime?.() || 0;
+              setIsPlaying(false);
+              setProgress(currentTime);
+              reportProgress(currentTime, totalDuration);
+              setPlayerStatus('paused');
+              revealControls(true);
+            } else if (event.data === window.YT.PlayerState.ENDED) {
+              const finalDuration = totalDuration;
+              setIsPlaying(false);
+              setHasEnded(true);
+              setProgress(finalDuration);
+              reportProgress(finalDuration, finalDuration);
+              setPlayerStatus('ended');
+              revealControls(true);
+            } else if (event.data === window.YT.PlayerState.BUFFERING) {
+              setIsPlaying(false);
+              setPlayerStatus('buffering');
+              revealControls(true);
             } else {
               setIsPlaying(false);
-              clearInterval(progressInterval.current);
+              setPlayerStatus('ready');
             }
+          },
+          onPlaybackQualityChange: (event) => {
+            setCurrentQuality(event.data || 'auto');
+          },
+          onPlaybackRateChange: (event) => {
+            setPlaybackSpeed(Number(event.data) || 1);
           }
         }
       });
@@ -116,7 +352,7 @@ export default function VideoPlayer({ embedUrl, youtubeVideoId, title, siteName 
         playerRef.current.destroy();
       }
     };
-  }, [videoId]);
+  }, [initialProgressSeconds, maybeApplyResume, videoId]);
 
   useEffect(() => {
     const handleFullscreenChange = () => {
@@ -131,6 +367,9 @@ export default function VideoPlayer({ embedUrl, youtubeVideoId, title, siteName 
       if (speedMenuRef.current && !speedMenuRef.current.contains(event.target)) {
         setShowSpeedMenu(false);
       }
+      if (infoPanelRef.current && !infoPanelRef.current.contains(event.target)) {
+        setShowInfoPanel(false);
+      }
     }
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
@@ -139,7 +378,48 @@ export default function VideoPlayer({ embedUrl, youtubeVideoId, title, siteName 
   useEffect(() => () => {
     if (animTimeoutRef.current) clearTimeout(animTimeoutRef.current);
     if (singleTapTimeoutRef.current) clearTimeout(singleTapTimeoutRef.current);
+    clearControlsHideTimer();
+    clearAutoplayTimer();
+    clearGestureTimer();
   }, []);
+
+  useEffect(() => {
+    clearControlsHideTimer();
+    if (!isPlaying || hasEnded || showSpeedMenu || showInfoPanel) {
+      setControlsVisible(true);
+      return undefined;
+    }
+
+    controlsHideTimeoutRef.current = setTimeout(() => {
+      setControlsVisible(false);
+    }, CONTROL_HIDE_DELAY_MS);
+
+    return () => clearControlsHideTimer();
+  }, [hasEnded, isPlaying, showInfoPanel, showSpeedMenu]);
+
+  useEffect(() => {
+    clearAutoplayTimer();
+
+    if (!hasEnded || !nextEpisodeId) {
+      setAutoplayCountdown(null);
+      return undefined;
+    }
+
+    setAutoplayCountdown(END_AUTOPLAY_DELAY_SECONDS);
+    autoplayIntervalRef.current = setInterval(() => {
+      setAutoplayCountdown((current) => {
+        if (current == null) return null;
+        if (current <= 1) {
+          clearAutoplayTimer();
+          navigateToEpisode(nextEpisode);
+          return 0;
+        }
+        return current - 1;
+      });
+    }, 1000);
+
+    return () => clearAutoplayTimer();
+  }, [hasEnded, nextEpisode, nextEpisodeId]);
 
   const triggerAnimation = (type) => {
     setAnimState(type);
@@ -157,10 +437,19 @@ export default function VideoPlayer({ embedUrl, youtubeVideoId, title, siteName 
     if (isPlaying) {
       playerRef.current.pauseVideo();
       triggerAnimation('pause');
+      setPlayerStatus('paused');
     } else {
+      if (hasEnded) {
+        playerRef.current.seekTo(0, true);
+        setProgress(0);
+        reportProgress(0, duration);
+        setHasEnded(false);
+      }
       playerRef.current.playVideo();
       triggerAnimation('play');
+      setPlayerStatus('playing');
     }
+    revealControls();
   };
 
   const handleRewind = (e) => {
@@ -170,7 +459,9 @@ export default function VideoPlayer({ embedUrl, youtubeVideoId, title, siteName 
     const newTime = Math.max(0, current - 10);
     playerRef.current.seekTo(newTime, true);
     setProgress(newTime);
+    reportProgress(newTime, duration);
     triggerAnimation('rewind');
+    revealControls();
   };
 
   const handleSkipForward = (e) => {
@@ -180,39 +471,32 @@ export default function VideoPlayer({ embedUrl, youtubeVideoId, title, siteName 
     const newTime = Math.min(duration, current + 10);
     playerRef.current.seekTo(newTime, true);
     setProgress(newTime);
+    reportProgress(newTime, duration);
     triggerAnimation('forward');
+    revealControls();
   };
 
   const toggleMute = (e) => {
     if (e) e.stopPropagation();
     if (!playerRef.current || !playerReady) return;
-    if (isMuted) {
+
+    if (isMuted || volume === 0) {
+      const restoredVolume = volume > 0 ? volume : 100;
       playerRef.current.unMute();
+      playerRef.current.setVolume(restoredVolume);
       setIsMuted(false);
-      if (volume === 0) {
-        setVolume(100);
-        playerRef.current.setVolume(100);
-      }
+      setVolume(restoredVolume);
     } else {
       playerRef.current.mute();
       setIsMuted(true);
     }
+    revealControls();
   };
 
   const handleVolumeChange = (e) => {
     e.stopPropagation();
-    const newVolume = parseInt(e.target.value, 10);
-    setVolume(newVolume);
-    if (!playerRef.current || !playerReady) return;
-
-    playerRef.current.setVolume(newVolume);
-    if (newVolume === 0) {
-      playerRef.current.mute();
-      setIsMuted(true);
-    } else if (isMuted) {
-      playerRef.current.unMute();
-      setIsMuted(false);
-    }
+    applyVolume(parseInt(e.target.value, 10));
+    revealControls();
   };
 
   const changePlaybackSpeed = (speed, e) => {
@@ -222,6 +506,20 @@ export default function VideoPlayer({ embedUrl, youtubeVideoId, title, siteName 
       playerRef.current.setPlaybackRate(speed);
     }
     setShowSpeedMenu(false);
+    revealControls(true);
+  };
+
+  const replayEpisode = (e) => {
+    if (e) e.stopPropagation();
+    clearAutoplayTimer();
+    setAutoplayCountdown(null);
+    setHasEnded(false);
+    if (!playerRef.current || !playerReady) return;
+    playerRef.current.seekTo(0, true);
+    setProgress(0);
+    reportProgress(0, duration);
+    playerRef.current.playVideo();
+    revealControls();
   };
 
   const toggleFullscreen = async (e) => {
@@ -232,13 +530,12 @@ export default function VideoPlayer({ embedUrl, youtubeVideoId, title, siteName 
       try {
         await wrapperRef.current.requestFullscreen();
       } catch (err) {
-        console.error("Error attempting to enable fullscreen:", err);
+        console.error('Error attempting to enable fullscreen:', err);
       }
-    } else {
-      if (document.exitFullscreen) {
-        document.exitFullscreen();
-      }
+    } else if (document.exitFullscreen) {
+      document.exitFullscreen();
     }
+    revealControls(true);
   };
 
   const handleSeek = (e) => {
@@ -252,6 +549,8 @@ export default function VideoPlayer({ embedUrl, youtubeVideoId, title, siteName 
 
     playerRef.current.seekTo(newTime, true);
     setProgress(newTime);
+    reportProgress(newTime, duration);
+    revealControls();
   };
 
   const handleProgressMouseMove = (e) => {
@@ -278,11 +577,73 @@ export default function VideoPlayer({ embedUrl, youtubeVideoId, title, siteName 
     }
   };
 
+  const handleOverlayPointerDown = (e) => {
+    focusPlayerSurface();
+    revealControls();
+
+    if (e.pointerType !== 'touch' || !e.isPrimary) return;
+
+    touchGestureRef.current = {
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      startY: e.clientY,
+      startVolume: currentVolume,
+      mode: null,
+      consumed: false,
+    };
+  };
+
+  const handleOverlayPointerMove = (e) => {
+    if (e.pointerType !== 'touch' || !e.isPrimary || !touchGestureRef.current) return;
+
+    const gesture = touchGestureRef.current;
+    if (gesture.pointerId !== e.pointerId) return;
+
+    const rect = e.currentTarget.getBoundingClientRect();
+    const deltaX = e.clientX - gesture.startX;
+    const deltaY = e.clientY - gesture.startY;
+
+    if (!gesture.mode) {
+      const isVolumeSwipe =
+        gesture.startX >= rect.width * 0.55 &&
+        Math.abs(deltaY) > 18 &&
+        Math.abs(deltaY) > Math.abs(deltaX) + 8;
+
+      if (!isVolumeSwipe) return;
+      gesture.mode = 'volume';
+    }
+
+    if (gesture.mode === 'volume') {
+      e.preventDefault();
+      gesture.consumed = true;
+      const volumeDelta = ((gesture.startY - e.clientY) / rect.height) * SWIPE_VOLUME_RANGE;
+      const nextVolume = clamp(Math.round(gesture.startVolume + volumeDelta), 0, 100);
+      applyVolume(nextVolume);
+      showGestureHint(`Звук ${nextVolume}%`);
+      revealControls(true);
+    }
+  };
+
+  const handleOverlayPointerCancel = () => {
+    touchGestureRef.current = null;
+  };
+
   const handleOverlayPointerUp = (e) => {
     if ((e.pointerType === 'mouse' && e.button !== 0) || !e.isPrimary) return;
 
+    focusPlayerSurface();
+
+    const touchGesture = touchGestureRef.current;
+    if (touchGesture && touchGesture.pointerId === e.pointerId) {
+      touchGestureRef.current = null;
+      if (touchGesture.consumed) {
+        return;
+      }
+    }
+
     e.preventDefault();
     e.stopPropagation();
+    revealControls();
 
     const rect = e.currentTarget.getBoundingClientRect();
     const x = e.clientX - rect.left;
@@ -312,9 +673,85 @@ export default function VideoPlayer({ embedUrl, youtubeVideoId, title, siteName 
 
     singleTapTimeoutRef.current = setTimeout(() => {
       lastInteractionRef.current = null;
+      if (e.pointerType === 'touch' && isPlaying && !controlsVisible) {
+        revealControls(true);
+        return;
+      }
       togglePlay();
     }, DOUBLE_TAP_DELAY_MS);
   };
+
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      const wrapper = wrapperRef.current;
+      const activeElement = document.activeElement;
+      const isEditable =
+        activeElement?.isContentEditable ||
+        ['INPUT', 'TEXTAREA', 'SELECT'].includes(activeElement?.tagName);
+      const playerHasFocus = wrapper && (activeElement === wrapper || wrapper.contains(activeElement));
+
+      if (!playerReady || isEditable || (!playerHasFocus && !isFullscreen)) return;
+      if (event.altKey || event.ctrlKey || event.metaKey) return;
+
+      const key = event.key.toLowerCase();
+      const handledKeys = [' ', 'arrowleft', 'arrowright', 'arrowup', 'arrowdown', 'k', 'j', 'l', 'm', 'f', 'n', 'p'];
+      if (handledKeys.includes(key)) event.preventDefault();
+
+      switch (key) {
+        case ' ':
+        case 'k':
+          togglePlay();
+          break;
+        case 'j':
+          handleRewind();
+          break;
+        case 'l':
+          handleSkipForward();
+          break;
+        case 'arrowleft': {
+          const newTime = Math.max(0, playerRef.current.getCurrentTime() - 5);
+          playerRef.current.seekTo(newTime, true);
+          setProgress(newTime);
+          reportProgress(newTime, duration);
+          revealControls();
+          break;
+        }
+        case 'arrowright': {
+          const newTime = Math.min(duration, playerRef.current.getCurrentTime() + 5);
+          playerRef.current.seekTo(newTime, true);
+          setProgress(newTime);
+          reportProgress(newTime, duration);
+          revealControls();
+          break;
+        }
+        case 'arrowup':
+          applyVolume(currentVolume + 5, { muteAtZero: false });
+          revealControls();
+          break;
+        case 'arrowdown':
+          applyVolume(currentVolume - 5);
+          revealControls();
+          break;
+        case 'm':
+          toggleMute();
+          break;
+        case 'f':
+          toggleFullscreen();
+          break;
+        case 'n':
+          navigateToEpisode(nextEpisode);
+          break;
+        case 'p':
+          navigateToEpisode(previousEpisode);
+          break;
+        default:
+          break;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [currentVolume, duration, isFullscreen, nextEpisode, playerReady, previousEpisode]);
 
   const handleContextMenu = useCallback((event) => {
     event.preventDefault();
@@ -322,20 +759,18 @@ export default function VideoPlayer({ embedUrl, youtubeVideoId, title, siteName 
 
   if (!embedUrl && !videoId) return null;
 
-  // Fallback for non-YouTube videos (or if no embedUrl but fallback is somehow requested)
-  // If we have an embedUrl but it's not a YouTube video (videoId is missing), we use the normal iframe
   if (!videoId && embedUrl) {
     return (
       <motion.div
         initial={{ opacity: 0, scale: 0.98 }}
         animate={{ opacity: 1, scale: 1 }}
         transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-        className="relative w-full overflow-hidden rounded-2xl border border-[var(--border)] bg-black shadow-premium-md hover:border-[var(--accent-gold)]/25 transition-[border-color] duration-500"
+        className="relative w-full overflow-hidden rounded-2xl border border-[var(--border)] bg-black shadow-premium-md transition-[border-color] duration-500 hover:border-[var(--accent-gold)]/25"
         style={{ paddingBottom: '56.25%' }}
         onContextMenu={handleContextMenu}
       >
         <iframe
-          className="absolute inset-0 w-full h-full"
+          className="absolute inset-0 h-full w-full"
           src={embedUrl}
           title={title || 'Видео'}
           frameBorder="0"
@@ -344,7 +779,7 @@ export default function VideoPlayer({ embedUrl, youtubeVideoId, title, siteName 
           allowFullScreen
           referrerPolicy="strict-origin-when-cross-origin"
         />
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 p-3 bg-gradient-to-t from-black/65 to-transparent flex justify-end">
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex justify-end bg-gradient-to-t from-black/65 to-transparent p-3">
           <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-white/50">{siteName}</p>
         </div>
       </motion.div>
@@ -354,23 +789,32 @@ export default function VideoPlayer({ embedUrl, youtubeVideoId, title, siteName 
   return (
     <motion.div
       ref={wrapperRef}
+      tabIndex={0}
       initial={{ opacity: 0, scale: 0.98 }}
       animate={{ opacity: 1, scale: 1 }}
       transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-      className={`group relative w-full overflow-hidden bg-black shadow-premium-md ${isFullscreen ? 'h-screen rounded-none border-none' : 'rounded-2xl border border-[var(--border)]'
-        }`}
+      className={`relative w-full overflow-hidden bg-black shadow-premium-md focus:outline-none ${isFullscreen ? 'h-screen rounded-none border-none' : 'rounded-2xl border border-[var(--border)]'}`}
       style={!isFullscreen ? { paddingBottom: '56.25%' } : {}}
       onContextMenu={handleContextMenu}
+      onPointerMove={(event) => {
+        if (event.pointerType === 'mouse') revealControls();
+      }}
+      onMouseLeave={() => {
+        if (isPlaying && !hasEnded && !showSpeedMenu && !showInfoPanel) {
+          setControlsVisible(false);
+        }
+      }}
     >
-      {/* YouTube Player Container */}
-      <div className="absolute inset-0 pointer-events-none">
-        <div ref={containerRef} className="w-full h-full" />
+      <div className="pointer-events-none absolute inset-0">
+        <div ref={containerRef} className="h-full w-full" />
       </div>
 
-      {/* Invisible Overlay to block iframe clicks and prevent visiting YouTube */}
       <div
-        className="absolute inset-0 z-10 cursor-pointer touch-manipulation flex items-center justify-center overflow-hidden"
+        className="absolute inset-0 z-10 flex cursor-pointer touch-manipulation items-center justify-center overflow-hidden"
+        onPointerDown={handleOverlayPointerDown}
+        onPointerMove={handleOverlayPointerMove}
         onPointerUp={handleOverlayPointerUp}
+        onPointerCancel={handleOverlayPointerCancel}
       >
         <AnimatePresence>
           {animState === 'play' && (
@@ -380,9 +824,9 @@ export default function VideoPlayer({ embedUrl, youtubeVideoId, title, siteName 
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 1.5 }}
               transition={{ duration: 0.4 }}
-              className="bg-black/40 rounded-full p-5 backdrop-blur-md"
+              className="rounded-full bg-black/40 p-5 backdrop-blur-md"
             >
-              <Play className="w-12 h-12 sm:w-16 sm:h-16 text-white fill-current ml-1 sm:ml-2" />
+              <Play className="ml-1 h-12 w-12 fill-current text-white sm:ml-2 sm:h-16 sm:w-16" />
             </motion.div>
           )}
           {animState === 'pause' && (
@@ -392,9 +836,9 @@ export default function VideoPlayer({ embedUrl, youtubeVideoId, title, siteName 
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 1.5 }}
               transition={{ duration: 0.4 }}
-              className="bg-black/40 rounded-full p-5 backdrop-blur-md"
+              className="rounded-full bg-black/40 p-5 backdrop-blur-md"
             >
-              <Pause className="w-12 h-12 sm:w-16 sm:h-16 text-white fill-current" />
+              <Pause className="h-12 w-12 fill-current text-white sm:h-16 sm:w-16" />
             </motion.div>
           )}
           {animState === 'rewind' && (
@@ -404,10 +848,10 @@ export default function VideoPlayer({ embedUrl, youtubeVideoId, title, siteName 
               animate={{ opacity: 1, x: 0, scale: 1 }}
               exit={{ opacity: 0, scale: 1.5 }}
               transition={{ duration: 0.4 }}
-              className="bg-black/40 rounded-full p-5 backdrop-blur-md flex flex-col items-center justify-center mr-24 sm:mr-48"
+              className="mr-24 flex flex-col items-center justify-center rounded-full bg-black/40 p-5 backdrop-blur-md sm:mr-48"
             >
-              <RotateCcw className="w-10 h-10 sm:w-14 sm:h-14 text-white mb-1" />
-              <span className="text-white font-bold text-xs sm:text-sm">10s</span>
+              <RotateCcw className="mb-1 h-10 w-10 text-white sm:h-14 sm:w-14" />
+              <span className="text-xs font-bold text-white sm:text-sm">10s</span>
             </motion.div>
           )}
           {animState === 'forward' && (
@@ -417,82 +861,118 @@ export default function VideoPlayer({ embedUrl, youtubeVideoId, title, siteName 
               animate={{ opacity: 1, x: 0, scale: 1 }}
               exit={{ opacity: 0, scale: 1.5 }}
               transition={{ duration: 0.4 }}
-              className="bg-black/40 rounded-full p-5 backdrop-blur-md flex flex-col items-center justify-center ml-24 sm:ml-48"
+              className="ml-24 flex flex-col items-center justify-center rounded-full bg-black/40 p-5 backdrop-blur-md sm:ml-48"
             >
-              <RotateCw className="w-10 h-10 sm:w-14 sm:h-14 text-white mb-1" />
-              <span className="text-white font-bold text-xs sm:text-sm">10s</span>
+              <RotateCw className="mb-1 h-10 w-10 text-white sm:h-14 sm:w-14" />
+              <span className="text-xs font-bold text-white sm:text-sm">10s</span>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        <AnimatePresence>
+          {gestureLabel && (
+            <motion.div
+              key={gestureLabel}
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              className="absolute right-4 top-4 rounded-full border border-white/10 bg-black/65 px-3 py-2 text-xs font-semibold tracking-wide text-white shadow-xl backdrop-blur-md"
+            >
+              {gestureLabel}
             </motion.div>
           )}
         </AnimatePresence>
       </div>
 
-      {/* Custom Controls Overlay */}
-      <div
-        className={`absolute bottom-0 inset-x-0 z-20 bg-gradient-to-t from-black/90 pt-16 pb-3 px-4 transition-opacity duration-300 ${isPlaying ? 'opacity-0 group-hover:opacity-100' : 'opacity-100'
-          }`}
-      >
-        {/* Progress Container (Larger Hit Area) */}
+      <AnimatePresence>
+        {hasEnded && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="absolute inset-0 z-20 flex items-center justify-center bg-black/55 px-4 backdrop-blur-sm"
+          >
+            <div className="w-full max-w-lg rounded-3xl border border-white/10 bg-black/75 p-5 shadow-2xl">
+              <p className="mb-2 text-xs font-bold uppercase tracking-[0.2em] text-white/50">{siteName}</p>
+              <h3 className="text-2xl font-semibold text-white">Епизодът приключи</h3>
+              <p className="mt-2 text-sm text-white/70">
+                {nextEpisode ? `Следващ е ${formatEpisodeLabel(nextEpisode)}.` : 'Можеш да го пуснеш отново или да продължиш към друг епизод.'}
+              </p>
+              {nextEpisode && autoplayCountdown != null && (
+                <div className="mt-4 rounded-2xl border border-[var(--accent-gold)]/20 bg-[var(--accent-gold)]/10 px-4 py-3 text-sm text-white/85">
+                  Автоматично преминаване след <span className="font-semibold text-[var(--accent-gold-light)]">{autoplayCountdown}s</span>
+                </div>
+              )}
+              <div className="mt-5 flex flex-wrap gap-3">
+                <button onClick={replayEpisode} className="btn-gold inline-flex items-center gap-2">
+                  <RotateCcw className="h-4 w-4" />
+                  Пусни отначало
+                </button>
+                {previousEpisode && (
+                  <button onClick={(event) => navigateToEpisode(previousEpisode, event)} className="btn-outline inline-flex items-center gap-2">
+                    <SkipBack className="h-4 w-4" />
+                    Предишен
+                  </button>
+                )}
+                {nextEpisode && (
+                  <button onClick={(event) => navigateToEpisode(nextEpisode, event)} className="btn-outline inline-flex items-center gap-2">
+                    <SkipForward className="h-4 w-4" />
+                    Следващ
+                  </button>
+                )}
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <div className={`absolute bottom-0 inset-x-0 z-30 bg-gradient-to-t from-black/90 px-4 pb-3 pt-16 transition-opacity duration-300 ${shouldShowControls ? 'opacity-100' : 'pointer-events-none opacity-0'}`}>
         <div
-          className="w-full flex items-center cursor-pointer group/progress py-2 mb-1"
+          className="group/progress mb-1 flex w-full cursor-pointer items-center py-2"
           onClick={handleSeek}
           onMouseMove={handleProgressMouseMove}
           onMouseLeave={handleProgressMouseLeave}
         >
-          {/* Visible Progress Bar */}
-          <div className="relative w-full h-[3px] group-hover/progress:h-[6px] bg-white/20 rounded-full transition-all duration-200">
-            {/* Hover Tooltip */}
+          <div className="relative h-[3px] w-full rounded-full bg-white/20 transition-all duration-200 group-hover/progress:h-[6px]">
             {hoverTime !== null && hoverPos !== null && (
               <div
-                className="absolute -top-10 -translate-x-1/2 bg-black/80 backdrop-blur-sm text-white text-[11px] font-semibold px-2 py-1 rounded pointer-events-none z-30 shadow-md border border-white/5 whitespace-nowrap"
+                className="pointer-events-none absolute -top-10 z-30 -translate-x-1/2 whitespace-nowrap rounded border border-white/5 bg-black/80 px-2 py-1 text-[11px] font-semibold text-white shadow-md backdrop-blur-sm"
                 style={{ left: `${hoverPos}%` }}
               >
                 {formatTime(hoverTime)}
               </div>
             )}
-            {/* Fill */}
             <div
-              className="absolute top-0 left-0 h-full bg-[var(--accent-gold)] rounded-full transition-all duration-100 ease-linear"
+              className="absolute left-0 top-0 h-full rounded-full bg-[var(--accent-gold)] transition-all duration-100 ease-linear"
               style={{ width: `${duration > 0 ? (progress / duration) * 100 : 0}%` }}
             />
-            {/* Thumb */}
             <div
-              className="absolute top-1/2 -mt-1.5 w-3 h-3 bg-[var(--accent-gold)] rounded-full shadow-sm scale-0 group-hover/progress:scale-100 transition-transform"
+              className="absolute top-1/2 -mt-1.5 h-3 w-3 scale-0 rounded-full bg-[var(--accent-gold)] shadow-sm transition-transform group-hover/progress:scale-100"
               style={{ left: `calc(${duration > 0 ? (progress / duration) * 100 : 0}% - 6px)` }}
             />
           </div>
         </div>
 
-        {/* Buttons and Info */}
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-white/90 sm:flex-nowrap sm:gap-4">
-          {/* Play/Pause */}
-          <button
-            onClick={togglePlay}
-            className="hover:text-white transition-colors focus:outline-none flex-shrink-0"
-            aria-label={isPlaying ? "Пауза" : "Възпроизвеждане"}
-          >
-            {isPlaying ? (
-              <Pause className="w-6 h-6 fill-current" />
-            ) : (
-              <Play className="w-6 h-6 fill-current ml-0.5" />
-            )}
+          <button onClick={togglePlay} className="flex-shrink-0 transition-colors hover:text-white focus:outline-none" aria-label={isPlaying ? 'Пауза' : 'Възпроизвеждане'}>
+            {isPlaying ? <Pause className="h-6 w-6 fill-current" /> : <Play className="ml-0.5 h-6 w-6 fill-current" />}
           </button>
-
-          {/* Skip Controls */}
           <div className="flex items-center gap-2 sm:gap-3">
-            <button
-              onClick={handleRewind}
-              className="hover:text-white transition-colors focus:outline-none flex items-center gap-1 opacity-70 hover:opacity-100"
-              aria-label="Върни 10 секунди"
-            >
-              <RotateCcw className="w-4 h-4" />
+            {previousEpisode && (
+              <button
+                onClick={(event) => navigateToEpisode(previousEpisode, event)}
+                className="flex items-center gap-1 opacity-75 transition-colors hover:text-white hover:opacity-100 focus:outline-none"
+                aria-label="Предишен епизод"
+              >
+                <SkipBack className="h-5 w-5 fill-current" />
+              </button>
+            )}
+            <button onClick={handleRewind} className="flex items-center gap-1 opacity-70 transition-colors hover:text-white hover:opacity-100 focus:outline-none" aria-label="Върни 10 секунди">
+              <RotateCcw className="h-4 w-4" />
               <span className="hidden text-[11px] font-semibold tracking-wide sm:inline">10s</span>
             </button>
-            <button
-              onClick={handleSkipForward}
-              className="hover:text-white transition-colors focus:outline-none flex items-center gap-1 opacity-70 hover:opacity-100"
-              aria-label="Напред 10 секунди"
-            >
-              <RotateCw className="w-4 h-4" />
+            <button onClick={handleSkipForward} className="flex items-center gap-1 opacity-70 transition-colors hover:text-white hover:opacity-100 focus:outline-none" aria-label="Напред 10 секунди">
+              <RotateCw className="h-4 w-4" />
               <span className="hidden text-[11px] font-semibold tracking-wide sm:inline">10s</span>
             </button>
             {nextEpisodeId && (
@@ -501,74 +981,123 @@ export default function VideoPlayer({ embedUrl, youtubeVideoId, title, siteName 
                   e.stopPropagation();
                   navigate(`/episodes/${nextEpisodeId}`);
                 }}
-                className="hover:text-white transition-colors focus:outline-none flex items-center gap-1 opacity-70 hover:opacity-100 ml-1 sm:ml-2"
+                className="ml-1 flex items-center gap-1 opacity-70 transition-colors hover:text-white hover:opacity-100 focus:outline-none sm:ml-2"
                 aria-label="Следващ епизод"
               >
-                <SkipForward className="w-5 h-5 fill-current" />
+                <SkipForward className="h-5 w-5 fill-current" />
               </button>
             )}
           </div>
-
-          {/* Volume Control */}
           <div className="group/volume relative ml-1 flex items-center gap-2">
-            <button
-              onClick={toggleMute}
-              className="hover:text-white transition-colors focus:outline-none opacity-80 hover:opacity-100"
-              aria-label={isMuted ? "Включи звук" : "Изключи звук"}
-            >
-              {isMuted || volume === 0 ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
+            <button onClick={toggleMute} className="opacity-80 transition-colors hover:text-white hover:opacity-100 focus:outline-none" aria-label={isMuted ? 'Включи звук' : 'Изключи звук'}>
+              {isMuted || volume === 0 ? <VolumeX className="h-5 w-5" /> : <Volume2 className="h-5 w-5" />}
             </button>
-
-            <div
-              className="flex w-16 items-center rounded-full bg-black/30 px-2 py-1.5 backdrop-blur-sm transition-colors duration-200 group-hover/volume:bg-black/45 sm:w-20"
-            >
+            <div className="flex w-16 items-center rounded-full bg-black/30 px-2 py-1.5 backdrop-blur-sm transition-colors duration-200 group-hover/volume:bg-black/45 sm:w-20">
               <input
                 type="range"
                 min="0"
                 max="100"
-                value={isMuted ? 0 : volume}
+                value={currentVolume}
                 onInput={handleVolumeChange}
                 onChange={handleVolumeChange}
-                className="w-full h-1 p-0 m-0 bg-white/30 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-2.5 [&::-webkit-slider-thumb]:h-2.5 [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:-mt-[3px] [&::-webkit-slider-runnable-track]:h-1 [&::-webkit-slider-runnable-track]:rounded-full [&::-moz-range-thumb]:w-2.5 [&::-moz-range-thumb]:h-2.5 [&::-moz-range-thumb]:bg-white [&::-moz-range-thumb]:border-none [&::-moz-range-thumb]:rounded-full accent-white"
+                className="m-0 h-1 w-full cursor-pointer appearance-none rounded-full bg-white/30 p-0 accent-white [&::-moz-range-thumb]:h-2.5 [&::-moz-range-thumb]:w-2.5 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-none [&::-moz-range-thumb]:bg-white [&::-webkit-slider-runnable-track]:h-1 [&::-webkit-slider-runnable-track]:rounded-full [&::-webkit-slider-thumb]:-mt-[3px] [&::-webkit-slider-thumb]:h-2.5 [&::-webkit-slider-thumb]:w-2.5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white"
                 style={{
-                  background: `linear-gradient(to right, white ${isMuted ? 0 : volume}%, rgba(255,255,255,0.3) ${isMuted ? 0 : volume}%)`
+                  background: `linear-gradient(to right, white ${currentVolume}%, rgba(255,255,255,0.3) ${currentVolume}%)`
                 }}
               />
             </div>
           </div>
-
-          {/* Time */}
           <div className="order-last basis-full text-[12px] font-medium tracking-wide opacity-80 sm:order-none sm:basis-auto sm:ml-1 sm:text-[13px]">
-            {formatTime(progress)} <span className="opacity-50 mx-0.5">/</span> {formatTime(duration)}
+            {formatTime(progress)} <span className="mx-0.5 opacity-50">/</span> {formatTime(duration)}
+            {initialProgressSeconds > 5 && duration > 0 && progress < duration - 5 && (
+              <span className="ml-3 hidden rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] uppercase tracking-[0.16em] text-white/55 sm:inline-block">
+                Resume {formatTime(initialProgressSeconds)}
+              </span>
+            )}
           </div>
-
           <div className="hidden flex-1 sm:block" />
-
-          {/* Right Side Controls */}
-          <div className="ml-auto flex items-center gap-3 sm:gap-4 relative">
-            <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-white/50 select-none hidden sm:block">
-              {siteName}
-            </div>
-
-            <div className="relative" ref={speedMenuRef}>
+          <div className="ml-auto flex items-center gap-3 sm:gap-4">
+            <div className="hidden select-none text-[11px] font-bold uppercase tracking-[0.2em] text-white/50 sm:block">{siteName}</div>
+            <div className="relative" ref={infoPanelRef}>
               <button
-                onClick={() => setShowSpeedMenu(!showSpeedMenu)}
-                className={`hover:text-white transition-colors focus:outline-none flex items-center gap-1 ${showSpeedMenu ? 'opacity-100 text-white' : 'opacity-80 hover:opacity-100'}`}
-                aria-label="Скорост на възпроизвеждане"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setShowInfoPanel((current) => !current);
+                  revealControls(true);
+                }}
+                className={`flex items-center gap-1 transition-colors focus:outline-none ${showInfoPanel ? 'text-white opacity-100' : 'opacity-80 hover:text-white hover:opacity-100'}`}
+                aria-label="Информация за плеъра"
               >
-                <Settings className="w-5 h-5" />
-                {playbackSpeed !== 1 && (
-                  <span className="hidden text-[10px] font-bold sm:inline-block leading-none">{playbackSpeed}x</span>
-                )}
+                <Info className="h-5 w-5" />
               </button>
 
+              {showInfoPanel && (
+                <div className="absolute bottom-full right-0 mb-4 w-72 rounded-2xl border border-white/10 bg-black/80 p-4 text-sm text-white/85 shadow-2xl backdrop-blur-md">
+                  <div className="mb-3">
+                    <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-white/45">Source</p>
+                    <p className="mt-1 font-medium">YouTube secure embed</p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 text-[13px]">
+                    <div>
+                      <p className="text-white/45">Статус</p>
+                      <p className="mt-1 font-medium">{playerStatus === 'playing' ? 'Възпроизвеждане' : playerStatus === 'paused' ? 'Пауза' : playerStatus === 'ended' ? 'Приключи' : playerStatus === 'buffering' ? 'Буфериране' : 'Готово'}</p>
+                    </div>
+                    <div>
+                      <p className="text-white/45">Качество</p>
+                      <p className="mt-1 font-medium">{formatQuality(currentQuality)}</p>
+                    </div>
+                    <div>
+                      <p className="text-white/45">Скорост</p>
+                      <p className="mt-1 font-medium">{playbackSpeed}x</p>
+                    </div>
+                    <div>
+                      <p className="text-white/45">Звук</p>
+                      <p className="mt-1 font-medium">{currentVolume}%</p>
+                    </div>
+                    <div>
+                      <p className="text-white/45">Resume</p>
+                      <p className="mt-1 font-medium">{initialProgressSeconds > 0 ? formatTime(initialProgressSeconds) : 'Няма'}</p>
+                    </div>
+                    <div>
+                      <p className="text-white/45">Навигация</p>
+                      <p className="mt-1 font-medium">{previousEpisode || nextEpisode ? 'Налична' : 'Няма'}</p>
+                    </div>
+                  </div>
+                  <div className="mt-3 border-t border-white/10 pt-3 text-[12px] text-white/70">
+                    <p className="font-semibold text-white/45">Налични качества</p>
+                    <p className="mt-1">{availableQualities.length > 0 ? availableQualities.map(formatQuality).join(', ') : 'Автоматично'}</p>
+                  </div>
+                  <div className="mt-3 border-t border-white/10 pt-3 text-[12px] text-white/70">
+                    <p className="font-semibold text-white/45">Предишен</p>
+                    <p className="mt-1">{formatEpisodeLabel(previousEpisode)}</p>
+                  </div>
+                  <div className="mt-3 text-[12px] text-white/70">
+                    <p className="font-semibold text-white/45">Следващ</p>
+                    <p className="mt-1">{formatEpisodeLabel(nextEpisode)}</p>
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="relative" ref={speedMenuRef}>
+              <button
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setShowSpeedMenu((current) => !current);
+                  revealControls(true);
+                }}
+                className={`flex items-center gap-1 transition-colors focus:outline-none ${showSpeedMenu ? 'text-white opacity-100' : 'opacity-80 hover:text-white hover:opacity-100'}`}
+                aria-label="Скорост на възпроизвеждане"
+              >
+                <Settings className="h-5 w-5" />
+                {playbackSpeed !== 1 && <span className="hidden text-[10px] font-bold leading-none sm:inline-block">{playbackSpeed}x</span>}
+              </button>
               {showSpeedMenu && (
-                <div className="absolute bottom-full right-0 mb-4 bg-black/80 backdrop-blur-md rounded-xl border border-white/10 p-2 min-w-[120px] shadow-2xl flex flex-col gap-1 z-50">
+                <div className="absolute bottom-full right-0 mb-4 flex min-w-[120px] flex-col gap-1 rounded-xl border border-white/10 bg-black/80 p-2 shadow-2xl backdrop-blur-md">
                   {[0.5, 1, 1.25, 1.5, 2].map((speed) => (
                     <button
                       key={speed}
-                      onClick={(e) => changePlaybackSpeed(speed, e)}
-                      className={`text-left px-3 py-1.5 text-sm rounded-lg hover:bg-white/10 transition-colors ${playbackSpeed === speed ? 'bg-white/15 font-semibold text-white' : 'text-white/80'}`}
+                      onClick={(event) => changePlaybackSpeed(speed, event)}
+                      className={`rounded-lg px-3 py-1.5 text-left text-sm transition-colors hover:bg-white/10 ${playbackSpeed === speed ? 'bg-white/15 font-semibold text-white' : 'text-white/80'}`}
                     >
                       {speed === 1 ? 'Нормална' : `${speed}x`}
                     </button>
@@ -576,13 +1105,8 @@ export default function VideoPlayer({ embedUrl, youtubeVideoId, title, siteName 
                 </div>
               )}
             </div>
-
-            <button
-              onClick={toggleFullscreen}
-              className="hover:text-white transition-colors focus:outline-none opacity-80 hover:opacity-100"
-              aria-label={isFullscreen ? "Изход от цял екран" : "Цял екран"}
-            >
-              <Maximize className="w-5 h-5" />
+            <button onClick={toggleFullscreen} className="opacity-80 transition-colors hover:text-white hover:opacity-100 focus:outline-none" aria-label={isFullscreen ? 'Изход от цял екран' : 'Цял екран'}>
+              <Maximize className="h-5 w-5" />
             </button>
           </div>
         </div>

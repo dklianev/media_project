@@ -100,6 +100,31 @@ router.get('/', requireAuth, (req, res) => {
   res.json(result);
 });
 
+// GET /api/watch-history/:episodeId — Get saved progress for a single episode
+router.get('/:episodeId', requireAuth, (req, res) => {
+  const episodeId = Number(req.params.episodeId);
+  if (!Number.isFinite(episodeId) || episodeId < 1) {
+    return res.status(400).json({ error: 'Невалиден епизод' });
+  }
+
+  const access = validateEpisodeAccess(episodeId, req.user);
+  if (!access.ok) {
+    return res.status(access.status).json({ error: access.error });
+  }
+
+  const row = db.prepare(`
+    SELECT progress_seconds, last_watched_at
+    FROM watch_history
+    WHERE user_id = ? AND episode_id = ?
+  `).get(req.user.id, episodeId);
+
+  res.json({
+    episode_id: episodeId,
+    progress_seconds: Number(row?.progress_seconds || 0),
+    last_watched_at: row?.last_watched_at || null,
+  });
+});
+
 // PUT /api/watch-history/:episodeId — Update watch progress
 router.put('/:episodeId', requireAuth, watchHistoryLimiter, (req, res) => {
   const episodeId = Number(req.params.episodeId);

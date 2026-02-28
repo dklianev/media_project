@@ -74,25 +74,29 @@ function getEpisodeWithProduction(id, { includeUnpublished = false } = {}) {
   `).get(id);
 }
 
-function getSiblingEpisodeId(productionId, episodeNumber, direction, { includeUnpublished = false } = {}) {
+function getSiblingEpisode(productionId, episodeNumber, direction, user, { includeUnpublished = false } = {}) {
   if (!productionId || !Number.isFinite(Number(episodeNumber))) return null;
 
   const operator = direction === 'next' ? '>' : '<';
   const order = direction === 'next' ? 'ASC' : 'DESC';
   const visibilitySql = includeUnpublished
     ? ''
-    : "AND (published_at IS NULL OR published_at <= datetime('now'))";
+    : "AND (e.published_at IS NULL OR e.published_at <= datetime('now'))";
 
-  return db.prepare(`
-    SELECT id
-    FROM episodes
-    WHERE production_id = ?
-      AND is_active = 1
-      AND episode_number ${operator} ?
+  const siblings = db.prepare(`
+    SELECT e.id, e.title, e.episode_number, e.access_group,
+           p.required_tier, p.access_group as production_access_group
+    FROM episodes e
+    JOIN productions p ON p.id = e.production_id
+    WHERE e.production_id = ?
+      AND e.is_active = 1
+      AND p.is_active = 1
+      AND e.episode_number ${operator} ?
       ${visibilitySql}
-    ORDER BY episode_number ${order}, id ${order}
-    LIMIT 1
-  `).get(productionId, episodeNumber)?.id || null;
+    ORDER BY e.episode_number ${order}, e.id ${order}
+  `).all(productionId, episodeNumber);
+
+  return siblings.find((candidate) => resolveEpisodeAccess(candidate, user).hasAccess) || null;
 }
 
 function hashUserAgent(userAgent) {
@@ -308,20 +312,22 @@ router.get('/:id', requireAuth, (req, res) => {
     sideImages = [];
   }
 
-  let nextEpisodeId = null;
-  let previousEpisodeId = null;
+  let nextEpisode = null;
+  let previousEpisode = null;
 
   if (episode.production_id) {
-    nextEpisodeId = getSiblingEpisodeId(
+    nextEpisode = getSiblingEpisode(
       episode.production_id,
       episode.episode_number,
       'next',
+      req.user,
       { includeUnpublished: admin }
     );
-    previousEpisodeId = getSiblingEpisodeId(
+    previousEpisode = getSiblingEpisode(
       episode.production_id,
       episode.episode_number,
       'previous',
+      req.user,
       { includeUnpublished: admin }
     );
   }
@@ -340,8 +346,18 @@ router.get('/:id', requireAuth, (req, res) => {
     latest_episodes: [],
     required_tier: episode.required_tier || 0,
     has_access: access.hasAccess,
-    next_episode_id: nextEpisodeId,
-    previous_episode_id: previousEpisodeId,
+    next_episode_id: nextEpisode?.id || null,
+    previous_episode_id: previousEpisode?.id || null,
+    next_episode: nextEpisode ? {
+      id: nextEpisode.id,
+      title: nextEpisode.title,
+      episode_number: nextEpisode.episode_number,
+    } : null,
+    previous_episode: previousEpisode ? {
+      id: previousEpisode.id,
+      title: previousEpisode.title,
+      episode_number: previousEpisode.episode_number,
+    } : null,
   };
 
   if (!access.hasAccess) {

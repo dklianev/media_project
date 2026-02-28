@@ -19,32 +19,41 @@ const GROUP_LABELS = {
   subscription: 'С абонамент',
 };
 
-// Periodically send watch progress to the server
-function useWatchProgress(episodeId, hasAccess) {
-  const secondsRef = useRef(0);
-  const intervalRef = useRef(null);
+// Periodically persist real player progress to the server
+function useWatchProgress(episodeId, hasAccess, progressRef, durationRef) {
+  const lastSentRef = useRef(null);
 
   useEffect(() => {
-    if (!episodeId || !hasAccess) return;
+    lastSentRef.current = null;
+  }, [episodeId]);
 
-    // Record initial view
-    api.put(`/watch-history/${episodeId}`, { progress_seconds: 0 }).catch(() => { });
+  useEffect(() => {
+    if (!episodeId || !hasAccess) return undefined;
 
-    // Increment seconds and periodically send progress
-    secondsRef.current = 0;
-    intervalRef.current = setInterval(() => {
-      secondsRef.current += 30;
-      api.put(`/watch-history/${episodeId}`, { progress_seconds: secondsRef.current }).catch(() => { });
-    }, 30000);
+    const persistProgress = () => {
+      const currentProgress = Math.max(0, Math.round(progressRef.current || 0));
+      const currentDuration = Math.max(0, Math.round(durationRef.current || 0));
+      const normalizedProgress =
+        currentDuration > 0 && currentProgress >= currentDuration - 5
+          ? currentDuration
+          : currentProgress;
+
+      if (normalizedProgress <= 0 && lastSentRef.current == null) return;
+      if (normalizedProgress === lastSentRef.current) return;
+
+      lastSentRef.current = normalizedProgress;
+      api.put(`/watch-history/${episodeId}`, { progress_seconds: normalizedProgress }).catch(() => { });
+    };
+
+    const intervalId = setInterval(persistProgress, 15000);
+    window.addEventListener('pagehide', persistProgress);
 
     return () => {
-      // Send final progress on unmount
-      if (secondsRef.current > 0) {
-        api.put(`/watch-history/${episodeId}`, { progress_seconds: secondsRef.current }).catch(() => { });
-      }
-      clearInterval(intervalRef.current);
+      clearInterval(intervalId);
+      window.removeEventListener('pagehide', persistProgress);
+      persistProgress();
     };
-  }, [episodeId, hasAccess]);
+  }, [durationRef, episodeId, hasAccess, progressRef]);
 }
 
 export default function EpisodePage() {
@@ -54,6 +63,9 @@ export default function EpisodePage() {
   const [settings, setSettings] = useState({});
   const [loading, setLoading] = useState(true);
   const [fetchStatus, setFetchStatus] = useState(null);
+  const [resumeProgressSeconds, setResumeProgressSeconds] = useState(0);
+  const playerProgressRef = useRef(0);
+  const playerDurationRef = useRef(0);
 
   useEffect(() => {
     api.get('/settings/public')
@@ -64,6 +76,9 @@ export default function EpisodePage() {
   useEffect(() => {
     setLoading(true);
     setFetchStatus(null);
+    setResumeProgressSeconds(0);
+    playerProgressRef.current = 0;
+    playerDurationRef.current = 0;
     api.get(`/episodes/${id}`)
       .then((data) => {
         setEpisode(data);
@@ -75,13 +90,38 @@ export default function EpisodePage() {
       .finally(() => setLoading(false));
   }, [id]);
 
+  useEffect(() => {
+    if (!episode?.id || !episode?.has_access) {
+      setResumeProgressSeconds(0);
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    api.get(`/watch-history/${episode.id}`)
+      .then((data) => {
+        if (!cancelled) {
+          setResumeProgressSeconds(Math.max(0, Number(data?.progress_seconds || 0)));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setResumeProgressSeconds(0);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [episode?.has_access, episode?.id]);
+
   const isLocked = Boolean(episode && episode.has_access === false);
   const hasPlayableVideo = Boolean(episode?.has_access && episode?.video_embed_url);
 
   // Track watch progress
   useWatchProgress(
     episode?.id,
-    hasPlayableVideo
+    hasPlayableVideo,
+    playerProgressRef,
+    playerDurationRef
   );
 
   if (loading) {
@@ -170,7 +210,13 @@ export default function EpisodePage() {
                   youtubeVideoId={episode.youtube_video_id}
                   title={episode.title}
                   siteName={settings.site_name || 'Платформа'}
-                  nextEpisodeId={episode.next_episode_id}
+                  nextEpisode={episode.next_episode}
+                  previousEpisode={episode.previous_episode}
+                  initialProgressSeconds={resumeProgressSeconds}
+                  onProgressSample={(currentTime, totalDuration) => {
+                    playerProgressRef.current = currentTime;
+                    playerDurationRef.current = totalDuration;
+                  }}
                 />
               ) : (
                 <div className="relative w-full overflow-hidden rounded-2xl border border-[var(--border)] bg-[linear-gradient(160deg,#0a0d17,#111626)] shadow-premium-md" style={{ paddingBottom: '56.25%' }}>
