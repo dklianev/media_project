@@ -101,8 +101,7 @@ const PUBLIC_KEYS = [
   'calendar_empty',
   'faq_title',
   'faq_description',
-  'faq_discord_link',
-  'faq_discord_url',
+  'faq_items',
   'comments_title',
   'comments_placeholder',
   'comments_empty',
@@ -156,7 +155,11 @@ router.put('/', requireAdmin, (req, res) => {
         continue;
       }
 
-      const limit = key === 'payment_info' ? 2000 : 500;
+      const limit = key === 'payment_info'
+        ? 2000
+        : key === 'faq_items'
+          ? 20000
+          : 500;
       const normalizedValue = String(value ?? '').slice(0, limit);
       const current = db.prepare('SELECT value FROM site_settings WHERE key = ?').get(key)?.value ?? '';
       if (String(current) !== normalizedValue) {

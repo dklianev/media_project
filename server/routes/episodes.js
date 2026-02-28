@@ -58,6 +58,15 @@ function normalizePublishedAt(value) {
   return `${match[1]} ${match[2]}:${match[3]}:${seconds}`;
 }
 
+function currentDbTimestamp() {
+  return new Date().toISOString().slice(0, 19).replace('T', ' ');
+}
+
+function shouldNotifyEpisodeNow(episode) {
+  return Number(episode?.is_active) === 1
+    && (!episode.published_at || String(episode.published_at) <= currentDbTimestamp());
+}
+
 function getEpisodeWithProduction(id, { includeUnpublished = false } = {}) {
   const visibilitySql = includeUnpublished
     ? ''
@@ -585,8 +594,8 @@ router.post(
 
     const episode = db.prepare('SELECT * FROM episodes WHERE id = ?').get(result.lastInsertRowid);
 
-    // GENERATE NOTIFICATIONS for active episodes
-    if (episode.is_active) {
+    // Notify only when the episode is already visible, not when it is scheduled for later.
+    if (shouldNotifyEpisodeNow(episode)) {
       try {
         db.prepare(`
           INSERT INTO notifications (user_id, title, message, link)

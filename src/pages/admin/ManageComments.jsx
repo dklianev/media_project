@@ -53,9 +53,14 @@ export default function ManageComments() {
     api.get(`/comments/admin?${params.toString()}`)
       .then((data) => {
         if (seq !== fetchSeq.current) return;
-        setComments(data.items || []);
+        const nextTotalPages = Math.max(1, data.total_pages || 1);
         setTotal(data.total || 0);
-        setTotalPages(data.total_pages || 1);
+        setTotalPages(nextTotalPages);
+        if (page > nextTotalPages) {
+          setPage(nextTotalPages);
+          return;
+        }
+        setComments(data.items || []);
       })
       .catch((err) => {
         if (seq !== fetchSeq.current) return;

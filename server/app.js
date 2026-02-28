@@ -21,6 +21,7 @@ import reactionRoutes from './routes/reactions.js';
 import planRoutes from './routes/plans.js';
 import paymentRoutes from './routes/payments.js';
 import promoRoutes from './routes/promo.js';
+import userSelfRoutes from './routes/user-self.js';
 import userRoutes from './routes/users.js';
 import settingsRoutes from './routes/settings.js';
 import auditRoutes from './routes/audit.js';
@@ -195,7 +196,7 @@ export function createApp() {
   // /api/subscribe, /api/my-payments, /api/promo/validate, /api/admin/payments
   app.use('/api', paymentRoutes);
   app.use('/api/admin/promo-codes', promoRoutes);
-  app.use('/api/users', userRoutes);
+  app.use('/api/users', userSelfRoutes);
   app.use('/api/admin/users', userRoutes);
   app.use('/api/settings', settingsRoutes);
   app.use('/api/admin/settings', settingsRoutes);

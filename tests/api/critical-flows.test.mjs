@@ -684,6 +684,19 @@ test('profile stats endpoint е достъпен за потребителя и 
   assert.equal(data?.recently_watched?.[0]?.duration_seconds, 1800);
 });
 
+test('non-admin users prefix не expose-ва admin user routes', async () => {
+  const admin = createUser({ role: 'admin', character_name: 'Scoped Admin' });
+  const target = createUser({ character_name: 'Scoped Target' });
+
+  const result = await apiRequest(`/api/users/${target.id}/subscription`, {
+    method: 'PUT',
+    token: createAccessToken(admin),
+    body: { plan_id: null },
+  });
+
+  assert.equal(result.response.status, 404);
+});
+
 test('comments routes изискват достъп до епизода', async () => {
   const premiumPlan = createPlan({ name: 'Comments Premium', tier_level: 2, price: 50 });
   const production = createProduction({
@@ -764,6 +777,35 @@ test('admin settings приема и публикува новите community k
   assert.equal(publicResult.data?.profile_stat_recent, 'Последно гледано');
 });
 
+test('faq_items settings round-trip запазва дълъг JSON без отрязване', async () => {
+  const admin = createUser({ role: 'admin', character_name: 'FAQ Admin' });
+  const token = createAccessToken(admin);
+  const faqItems = JSON.stringify([
+    {
+      category: 'Плащания',
+      items: [
+        {
+          q: 'Какво правя при проблем?',
+          a: `Отговор ${'А'.repeat(900)}`,
+        },
+      ],
+    },
+  ]);
+
+  const putResult = await apiRequest('/api/settings', {
+    method: 'PUT',
+    token,
+    body: { faq_items: faqItems },
+  });
+
+  assert.equal(putResult.response.status, 200);
+  assert.deepEqual(putResult.data?.rejected_keys, []);
+
+  const publicResult = await apiRequest('/api/settings/public', { method: 'GET' });
+  assert.equal(publicResult.response.status, 200);
+  assert.equal(publicResult.data?.faq_items, faqItems);
+});
+
 test('episode delete премахва коментарите преди изтриването', async () => {
   const admin = createUser({ role: 'admin', character_name: 'Delete Admin' });
   const commenter = createUser({ character_name: 'Comment User' });
@@ -842,6 +884,50 @@ test('comment delete е soft delete и скрива коментара от пу
   assert.equal(visible.data?.length, 0);
 });
 
+test('admin hard delete премахва коментара окончателно и записва audit лог', async () => {
+  const admin = createUser({ role: 'admin', character_name: 'Hard Delete Admin' });
+  const commenter = createUser({ character_name: 'Hard Delete User' });
+  const production = createProduction({
+    title: 'Hard Delete Production',
+    slug: 'hard-delete-production',
+    access_group: 'free',
+    is_active: 1,
+  });
+  const episode = createEpisode({
+    production_id: production.id,
+    title: 'Hard Delete Episode',
+    access_group: 'free',
+    is_active: 1,
+  });
+
+  const created = await apiRequest('/api/comments', {
+    method: 'POST',
+    token: createAccessToken(commenter),
+    body: { episode_id: episode.id, content: 'Коментар за hard delete' },
+  });
+  assert.equal(created.response.status, 201);
+
+  const removed = await apiRequest(`/api/comments/admin/${created.data.id}/hard`, {
+    method: 'DELETE',
+    token: createAccessToken(admin),
+  });
+  assert.equal(removed.response.status, 200);
+  assert.equal(removed.data?.success, true);
+
+  const stored = db.prepare('SELECT id FROM comments WHERE id = ?').get(created.data.id);
+  assert.equal(stored, undefined);
+
+  const audit = db.prepare(`
+    SELECT action, entity_id
+    FROM admin_audit_logs
+    WHERE action = 'comment.hard_delete'
+    ORDER BY id DESC
+    LIMIT 1
+  `).get();
+  assert.ok(audit);
+  assert.equal(Number(audit.entity_id), Number(created.data.id));
+});
+
 test('admin comments filtering и moderation статусите работят', async () => {
   const admin = createUser({ role: 'admin', character_name: 'Comments Admin' });
   const commenter = createUser({ character_name: 'Moderated User' });
@@ -904,4 +990,63 @@ test('admin comments filtering и moderation статусите работят',
   });
   assert.equal(publicAfterRestore.response.status, 200);
   assert.equal(publicAfterRestore.data?.length, 1);
+});
+
+test('episode notifications не се създават преждевременно за future published_at', async () => {
+  const admin = createUser({ role: 'admin', character_name: 'Episode Admin' });
+  const viewer = createUser({ character_name: 'Episode Viewer' });
+  const banned = createUser({ role: 'banned', character_name: 'Banned Viewer' });
+  const adminToken = createAccessToken(admin);
+  const production = createProduction({
+    title: 'Scheduled Production',
+    slug: 'scheduled-production',
+    access_group: 'free',
+    is_active: 1,
+  });
+
+  const futureResult = await apiRequest('/api/episodes/admin', {
+    method: 'POST',
+    token: adminToken,
+    body: {
+      production_id: production.id,
+      title: 'Scheduled Episode',
+      youtube_video_id: 'dQw4w9WgXcQ',
+      access_group: 'free',
+      episode_number: 1,
+      is_active: true,
+      published_at: '2099-01-01T12:00:00Z',
+    },
+  });
+  assert.equal(futureResult.response.status, 201);
+  assert.equal(db.prepare('SELECT COUNT(*) as count FROM notifications').get().count, 0);
+
+  const liveResult = await apiRequest('/api/episodes/admin', {
+    method: 'POST',
+    token: adminToken,
+    body: {
+      production_id: production.id,
+      title: 'Live Episode',
+      youtube_video_id: 'dQw4w9WgXcQ',
+      access_group: 'free',
+      episode_number: 2,
+      is_active: true,
+    },
+  });
+  assert.equal(liveResult.response.status, 201);
+
+  const notifications = db.prepare(`
+    SELECT user_id, title
+    FROM notifications
+    ORDER BY id ASC
+  `).all();
+  assert.equal(notifications.length, 2);
+  assert.deepEqual(
+    notifications.map((item) => item.user_id).sort((a, b) => a - b),
+    [admin.id, viewer.id]
+  );
+  assert.ok(notifications.every((item) => item.title === 'Нов епизод: Scheduled Production'));
+  assert.equal(
+    db.prepare('SELECT COUNT(*) as count FROM notifications WHERE user_id = ?').get(banned.id).count,
+    0
+  );
 });

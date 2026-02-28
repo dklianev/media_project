@@ -29,8 +29,6 @@ export default function FAQPage() {
     const [ui, setUi] = useState({
         faq_title: 'Често задавани въпроси',
         faq_description: 'Имаш въпроси относно плащания, достъп или съдържание? Тук сме събрали най-полезната информация за теб.',
-        faq_discord_link: 'Свържи се в Discord',
-        faq_discord_url: 'https://discord.gg/yourinvite'
     });
 
     const [faqList, setFaqList] = useState(DEFAULT_FAQS);
@@ -63,8 +61,6 @@ export default function FAQPage() {
                 setUi(prev => ({
                     faq_title: settings.faq_title || prev.faq_title,
                     faq_description: settings.faq_description || prev.faq_description,
-                    faq_discord_link: settings.faq_discord_link || prev.faq_discord_link,
-                    faq_discord_url: settings.faq_discord_url || prev.faq_discord_url,
                 }));
                 if (settings.faq_items) {
                     try {
