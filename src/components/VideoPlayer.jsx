@@ -751,7 +751,18 @@ export default function VideoPlayer({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [currentVolume, duration, isFullscreen, nextEpisode, playerReady, previousEpisode]);
+  }, [
+    currentVolume,
+    duration,
+    isFullscreen,
+    nextEpisode,
+    playerReady,
+    previousEpisode,
+    isPlaying,
+    hasEnded,
+    isMuted,
+    volume
+  ]);
 
   const handleContextMenu = useCallback((event) => {
     event.preventDefault();
