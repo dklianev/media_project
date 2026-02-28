@@ -9,6 +9,7 @@ export default function VideoPlayer({ embedUrl, youtubeVideoId, title, siteName 
   const [isMuted, setIsMuted] = useState(false);
   const [volume, setVolume] = useState(100);
   const [isHoveringVolume, setIsHoveringVolume] = useState(false);
+  const [isAdjustingVolume, setIsAdjustingVolume] = useState(false);
   const [playerReady, setPlayerReady] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
@@ -113,6 +114,22 @@ export default function VideoPlayer({ embedUrl, youtubeVideoId, title, siteName 
     document.addEventListener('fullscreenchange', handleFullscreenChange);
     return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
   }, []);
+
+  useEffect(() => {
+    if (!isAdjustingVolume) return undefined;
+
+    const stopAdjustingVolume = () => {
+      setIsAdjustingVolume(false);
+    };
+
+    window.addEventListener('pointerup', stopAdjustingVolume);
+    window.addEventListener('pointercancel', stopAdjustingVolume);
+
+    return () => {
+      window.removeEventListener('pointerup', stopAdjustingVolume);
+      window.removeEventListener('pointercancel', stopAdjustingVolume);
+    };
+  }, [isAdjustingVolume]);
 
   const togglePlay = (e) => {
     if (e) e.stopPropagation();
@@ -286,7 +303,7 @@ export default function VideoPlayer({ embedUrl, youtubeVideoId, title, siteName 
         </div>
 
         {/* Buttons and Info */}
-        <div className="flex items-center gap-4 text-white/90">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-white/90 sm:flex-nowrap sm:gap-4">
           {/* Play/Pause */}
           <button
             onClick={togglePlay}
@@ -301,14 +318,14 @@ export default function VideoPlayer({ embedUrl, youtubeVideoId, title, siteName 
           </button>
 
           {/* Skip Controls */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3">
             <button
               onClick={handleRewind}
               className="hover:text-white transition-colors focus:outline-none flex items-center gap-1 opacity-70 hover:opacity-100"
               aria-label="Върни 10 секунди"
             >
               <RotateCcw className="w-4 h-4" />
-              <span className="text-[11px] font-semibold tracking-wide">10s</span>
+              <span className="hidden text-[11px] font-semibold tracking-wide sm:inline">10s</span>
             </button>
             <button
               onClick={handleSkipForward}
@@ -316,7 +333,7 @@ export default function VideoPlayer({ embedUrl, youtubeVideoId, title, siteName 
               aria-label="Напред 10 секунди"
             >
               <RotateCw className="w-4 h-4" />
-              <span className="text-[11px] font-semibold tracking-wide">10s</span>
+              <span className="hidden text-[11px] font-semibold tracking-wide sm:inline">10s</span>
             </button>
           </div>
 
@@ -335,7 +352,7 @@ export default function VideoPlayer({ embedUrl, youtubeVideoId, title, siteName 
             </button>
 
             <div
-              className={`overflow-hidden transition-[width,opacity] duration-300 ease-out flex items-center absolute left-full top-1/2 -translate-y-1/2 z-10 bg-black/40 backdrop-blur-sm rounded-full pl-2 pr-3 py-1.5 w-20 opacity-100 sm:relative sm:left-auto sm:top-auto sm:translate-y-0 sm:bg-transparent sm:p-0 sm:z-auto sm:group-hover/volume:w-16 sm:group-hover/volume:ml-2 sm:focus-within:w-16 sm:focus-within:ml-2 sm:opacity-100 ${isHoveringVolume ? 'sm:w-16 sm:ml-2' : 'sm:w-0 sm:ml-0 sm:opacity-0 sm:pointer-events-none'
+              className={`ml-2 flex w-20 items-center opacity-100 sm:absolute sm:left-full sm:top-1/2 sm:z-10 sm:-translate-y-1/2 sm:bg-black/40 sm:backdrop-blur-sm sm:rounded-full sm:pl-2 sm:pr-3 sm:py-1.5 sm:transition-[width,opacity,margin] sm:duration-300 sm:ease-out ${isHoveringVolume || isAdjustingVolume ? 'sm:w-16 sm:ml-2 sm:opacity-100' : 'sm:w-0 sm:ml-0 sm:opacity-0 sm:pointer-events-none'
                 }`}
             >
               <input
@@ -343,8 +360,10 @@ export default function VideoPlayer({ embedUrl, youtubeVideoId, title, siteName 
                 min="0"
                 max="100"
                 value={isMuted ? 0 : volume}
+                onPointerDown={() => setIsAdjustingVolume(true)}
                 onInput={handleVolumeChange}
                 onChange={handleVolumeChange}
+                onBlur={() => setIsAdjustingVolume(false)}
                 className="w-full h-1 p-0 m-0 bg-white/30 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-2.5 [&::-webkit-slider-thumb]:h-2.5 [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:-mt-[3px] [&::-webkit-slider-runnable-track]:h-1 [&::-webkit-slider-runnable-track]:rounded-full [&::-moz-range-thumb]:w-2.5 [&::-moz-range-thumb]:h-2.5 [&::-moz-range-thumb]:bg-white [&::-moz-range-thumb]:border-none [&::-moz-range-thumb]:rounded-full accent-white"
                 style={{
                   background: `linear-gradient(to right, white ${isMuted ? 0 : volume}%, rgba(255,255,255,0.3) ${isMuted ? 0 : volume}%)`
@@ -354,14 +373,14 @@ export default function VideoPlayer({ embedUrl, youtubeVideoId, title, siteName 
           </div>
 
           {/* Time */}
-          <div className="text-[13px] font-medium tracking-wide opacity-80 ml-1">
+          <div className="order-last basis-full text-[12px] font-medium tracking-wide opacity-80 sm:order-none sm:basis-auto sm:ml-1 sm:text-[13px]">
             {formatTime(progress)} <span className="opacity-50 mx-0.5">/</span> {formatTime(duration)}
           </div>
 
-          <div className="flex-1" />
+          <div className="hidden flex-1 sm:block" />
 
           {/* Right Side Controls */}
-          <div className="flex items-center gap-4">
+          <div className="ml-auto flex items-center gap-3 sm:gap-4">
             <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-white/50 select-none hidden sm:block">
               {siteName}
             </div>
