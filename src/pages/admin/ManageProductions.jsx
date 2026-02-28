@@ -35,6 +35,7 @@ export default function ManageProductions() {
   const [form, setForm] = useState({
     title: '',
     description: '',
+    genres: '',
     access_group: 'free',
     required_tier: '1',
     sort_order: '0',
@@ -78,6 +79,7 @@ export default function ManageProductions() {
     setForm({
       title: '',
       description: '',
+      genres: '',
       access_group: 'free',
       required_tier: '1',
       sort_order: '0',
@@ -93,6 +95,14 @@ export default function ManageProductions() {
     setForm({
       title: production.title,
       description: production.description || '',
+      genres: (() => {
+        try {
+          const parsed = JSON.parse(production.genres || '[]');
+          return Array.isArray(parsed) ? parsed.join(', ') : '';
+        } catch {
+          return '';
+        }
+      })(),
       access_group: production.access_group || (production.required_tier > 0 ? 'subscription' : 'free'),
       required_tier: String(production.required_tier || 1),
       sort_order: String(production.sort_order || 0),
@@ -110,6 +120,15 @@ export default function ManageProductions() {
     fd.append('required_tier', form.access_group === 'subscription' ? form.required_tier : '0');
     fd.append('sort_order', form.sort_order);
     fd.append('is_active', String(form.is_active));
+    fd.append(
+      'genres',
+      JSON.stringify(
+        form.genres
+          .split(',')
+          .map((item) => item.trim())
+          .filter(Boolean)
+      )
+    );
     if (thumbnailRef.current?.files[0]) fd.append('thumbnail', thumbnailRef.current.files[0]);
     if (coverRef.current?.files[0]) fd.append('cover_image', coverRef.current.files[0]);
 
@@ -205,6 +224,12 @@ export default function ManageProductions() {
             placeholder="Описание"
             className="input-dark md:col-span-2"
             rows={2}
+          />
+          <input
+            value={form.genres}
+            onChange={(e) => setForm({ ...form, genres: e.target.value })}
+            placeholder="Жанрове (напр. Реалити, Драма, Комедия)"
+            className="input-dark md:col-span-2"
           />
           <div>
             <label className="text-xs text-[var(--text-muted)] block mb-1">Корица в каталог</label>

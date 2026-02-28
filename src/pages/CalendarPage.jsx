@@ -6,10 +6,9 @@ import PageBackground from '../components/PageBackground';
 import ScrollReveal from '../components/ScrollReveal';
 import EpisodeCard from '../components/EpisodeCard';
 import { StaggerContainer, StaggerItem } from '../components/StaggerContainer';
-import { useAuth } from '../context/AuthContext';
+import { getPublicSettings } from '../utils/settings';
 
 export default function CalendarPage() {
-    const { user } = useAuth();
     const [episodes, setEpisodes] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
@@ -22,18 +21,15 @@ export default function CalendarPage() {
     useEffect(() => {
         let active = true;
 
-        // Fetch settings
-        import('../utils/settings').then(({ getPublicSettings }) => {
-            getPublicSettings().then(settings => {
-                if (active && settings) {
-                    setUi(prev => ({
-                        calendar_title: settings.calendar_title || prev.calendar_title,
-                        calendar_subtitle: settings.calendar_subtitle || prev.calendar_subtitle,
-                        calendar_empty: settings.calendar_empty || prev.calendar_empty,
-                    }));
-                }
-            }).catch(() => { });
-        });
+        getPublicSettings().then(settings => {
+            if (active && settings) {
+                setUi(prev => ({
+                    calendar_title: settings.calendar_title || prev.calendar_title,
+                    calendar_subtitle: settings.calendar_subtitle || prev.calendar_subtitle,
+                    calendar_empty: settings.calendar_empty || prev.calendar_empty,
+                }));
+            }
+        }).catch(() => { });
         api.get('/episodes/calendar')
             .then(data => {
                 if (active) {

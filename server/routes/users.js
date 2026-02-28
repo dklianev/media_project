@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import db from '../db.js';
-import { requireAdmin, requireSuperAdmin } from '../middleware/auth.js';
+import { requireAdmin, requireAuth, requireSuperAdmin } from '../middleware/auth.js';
 import { buildPageResult, parsePagination, parseSort, toInt } from '../utils/pagination.js';
 import { logAdminAction } from '../utils/audit.js';
 
@@ -245,11 +245,7 @@ router.put('/:id/unban', requireAdmin, (req, res) => {
   res.json({ success: true });
 });
 
-router.get('/me/stats', (req, res) => {
-  if (!req.user) {
-    return res.status(401).json({ error: 'Неоторизиран достъп' });
-  }
-
+router.get('/me/stats', requireAuth, (req, res) => {
   try {
     const stats = db.prepare(`
       SELECT 
@@ -260,7 +256,15 @@ router.get('/me/stats', (req, res) => {
     `).get(req.user.id);
 
     const recentlyWatched = db.prepare(`
-      SELECT e.id, e.title, e.thumbnail_url, p.slug as production_slug, p.title as production_title, wh.progress_seconds, wh.last_watched_at
+      SELECT
+        e.id as episode_id,
+        e.title as episode_title,
+        e.thumbnail_url,
+        e.duration_seconds,
+        p.slug as production_slug,
+        p.title as production_title,
+        wh.progress_seconds,
+        wh.last_watched_at
       FROM watch_history wh
       JOIN episodes e ON wh.episode_id = e.id
       JOIN productions p ON e.production_id = p.id
@@ -284,7 +288,7 @@ router.get('/me/stats', (req, res) => {
       total_watch_seconds: stats?.total_watch_seconds || 0,
       episodes_started: stats?.episodes_started || 0,
       recently_watched: recentlyWatched || [],
-      top_productions: topProductions || []
+      top_productions: topProductions || [],
     });
   } catch (error) {
     console.error('Stats error:', error);

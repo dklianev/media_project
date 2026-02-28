@@ -177,7 +177,9 @@ async function apiRequest(path, { method = 'GET', token, body } = {}) {
 function resetDatabase() {
   const tables = [
     'admin_audit_logs',
+    'notifications',
     'reactions',
+    'comments',
     'watch_history',
     'watchlist',
     'episodes',
@@ -410,7 +412,7 @@ test('access gate блокира без абонамент и допуска п�
   assert.equal(allowed.response.status, 200);
   assert.equal(allowed.data?.has_access, true);
   assert.equal(typeof allowed.data?.video_embed_url, 'string');
-  assert.equal(allowed.data?.youtube_video_id, undefined);
+  assert.equal(allowed.data?.youtube_video_id, 'dQw4w9WgXcQ');
 });
 
 test('watch-history update блокира заключен епизод и допуска при активен план', async () => {
@@ -644,4 +646,262 @@ test('payments admin date филтър работи с range сравнение'
     token: adminToken,
   });
   assert.equal(invalidDate.response.status, 400);
+});
+
+test('profile stats endpoint е достъпен за потребителя и връща очаквания payload', async () => {
+  const user = createUser({ character_name: 'Stats User' });
+  const token = createAccessToken(user);
+  const production = createProduction({
+    title: 'Stats Production',
+    slug: 'stats-production',
+    access_group: 'free',
+    is_active: 1,
+  });
+  const episode = createEpisode({
+    production_id: production.id,
+    title: 'Stats Episode',
+    access_group: 'free',
+    is_active: 1,
+  });
+
+  db.prepare('UPDATE episodes SET duration_seconds = ? WHERE id = ?').run(1800, episode.id);
+  db.prepare(`
+    INSERT INTO watch_history (user_id, episode_id, progress_seconds, last_watched_at)
+    VALUES (?, ?, ?, datetime('now'))
+  `).run(user.id, episode.id, 420);
+
+  const { response, data } = await apiRequest('/api/users/me/stats', {
+    method: 'GET',
+    token,
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(data?.total_watch_seconds, 420);
+  assert.equal(data?.episodes_started, 1);
+  assert.equal(data?.recently_watched?.length, 1);
+  assert.equal(data?.recently_watched?.[0]?.episode_id, episode.id);
+  assert.equal(data?.recently_watched?.[0]?.episode_title, 'Stats Episode');
+  assert.equal(data?.recently_watched?.[0]?.duration_seconds, 1800);
+});
+
+test('comments routes изискват достъп до епизода', async () => {
+  const premiumPlan = createPlan({ name: 'Comments Premium', tier_level: 2, price: 50 });
+  const production = createProduction({
+    title: 'Locked Comments',
+    slug: 'locked-comments',
+    required_tier: 2,
+    access_group: 'subscription',
+    is_active: 1,
+  });
+  const episode = createEpisode({
+    production_id: production.id,
+    title: 'Locked Episode',
+    access_group: 'inherit',
+    is_active: 1,
+  });
+  const freeUser = createUser({ character_name: 'Free User' });
+  const paidUser = createUser({
+    character_name: 'Paid User',
+    subscription_plan_id: premiumPlan.id,
+  });
+
+  const deniedGet = await apiRequest(`/api/comments/episode/${episode.id}`, {
+    method: 'GET',
+    token: createAccessToken(freeUser),
+  });
+  assert.equal(deniedGet.response.status, 403);
+
+  const deniedPost = await apiRequest('/api/comments', {
+    method: 'POST',
+    token: createAccessToken(freeUser),
+    body: { episode_id: episode.id, content: 'Нямам достъп' },
+  });
+  assert.equal(deniedPost.response.status, 403);
+
+  const allowedPost = await apiRequest('/api/comments', {
+    method: 'POST',
+    token: createAccessToken(paidUser),
+    body: { episode_id: episode.id, content: 'Имам достъп' },
+  });
+  assert.equal(allowedPost.response.status, 201);
+
+  const allowedGet = await apiRequest(`/api/comments/episode/${episode.id}`, {
+    method: 'GET',
+    token: createAccessToken(paidUser),
+  });
+  assert.equal(allowedGet.response.status, 200);
+  assert.equal(allowedGet.data?.length, 1);
+  assert.equal(allowedGet.data?.[0]?.content, 'Имам достъп');
+});
+
+test('admin settings приема и публикува новите community keys', async () => {
+  const admin = createUser({ role: 'admin', character_name: 'Settings Admin' });
+  const token = createAccessToken(admin);
+
+  const putResult = await apiRequest('/api/settings', {
+    method: 'PUT',
+    token,
+    body: {
+      nav_label_calendar: 'Програма',
+      comments_title: 'Коментари',
+      notifications_title: 'Алерти',
+      faq_title: 'Помощ',
+      calendar_title: 'График',
+      profile_stat_recent: 'Последно гледано',
+    },
+  });
+
+  assert.equal(putResult.response.status, 200);
+  assert.deepEqual(putResult.data?.rejected_keys, []);
+
+  const publicResult = await apiRequest('/api/settings/public', { method: 'GET' });
+  assert.equal(publicResult.response.status, 200);
+  assert.equal(publicResult.data?.nav_label_calendar, 'Програма');
+  assert.equal(publicResult.data?.comments_title, 'Коментари');
+  assert.equal(publicResult.data?.notifications_title, 'Алерти');
+  assert.equal(publicResult.data?.faq_title, 'Помощ');
+  assert.equal(publicResult.data?.calendar_title, 'График');
+  assert.equal(publicResult.data?.profile_stat_recent, 'Последно гледано');
+});
+
+test('episode delete премахва коментарите преди изтриването', async () => {
+  const admin = createUser({ role: 'admin', character_name: 'Delete Admin' });
+  const commenter = createUser({ character_name: 'Comment User' });
+  const production = createProduction({
+    title: 'Delete Comments Prod',
+    slug: 'delete-comments-prod',
+    access_group: 'free',
+    is_active: 1,
+  });
+  const episode = createEpisode({
+    production_id: production.id,
+    title: 'Delete Me',
+    access_group: 'free',
+    is_active: 1,
+  });
+
+  db.prepare(`
+    INSERT INTO comments (episode_id, user_id, content)
+    VALUES (?, ?, ?)
+  `).run(episode.id, commenter.id, 'Коментар за триене');
+
+  const { response, data } = await apiRequest(`/api/episodes/admin/${episode.id}`, {
+    method: 'DELETE',
+    token: createAccessToken(admin),
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(data?.success, true);
+
+  const commentCount = db.prepare('SELECT COUNT(*) as count FROM comments WHERE episode_id = ?').get(episode.id).count;
+  const episodeRow = db.prepare('SELECT id FROM episodes WHERE id = ?').get(episode.id);
+  assert.equal(commentCount, 0);
+  assert.equal(episodeRow, undefined);
+});
+
+test('comment delete е soft delete и скрива коментара от публичния поток', async () => {
+  const user = createUser({ character_name: 'Soft Delete User' });
+  const token = createAccessToken(user);
+  const production = createProduction({
+    title: 'Soft Delete Production',
+    slug: 'soft-delete-production',
+    access_group: 'free',
+    is_active: 1,
+  });
+  const episode = createEpisode({
+    production_id: production.id,
+    title: 'Soft Delete Episode',
+    access_group: 'free',
+    is_active: 1,
+  });
+
+  const created = await apiRequest('/api/comments', {
+    method: 'POST',
+    token,
+    body: { episode_id: episode.id, content: 'Коментар за soft delete' },
+  });
+  assert.equal(created.response.status, 201);
+
+  const removed = await apiRequest(`/api/comments/${created.data.id}`, {
+    method: 'DELETE',
+    token,
+  });
+  assert.equal(removed.response.status, 200);
+  assert.equal(removed.data?.success, true);
+
+  const stored = db.prepare('SELECT status, deleted_by, deleted_at FROM comments WHERE id = ?').get(created.data.id);
+  assert.equal(stored.status, 'deleted');
+  assert.equal(stored.deleted_by, user.id);
+  assert.ok(stored.deleted_at);
+
+  const visible = await apiRequest(`/api/comments/episode/${episode.id}`, {
+    method: 'GET',
+    token,
+  });
+  assert.equal(visible.response.status, 200);
+  assert.equal(visible.data?.length, 0);
+});
+
+test('admin comments filtering и moderation статусите работят', async () => {
+  const admin = createUser({ role: 'admin', character_name: 'Comments Admin' });
+  const commenter = createUser({ character_name: 'Moderated User' });
+  const adminToken = createAccessToken(admin);
+  const userToken = createAccessToken(commenter);
+  const production = createProduction({
+    title: 'Admin Comments Production',
+    slug: 'admin-comments-production',
+    access_group: 'free',
+    is_active: 1,
+  });
+  const episode = createEpisode({
+    production_id: production.id,
+    title: 'Admin Comments Episode',
+    access_group: 'free',
+    is_active: 1,
+  });
+
+  const created = await apiRequest('/api/comments', {
+    method: 'POST',
+    token: userToken,
+    body: { episode_id: episode.id, content: 'Нежелан коментар' },
+  });
+  assert.equal(created.response.status, 201);
+
+  const hidden = await apiRequest(`/api/comments/admin/${created.data.id}/status`, {
+    method: 'PUT',
+    token: adminToken,
+    body: { status: 'hidden' },
+  });
+  assert.equal(hidden.response.status, 200);
+  assert.equal(hidden.data?.status, 'hidden');
+
+  const hiddenList = await apiRequest('/api/comments/admin?status=hidden&q=Нежелан', {
+    method: 'GET',
+    token: adminToken,
+  });
+  assert.equal(hiddenList.response.status, 200);
+  assert.equal(hiddenList.data?.items?.length, 1);
+  assert.equal(hiddenList.data?.items?.[0]?.status, 'hidden');
+
+  const publicList = await apiRequest(`/api/comments/episode/${episode.id}`, {
+    method: 'GET',
+    token: userToken,
+  });
+  assert.equal(publicList.response.status, 200);
+  assert.equal(publicList.data?.length, 0);
+
+  const restored = await apiRequest(`/api/comments/admin/${created.data.id}/status`, {
+    method: 'PUT',
+    token: adminToken,
+    body: { status: 'published' },
+  });
+  assert.equal(restored.response.status, 200);
+  assert.equal(restored.data?.status, 'published');
+
+  const publicAfterRestore = await apiRequest(`/api/comments/episode/${episode.id}`, {
+    method: 'GET',
+    token: userToken,
+  });
+  assert.equal(publicAfterRestore.response.status, 200);
+  assert.equal(publicAfterRestore.data?.length, 1);
 });

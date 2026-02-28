@@ -188,10 +188,18 @@ db.exec(`
     episode_id INTEGER NOT NULL,
     user_id INTEGER NOT NULL,
     content TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'published',
+    moderation_reason TEXT,
+    moderated_at TEXT,
+    moderated_by INTEGER,
+    deleted_at TEXT,
+    deleted_by INTEGER,
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now')),
     FOREIGN KEY (episode_id) REFERENCES episodes(id),
-    FOREIGN KEY (user_id) REFERENCES users(id)
+    FOREIGN KEY (user_id) REFERENCES users(id),
+    FOREIGN KEY (moderated_by) REFERENCES users(id),
+    FOREIGN KEY (deleted_by) REFERENCES users(id)
   );
 
   CREATE TABLE IF NOT EXISTS notifications (
@@ -263,6 +271,30 @@ if (!hasColumn('subscription_plans', 'is_popular')) {
 if (!hasColumn('productions', 'genres')) {
   db.exec(`ALTER TABLE productions ADD COLUMN genres TEXT DEFAULT '[]'`);
 }
+if (!hasColumn('comments', 'status')) {
+  db.exec(`ALTER TABLE comments ADD COLUMN status TEXT DEFAULT 'published'`);
+}
+if (!hasColumn('comments', 'moderation_reason')) {
+  db.exec(`ALTER TABLE comments ADD COLUMN moderation_reason TEXT`);
+}
+if (!hasColumn('comments', 'moderated_at')) {
+  db.exec(`ALTER TABLE comments ADD COLUMN moderated_at TEXT`);
+}
+if (!hasColumn('comments', 'moderated_by')) {
+  db.exec(`ALTER TABLE comments ADD COLUMN moderated_by INTEGER`);
+}
+if (!hasColumn('comments', 'deleted_at')) {
+  db.exec(`ALTER TABLE comments ADD COLUMN deleted_at TEXT`);
+}
+if (!hasColumn('comments', 'deleted_by')) {
+  db.exec(`ALTER TABLE comments ADD COLUMN deleted_by INTEGER`);
+}
+
+db.exec(`
+  UPDATE comments
+  SET status = 'published'
+  WHERE status IS NULL OR trim(status) = ''
+`);
 
 db.exec(`
   CREATE INDEX IF NOT EXISTS idx_watchlist_user ON watchlist(user_id, created_at);
@@ -289,6 +321,8 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_admin_audit_entity_created ON admin_audit_logs(entity_type, created_at);
   CREATE INDEX IF NOT EXISTS idx_admin_audit_action_created ON admin_audit_logs(action, created_at);
   CREATE INDEX IF NOT EXISTS idx_comments_episode ON comments(episode_id, created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_comments_status_created ON comments(status, created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_comments_user_created ON comments(user_id, created_at DESC);
   CREATE INDEX IF NOT EXISTS idx_notifications_user_unread ON notifications(user_id, is_read, created_at DESC);
   `);
 
@@ -331,6 +365,7 @@ const defaultSettings = {
   // Navigation
   nav_label_home: 'Начало',
   nav_label_catalog: 'Каталог',
+  nav_label_calendar: 'График',
   nav_label_subscribe: 'Абонаменти',
   nav_label_profile: 'Профил',
   nav_label_admin_zone: 'Административна зона',
@@ -395,6 +430,23 @@ const defaultSettings = {
   home_metric_productions: 'Продукции',
   footer_made_with: 'за общността',
   footer_premium_experience: 'Premium Streaming Experience',
+  calendar_title: 'Календар',
+  calendar_subtitle: 'Следете графика на предстоящите епизоди и премиери. Никога не пропускайте ново видео от любимите си продукции.',
+  calendar_empty: 'Няма информация за графика в момента.',
+  faq_title: 'Често задавани въпроси',
+  faq_description: 'Имаш въпроси относно плащания, достъп или съдържание? Тук сме събрали най-полезната информация за теб.',
+  faq_discord_link: 'Свържи се в Discord',
+  faq_discord_url: 'https://discord.gg/yourinvite',
+  comments_title: 'Дискусия',
+  comments_placeholder: 'Напиши коментар...',
+  comments_empty: 'Все още няма коментари. Бъдете първи!',
+  notifications_title: 'Известия',
+  notifications_mark_read: 'Маркирай всички',
+  notifications_empty: 'Няма нови известия',
+  notifications_view: 'Виж',
+  profile_stat_time: 'Гледано време',
+  profile_stat_episodes: 'Започнати епизоди',
+  profile_stat_recent: 'Последно гледани',
   // Live Stream Feature
   stream_platform: 'twitch',
   stream_channel: '',

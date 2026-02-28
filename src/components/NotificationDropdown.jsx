@@ -4,6 +4,7 @@ import { Bell, Check, ExternalLink } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { api } from '../utils/api';
 import { useAuth } from '../context/AuthContext';
+import { getPublicSettings } from '../utils/settings';
 
 export default function NotificationDropdown() {
     const { user } = useAuth();
@@ -20,19 +21,16 @@ export default function NotificationDropdown() {
 
     useEffect(() => {
         let active = true;
-        // Fetch settings
-        import('../utils/settings').then(({ getPublicSettings }) => {
-            getPublicSettings().then(settings => {
-                if (active && settings) {
-                    setUi(prev => ({
-                        notifications_title: settings.notifications_title || prev.notifications_title,
-                        notifications_mark_read: settings.notifications_mark_read || prev.notifications_mark_read,
-                        notifications_empty: settings.notifications_empty || prev.notifications_empty,
-                        notifications_view: settings.notifications_view || prev.notifications_view,
-                    }));
-                }
-            }).catch(() => { });
-        });
+        getPublicSettings().then(settings => {
+            if (active && settings) {
+                setUi(prev => ({
+                    notifications_title: settings.notifications_title || prev.notifications_title,
+                    notifications_mark_read: settings.notifications_mark_read || prev.notifications_mark_read,
+                    notifications_empty: settings.notifications_empty || prev.notifications_empty,
+                    notifications_view: settings.notifications_view || prev.notifications_view,
+                }));
+            }
+        }).catch(() => { });
         return () => { active = false; };
     }, []);
 

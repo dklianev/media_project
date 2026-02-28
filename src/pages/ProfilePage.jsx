@@ -174,7 +174,7 @@ export default function ProfilePage() {
                     <Clock className="w-6 h-6 text-[var(--accent-gold)]" />
                   </div>
                   <h3 className="text-2xl font-bold mb-1">
-                    {Math.floor((stats.total_watched_seconds || 0) / 3600)}ч {Math.floor(((stats.total_watched_seconds || 0) % 3600) / 60)}м
+                    {Math.floor((stats.total_watch_seconds || 0) / 3600)}ч {Math.floor(((stats.total_watch_seconds || 0) % 3600) / 60)}м
                   </h3>
                   <p className="text-xs uppercase tracking-[0.1em] text-[var(--text-muted)]">{s.profile_stat_time || 'Гледано време'}</p>
                 </div>
@@ -183,7 +183,7 @@ export default function ProfilePage() {
                   <div className="w-12 h-12 rounded-full bg-[var(--accent-cyan)]/10 flex items-center justify-center mb-3">
                     <PlayCircle className="w-6 h-6 text-[var(--accent-cyan)]" />
                   </div>
-                  <h3 className="text-2xl font-bold mb-1">{stats.total_episodes || 0}</h3>
+                  <h3 className="text-2xl font-bold mb-1">{stats.episodes_started || 0}</h3>
                   <p className="text-xs uppercase tracking-[0.1em] text-[var(--text-muted)]">{s.profile_stat_episodes || 'Започнати епизоди'}</p>
                 </div>
               </section>

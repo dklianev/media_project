@@ -4,6 +4,7 @@ import { MessageSquare, Send, Trash2, User } from 'lucide-react';
 import { api } from '../utils/api';
 import { useAuth } from '../context/AuthContext';
 import { useToastContext } from '../context/ToastContext';
+import { getPublicSettings } from '../utils/settings';
 
 export default function CommentsSection({ episodeId }) {
     const { user, isAdmin } = useAuth();
@@ -21,18 +22,15 @@ export default function CommentsSection({ episodeId }) {
     useEffect(() => {
         let active = true;
 
-        // Fetch settings
-        import('../utils/settings').then(({ getPublicSettings }) => {
-            getPublicSettings().then(settings => {
-                if (active && settings) {
-                    setUi(prev => ({
-                        comments_title: settings.comments_title || prev.comments_title,
-                        comments_placeholder: settings.comments_placeholder || prev.comments_placeholder,
-                        comments_empty: settings.comments_empty || prev.comments_empty,
-                    }));
-                }
-            }).catch(() => { });
-        });
+        getPublicSettings().then(settings => {
+            if (active && settings) {
+                setUi(prev => ({
+                    comments_title: settings.comments_title || prev.comments_title,
+                    comments_placeholder: settings.comments_placeholder || prev.comments_placeholder,
+                    comments_empty: settings.comments_empty || prev.comments_empty,
+                }));
+            }
+        }).catch(() => { });
         api.get(`/comments/episode/${episodeId}`)
             .then(data => {
                 if (active) {
@@ -126,7 +124,7 @@ export default function CommentsSection({ episodeId }) {
                                 <div className="w-10 h-10 rounded-full bg-[var(--bg-secondary)] border border-[var(--border)] overflow-hidden shrink-0 flex items-center justify-center">
                                     {comment.discord_avatar ? (
                                         <img
-                                            src={`https://cdn.discordapp.com/avatars/${comment.discord_id || comment.user_id}/${comment.discord_avatar}.png`}
+                                            src={comment.discord_avatar}
                                             alt="avatar"
                                             className="w-full h-full object-cover"
                                             onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'block'; }}
@@ -152,7 +150,7 @@ export default function CommentsSection({ episodeId }) {
                             </div>
 
                             {/* Admin or Author Delete Button */}
-                            {(isAdmin || user.id === comment.user_id) && (
+                            {(isAdmin || user?.id === comment.user_id) && (
                                 <button
                                     onClick={() => handleDelete(comment.id)}
                                     className="absolute top-4 right-4 p-1.5 text-[var(--text-muted)] hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity bg-[var(--bg-secondary)] rounded-md border border-[var(--border)]"

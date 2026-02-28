@@ -1,8 +1,8 @@
-import { motion } from 'framer-motion';
-import { HelpCircle, MessagesSquare, CreditCard, PlayCircle, Mail } from 'lucide-react';
+import { HelpCircle, MessagesSquare, CreditCard, PlayCircle } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import PageBackground from '../components/PageBackground';
 import ScrollReveal from '../components/ScrollReveal';
+import { getPublicSettings } from '../utils/settings';
 
 export default function FAQPage() {
     const [ui, setUi] = useState({
@@ -14,18 +14,16 @@ export default function FAQPage() {
 
     useEffect(() => {
         let active = true;
-        import('../utils/settings').then(({ getPublicSettings }) => {
-            getPublicSettings().then(settings => {
-                if (active && settings) {
-                    setUi(prev => ({
-                        faq_title: settings.faq_title || prev.faq_title,
-                        faq_description: settings.faq_description || prev.faq_description,
-                        faq_discord_link: settings.faq_discord_link || prev.faq_discord_link,
-                        faq_discord_url: settings.faq_discord_url || prev.faq_discord_url,
-                    }));
-                }
-            }).catch(() => { });
-        });
+        getPublicSettings().then(settings => {
+            if (active && settings) {
+                setUi(prev => ({
+                    faq_title: settings.faq_title || prev.faq_title,
+                    faq_description: settings.faq_description || prev.faq_description,
+                    faq_discord_link: settings.faq_discord_link || prev.faq_discord_link,
+                    faq_discord_url: settings.faq_discord_url || prev.faq_discord_url,
+                }));
+            }
+        }).catch(() => { });
         return () => { active = false; };
     }, []);
     const faqs = [

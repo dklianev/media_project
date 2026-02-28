@@ -534,7 +534,7 @@ router.post(
       published_at,
     } = req.body;
 
-    const prod = db.prepare('SELECT id FROM productions WHERE id = ?').get(production_id);
+    const prod = db.prepare('SELECT id, title FROM productions WHERE id = ?').get(production_id);
     if (!prod) return res.status(404).json({ error: 'Продукцията не е намерена' });
     if (!title || String(title).trim().length < 2) {
       return res.status(400).json({ error: 'Заглавието е задължително' });
@@ -814,10 +814,11 @@ router.delete('/admin/:id', requireAdmin, (req, res) => {
     return res.status(404).json({ error: 'Епизодът не е намерен' });
   }
 
-  const remove = db.transaction((episodeId) => {
-    db.prepare('DELETE FROM reactions WHERE episode_id = ?').run(episodeId);
-    db.prepare('DELETE FROM watch_history WHERE episode_id = ?').run(episodeId);
-    db.prepare('DELETE FROM episodes WHERE id = ?').run(episodeId);
+    const remove = db.transaction((episodeId) => {
+      db.prepare('DELETE FROM comments WHERE episode_id = ?').run(episodeId);
+      db.prepare('DELETE FROM reactions WHERE episode_id = ?').run(episodeId);
+      db.prepare('DELETE FROM watch_history WHERE episode_id = ?').run(episodeId);
+      db.prepare('DELETE FROM episodes WHERE id = ?').run(episodeId);
   });
   remove(req.params.id);
 

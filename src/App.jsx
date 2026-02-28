@@ -30,6 +30,7 @@ const CalendarPage = lazy(() => import('./pages/CalendarPage'));
 // Admin pages
 const AdminLayout = lazy(() => import('./pages/admin/AdminLayout'));
 const Dashboard = lazy(() => import('./pages/admin/Dashboard'));
+const ManageComments = lazy(() => import('./pages/admin/ManageComments'));
 const ManageUsers = lazy(() => import('./pages/admin/ManageUsers'));
 const ManagePlans = lazy(() => import('./pages/admin/ManagePlans'));
 const ManageProductions = lazy(() => import('./pages/admin/ManageProductions'));
@@ -166,7 +167,7 @@ export default function App() {
                 <Route path="/auth/callback" element={<AuthCallback />} />
                 <Route path="/character-name" element={<AnimatedPage><CharacterNamePage /></AnimatedPage>} />
                 <Route path="/faq" element={<AnimatedPage><FAQPage /></AnimatedPage>} />
-                <Route path="/calendar" element={<AnimatedPage><CalendarPage /></AnimatedPage>} />
+                <Route path="/calendar" element={<ProtectedRoute><AnimatedPage><CalendarPage /></AnimatedPage></ProtectedRoute>} />
 
                 {/* Protected */}
                 <Route path="/" element={<ProtectedRoute><AnimatedPage><HomePage /></AnimatedPage></ProtectedRoute>} />
@@ -181,6 +182,7 @@ export default function App() {
                 <Route path="/admin" element={<AdminRoute><AdminLayout /></AdminRoute>}>
                   <Route index element={<Dashboard />} />
                   <Route path="users" element={<ManageUsers />} />
+                  <Route path="comments" element={<ManageComments />} />
                   <Route path="plans" element={<ManagePlans />} />
                   <Route path="productions" element={<ManageProductions />} />
                   <Route path="episodes" element={<ManageEpisodes />} />
