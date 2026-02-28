@@ -334,7 +334,7 @@ export default function VideoPlayer({ embedUrl, youtubeVideoId, title, siteName 
             </button>
 
             <div
-              className={`overflow-hidden transition-[width,margin] duration-300 ease-out flex items-center ${isHoveringVolume ? 'w-16 ml-2' : 'w-0 ml-0'
+              className={`overflow-hidden transition-[width,margin] duration-300 ease-out flex items-center w-16 ml-2 sm:w-0 sm:ml-0 sm:group-hover/volume:w-16 sm:group-hover/volume:ml-2 sm:focus-within:w-16 sm:focus-within:ml-2 ${isHoveringVolume ? 'sm:!w-16 sm:!ml-2' : ''
                 }`}
             >
               <input
