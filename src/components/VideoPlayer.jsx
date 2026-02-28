@@ -339,7 +339,7 @@ export default function VideoPlayer({ embedUrl, youtubeVideoId, title, siteName 
 
           {/* Volume Control */}
           <div
-            className="flex items-center group/volume relative ml-1"
+            className="flex items-center group/volume relative ml-1 py-4 sm:-my-4 sm:py-4 pr-4 sm:-mr-4 sm:pr-4"
             onMouseEnter={() => setIsHoveringVolume(true)}
             onMouseLeave={() => setIsHoveringVolume(false)}
           >
@@ -354,6 +354,7 @@ export default function VideoPlayer({ embedUrl, youtubeVideoId, title, siteName 
             <div
               className={`ml-2 flex w-20 items-center opacity-100 sm:absolute sm:left-full sm:top-1/2 sm:z-10 sm:-translate-y-1/2 sm:bg-black/40 sm:backdrop-blur-sm sm:rounded-full sm:pl-2 sm:pr-3 sm:py-1.5 sm:transition-[width,opacity,margin] sm:duration-300 sm:ease-out ${isHoveringVolume || isAdjustingVolume ? 'sm:w-16 sm:ml-2 sm:opacity-100' : 'sm:w-0 sm:ml-0 sm:opacity-0 sm:pointer-events-none'
                 }`}
+              onMouseEnter={() => setIsHoveringVolume(true)}
             >
               <input
                 type="range"
