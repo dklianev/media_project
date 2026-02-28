@@ -1020,10 +1020,23 @@ export default function VideoPlayer({
           </div>
           <div className="order-last basis-full text-[12px] font-medium tracking-wide opacity-80 sm:order-none sm:basis-auto sm:ml-1 sm:text-[13px]">
             {formatTime(progress)} <span className="mx-0.5 opacity-50">/</span> {formatTime(duration)}
-            {initialProgressSeconds > 5 && duration > 0 && progress < duration - 5 && (
-              <span className="ml-3 hidden rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] uppercase tracking-[0.16em] text-white/55 sm:inline-block">
+            {initialProgressSeconds > 5 && duration > 0 && progress < Math.max(0, initialProgressSeconds - 3) && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (!playerRef.current || !playerReady) return;
+                  playerRef.current.seekTo(initialProgressSeconds, true);
+                  playerRef.current.playVideo();
+                  setProgress(initialProgressSeconds);
+                  reportProgress(initialProgressSeconds, duration);
+                  revealControls();
+                }}
+                className="ml-3 hidden cursor-pointer rounded-full border border-[var(--accent-gold)]/30 bg-[var(--accent-gold)]/15 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.16em] text-[var(--accent-gold-light)] transition-colors hover:bg-[var(--accent-gold)]/30 sm:inline-block focus:outline-none"
+                aria-label={`Продължи от ${formatTime(initialProgressSeconds)}`}
+              >
                 Resume {formatTime(initialProgressSeconds)}
-              </span>
+              </button>
             )}
           </div>
           <div className="hidden flex-1 sm:block" />
