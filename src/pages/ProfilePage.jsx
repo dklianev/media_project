@@ -311,11 +311,13 @@ export default function ProfilePage() {
               </StaggerItem>
 
               <StaggerItem>
-                <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-                  <Link to="/productions" className="btn-gold inline-flex items-center justify-center gap-2 shadow-[0_10px_30px_rgba(212,175,55,0.25)] px-6 py-3 rounded-xl text-sm uppercase tracking-widest cursor-pointer">
-                    <Sparkles className="w-4 h-4" /> Към каталога
-                  </Link>
-                </motion.div>
+                <div className="mt-8">
+                  <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+                    <Link to="/productions" className="btn-gold inline-flex items-center justify-center gap-2 shadow-[0_10px_30px_rgba(212,175,55,0.25)] px-6 py-3 rounded-xl text-sm uppercase tracking-widest cursor-pointer">
+                      <Sparkles className="w-4 h-4" /> Към каталога
+                    </Link>
+                  </motion.div>
+                </div>
               </StaggerItem>
             </StaggerContainer>
           )}
