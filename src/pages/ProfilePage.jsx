@@ -76,8 +76,9 @@ export default function ProfilePage() {
 
       {/* --- 1. HERO BANNER --- */}
       <ScrollReveal variant="fadeUp" delay={0.1}>
-        <section className="relative glass-card overflow-hidden">
+        <section className="relative glass-card overflow-hidden group">
           {/* Decorative backdrop glow */}
+          <div className="aurora-bg opacity-40 group-hover:opacity-60 transition-opacity duration-1000" />
           <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-[var(--accent-cyan)] opacity-10 blur-[120px] rounded-full pointer-events-none translate-x-1/2 -translate-y-1/2" />
           <div className="absolute bottom-0 left-0 w-[300px] h-[300px] bg-[var(--accent-gold)] opacity-10 blur-[100px] rounded-full pointer-events-none -translate-x-1/2 translate-y-1/2" />
 
@@ -90,11 +91,12 @@ export default function ProfilePage() {
                   whileHover={{ scale: 1.05 }}
                   transition={{ type: 'spring', stiffness: 300, damping: 20 }}
                 >
-                  <div className="absolute -inset-1 rounded-3xl bg-[conic-gradient(from_0deg,var(--accent-gold),var(--accent-cyan),var(--accent-gold))] opacity-70" style={{ animation: 'spin-slow 4s linear infinite' }} />
+                  <div className="absolute -inset-[3px] rounded-[36px] bg-[conic-gradient(from_0deg,var(--accent-gold),var(--accent-cyan),var(--accent-gold))] opacity-70 animate-[spin-slow_8s_linear_infinite]" />
+                  <div className="absolute -inset-[3px] rounded-[36px] bg-[var(--accent-gold)] blur-md opacity-30 mix-blend-screen animate-[glow-pulse_3s_ease-in-out_infinite]" />
                   <img
                     src={user.discord_avatar}
                     alt={user?.character_name ? `Аватар на ${user.character_name}` : 'Аватар'}
-                    className="relative w-32 h-32 md:w-40 md:h-40 rounded-3xl border-4 border-[var(--bg-secondary)] object-cover shadow-2xl"
+                    className="relative w-32 h-32 md:w-40 md:h-40 rounded-3xl border-4 border-[var(--bg-secondary)] object-cover shadow-2xl z-10"
                   />
                 </motion.div>
               ) : (
@@ -104,9 +106,9 @@ export default function ProfilePage() {
               )}
 
               {/* Status Badge Over Avatar */}
-              <div className="absolute -bottom-3 left-1/2 -translate-x-1/2 flex items-center justify-center gap-1.5 px-3 py-1 rounded-full bg-[var(--bg-card)] border border-[var(--border)] shadow-lg whitespace-nowrap">
+              <div className="absolute -bottom-3 left-1/2 -translate-x-1/2 flex items-center justify-center gap-1.5 px-3 py-1 rounded-full bg-[var(--bg-card)] border border-[var(--border)] shadow-lg shadow-black/50 whitespace-nowrap z-20">
                 <Shield className="w-3 h-3 text-[var(--accent-gold)]" />
-                <span className="text-[10px] uppercase tracking-wider font-semibold text-[var(--text-primary)]">
+                <span className="text-[10px] uppercase tracking-wider font-bold text-white drop-shadow-md">
                   {user?.role === 'superadmin' ? 'Администратор' :
                     user?.role === 'admin' ? 'Модератор' :
                       user?.role === 'vip' ? 'VIP Потребител' : 'Потребител'}
@@ -161,38 +163,47 @@ export default function ProfilePage() {
       {stats && (
         <ScrollReveal variant="fadeUp" delay={0.2}>
           <section className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="glass-card p-5 flex items-center gap-4 border border-[var(--border)] hover:border-[var(--accent-gold)]/40 transition-colors">
+            <motion.div
+              whileHover={{ y: -5, scale: 1.02 }}
+              className="glass-card p-5 flex items-center gap-4 hover:border-[var(--accent-gold)]/40 hover:shadow-[0_8px_30px_rgba(212,175,55,0.15)] transition-all cursor-default"
+            >
               <div className="w-12 h-12 rounded-2xl bg-[var(--accent-gold)]/10 flex items-center justify-center shrink-0">
                 <Clock className="w-6 h-6 text-[var(--accent-gold)]" />
               </div>
               <div>
-                <p className="text-xs uppercase tracking-[0.1em] text-[var(--text-muted)] mb-0.5">{s.profile_stat_time || 'Гледано време'}</p>
-                <div className="text-xl font-bold tracking-tight text-white">
-                  <span className="font-sans">{Math.floor((stats.total_watch_seconds || 0) / 3600)}</span><span className="text-sm text-[var(--text-secondary)] ml-0.5 lowercase font-normal">ч</span>{' '}
-                  <span className="font-sans ml-1">{Math.floor(((stats.total_watch_seconds || 0) % 3600) / 60)}</span><span className="text-sm text-[var(--text-secondary)] ml-0.5 lowercase font-normal">м</span>
+                <p className="text-xs uppercase tracking-[0.1em] text-[var(--text-muted)] mb-0.5 font-bold">{s.profile_stat_time || 'Гледано време'}</p>
+                <div className="text-xl font-bold tracking-tight text-white drop-shadow-sm">
+                  <span className="font-sans text-[var(--accent-gold-light)]">{Math.floor((stats.total_watch_seconds || 0) / 3600)}</span><span className="text-sm text-[var(--text-secondary)] ml-0.5 lowercase font-normal">ч</span>{' '}
+                  <span className="font-sans text-[var(--accent-gold-light)] ml-1">{Math.floor(((stats.total_watch_seconds || 0) % 3600) / 60)}</span><span className="text-sm text-[var(--text-secondary)] ml-0.5 lowercase font-normal">м</span>
                 </div>
               </div>
-            </div>
+            </motion.div>
 
-            <div className="glass-card p-5 flex items-center gap-4 border border-[var(--border)] hover:border-[var(--accent-cyan)]/40 transition-colors">
+            <motion.div
+              whileHover={{ y: -5, scale: 1.02 }}
+              className="glass-card p-5 flex items-center gap-4 hover:border-[var(--accent-cyan)]/40 hover:shadow-[0_8px_30px_rgba(75,197,255,0.15)] transition-all cursor-default"
+            >
               <div className="w-12 h-12 rounded-2xl bg-[var(--accent-cyan)]/10 flex items-center justify-center shrink-0">
                 <PlayCircle className="w-6 h-6 text-[var(--accent-cyan)]" />
               </div>
               <div>
-                <p className="text-xs uppercase tracking-[0.1em] text-[var(--text-muted)] mb-0.5">{s.profile_stat_episodes || 'Започнати епизоди'}</p>
-                <h3 className="text-xl font-bold font-sans tracking-tight text-white">{stats.episodes_started || 0}</h3>
+                <p className="text-xs uppercase tracking-[0.1em] text-[var(--text-muted)] mb-0.5 font-bold">{s.profile_stat_episodes || 'Започнати епизоди'}</p>
+                <h3 className="text-xl font-bold font-sans tracking-tight text-[var(--accent-cyan)] drop-shadow-sm">{stats.episodes_started || 0}</h3>
               </div>
-            </div>
+            </motion.div>
 
-            <div className="glass-card p-5 flex items-center gap-4 border border-[var(--border)] hover:border-[var(--success)]/40 transition-colors">
+            <motion.div
+              whileHover={{ y: -5, scale: 1.02 }}
+              className="glass-card p-5 flex items-center gap-4 hover:border-[var(--success)]/40 hover:shadow-[0_8px_30px_rgba(34,197,94,0.15)] transition-all cursor-default"
+            >
               <div className="w-12 h-12 rounded-2xl bg-[var(--success)]/10 flex items-center justify-center shrink-0">
                 <Calendar className="w-6 h-6 text-[var(--success)]" />
               </div>
               <div>
-                <p className="text-xs uppercase tracking-[0.1em] text-[var(--text-muted)] mb-0.5">{s.profile_member_since_label || 'Член от'}</p>
-                <h3 className="text-lg font-bold tracking-tight text-white">{formatDate(user?.created_at)}</h3>
+                <p className="text-xs uppercase tracking-[0.1em] text-[var(--text-muted)] mb-0.5 font-bold">{s.profile_member_since_label || 'Член от'}</p>
+                <h3 className="text-lg font-bold tracking-tight text-white drop-shadow-sm">{formatDate(user?.created_at)}</h3>
               </div>
-            </div>
+            </motion.div>
           </section>
         </ScrollReveal>
       )}
@@ -279,18 +290,34 @@ export default function ProfilePage() {
               ))}
             </div>
           ) : (
-            <div className="flex flex-col items-center justify-center text-center py-16 px-4 bg-[var(--bg-secondary)]/30 rounded-2xl border border-[var(--border)]/50 border-dashed">
-              <div className="w-16 h-16 rounded-3xl bg-[var(--bg-tertiary)] flex items-center justify-center mb-4">
-                <ListVideo className="w-8 h-8 text-[var(--text-muted)] opacity-50" />
-              </div>
-              <h3 className="text-lg font-semibold text-white mb-2">Списъкът ти е празен</h3>
-              <p className="text-[var(--text-secondary)] mb-6 max-w-sm">
-                Разгледай каталога и добави любимите си сериали и филми за бърз достъп.
-              </p>
-              <Link to="/productions" className="btn-primary inline-flex items-center gap-2 shadow-premium-md">
-                <Sparkles className="w-4 h-4" /> Към каталога
-              </Link>
-            </div>
+            <StaggerContainer className="flex flex-col items-center justify-center text-center py-20 px-4 bg-[var(--bg-secondary)]/30 rounded-2xl border border-[var(--border)]/50 border-dashed relative overflow-hidden group">
+              {/* Ambient Glow for Empty State */}
+              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 bg-[var(--accent-gold)] opacity-5 blur-[80px] rounded-full group-hover:opacity-10 transition-opacity duration-700 pointer-events-none" />
+
+              <StaggerItem>
+                <div className="relative w-20 h-20 rounded-full bg-[var(--bg-tertiary)] flex items-center justify-center mb-6 shadow-xl border border-[var(--border)] group-hover:border-[var(--accent-gold)]/30 transition-colors">
+                  <ListVideo className="w-10 h-10 text-[var(--accent-gold)] opacity-70 drop-shadow-[0_0_15px_rgba(212,175,55,0.4)] animate-[float-slow_4s_ease-in-out_infinite]" />
+                </div>
+              </StaggerItem>
+
+              <StaggerItem>
+                <h3 className="text-xl font-bold text-white mb-2 tracking-tight">Списъкът ти е празен</h3>
+              </StaggerItem>
+
+              <StaggerItem>
+                <p className="text-[var(--text-secondary)] mb-8 max-w-sm text-sm">
+                  Разгледай нашия огромен каталог и добави любимите си сериали и филми тук за бърз достъп по всяко време.
+                </p>
+              </StaggerItem>
+
+              <StaggerItem>
+                <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+                  <Link to="/productions" className="btn-gold inline-flex items-center justify-center gap-2 shadow-[0_10px_30px_rgba(212,175,55,0.25)] px-6 py-3 rounded-xl text-sm uppercase tracking-widest cursor-pointer">
+                    <Sparkles className="w-4 h-4" /> Към каталога
+                  </Link>
+                </motion.div>
+              </StaggerItem>
+            </StaggerContainer>
           )}
         </section>
       </ScrollReveal>
