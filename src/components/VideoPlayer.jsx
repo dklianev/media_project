@@ -1,16 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Play, Pause, RotateCcw, Volume2, VolumeX } from 'lucide-react';
+import { Play, Pause, RotateCcw, RotateCw, Volume2, VolumeX, Maximize } from 'lucide-react';
 
 export default function VideoPlayer({ embedUrl, youtubeVideoId, title, siteName = 'Платформа' }) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
   const [isMuted, setIsMuted] = useState(false);
+  const [volume, setVolume] = useState(100);
+  const [isHoveringVolume, setIsHoveringVolume] = useState(false);
   const [playerReady, setPlayerReady] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   const playerRef = useRef(null);
   const containerRef = useRef(null);
+  const wrapperRef = useRef(null);
   const progressInterval = useRef(null);
 
   // Parse YouTube video ID from URL
@@ -101,6 +105,14 @@ export default function VideoPlayer({ embedUrl, youtubeVideoId, title, siteName 
     };
   }, [videoId]);
 
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
+
   const togglePlay = (e) => {
     if (e) e.stopPropagation();
     if (!playerRef.current || !playerReady) return;
@@ -121,15 +133,61 @@ export default function VideoPlayer({ embedUrl, youtubeVideoId, title, siteName 
     setProgress(newTime);
   };
 
+  const handleSkipForward = (e) => {
+    if (e) e.stopPropagation();
+    if (!playerRef.current || !playerReady) return;
+    const current = playerRef.current.getCurrentTime();
+    const newTime = Math.min(duration, current + 10);
+    playerRef.current.seekTo(newTime, true);
+    setProgress(newTime);
+  };
+
   const toggleMute = (e) => {
     if (e) e.stopPropagation();
     if (!playerRef.current || !playerReady) return;
     if (isMuted) {
       playerRef.current.unMute();
       setIsMuted(false);
+      if (volume === 0) {
+        setVolume(100);
+        playerRef.current.setVolume(100);
+      }
     } else {
       playerRef.current.mute();
       setIsMuted(true);
+    }
+  };
+
+  const handleVolumeChange = (e) => {
+    e.stopPropagation();
+    const newVolume = parseInt(e.target.value, 10);
+    setVolume(newVolume);
+    if (!playerRef.current || !playerReady) return;
+
+    playerRef.current.setVolume(newVolume);
+    if (newVolume === 0) {
+      playerRef.current.mute();
+      setIsMuted(true);
+    } else if (isMuted) {
+      playerRef.current.unMute();
+      setIsMuted(false);
+    }
+  };
+
+  const toggleFullscreen = async (e) => {
+    if (e) e.stopPropagation();
+    if (!wrapperRef.current) return;
+
+    if (!document.fullscreenElement) {
+      try {
+        await wrapperRef.current.requestFullscreen();
+      } catch (err) {
+        console.error("Error attempting to enable fullscreen:", err);
+      }
+    } else {
+      if (document.exitFullscreen) {
+        document.exitFullscreen();
+      }
     }
   };
 
@@ -183,11 +241,13 @@ export default function VideoPlayer({ embedUrl, youtubeVideoId, title, siteName 
 
   return (
     <motion.div
+      ref={wrapperRef}
       initial={{ opacity: 0, scale: 0.98 }}
       animate={{ opacity: 1, scale: 1 }}
       transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-      className="group relative w-full overflow-hidden rounded-2xl border border-[var(--border)] bg-black shadow-premium-md"
-      style={{ paddingBottom: '56.25%' }}
+      className={`group relative w-full overflow-hidden bg-black shadow-premium-md ${isFullscreen ? 'h-screen rounded-none border-none' : 'rounded-2xl border border-[var(--border)]'
+        }`}
+      style={!isFullscreen ? { paddingBottom: '56.25%' } : {}}
       onContextMenu={handleContextMenu}
     >
       {/* YouTube Player Container */}
@@ -199,17 +259,17 @@ export default function VideoPlayer({ embedUrl, youtubeVideoId, title, siteName 
       <div
         className="absolute inset-0 z-10 cursor-pointer"
         onClick={togglePlay}
-        onDoubleClick={handleRewind}
+        onDoubleClick={toggleFullscreen}
       />
 
       {/* Custom Controls Overlay */}
       <div
-        className={`absolute bottom-0 inset-x-0 z-20 bg-gradient-to-t from-black/90 pt-12 pb-4 px-5 transition-opacity duration-300 ${isPlaying ? 'opacity-0 group-hover:opacity-100' : 'opacity-100'
+        className={`absolute bottom-0 inset-x-0 z-20 bg-gradient-to-t from-black/90 pt-16 pb-3 px-4 transition-opacity duration-300 ${isPlaying ? 'opacity-0 group-hover:opacity-100' : 'opacity-100'
           }`}
       >
         {/* Progress Bar */}
         <div
-          className="relative w-full h-1.5 bg-white/20 rounded-full mb-4 cursor-pointer group/progress"
+          className="relative w-full h-[3px] bg-white/20 rounded-full mb-3 cursor-pointer group/progress transition-all hover:h-1"
           onClick={handleSeek}
         >
           {/* Fill */}
@@ -219,49 +279,98 @@ export default function VideoPlayer({ embedUrl, youtubeVideoId, title, siteName 
           />
           {/* Thumb */}
           <div
-            className="absolute top-1/2 -mt-1.5 w-3 h-3 bg-white rounded-full shadow-sm scale-0 group-hover/progress:scale-100 transition-transform"
+            className="absolute top-1/2 -mt-1.5 w-3 h-3 bg-[var(--accent-gold)] rounded-full shadow-sm scale-0 group-hover/progress:scale-100 transition-transform"
             style={{ left: `calc(${duration > 0 ? (progress / duration) * 100 : 0}% - 6px)` }}
           />
         </div>
 
         {/* Buttons and Info */}
-        <div className="flex items-center gap-5">
+        <div className="flex items-center gap-4 text-white/90">
+          {/* Play/Pause */}
           <button
             onClick={togglePlay}
-            className="text-white hover:text-[var(--accent-gold)] transition-colors focus:outline-none"
+            className="hover:text-white transition-colors focus:outline-none flex-shrink-0"
             aria-label={isPlaying ? "Пауза" : "Възпроизвеждане"}
           >
             {isPlaying ? (
-              <Pause className="w-7 h-7 fill-current" />
+              <Pause className="w-6 h-6 fill-current" />
             ) : (
-              <Play className="w-7 h-7 fill-current ml-0.5" />
+              <Play className="w-6 h-6 fill-current ml-0.5" />
             )}
           </button>
 
-          <button
-            onClick={handleRewind}
-            className="text-white/80 hover:text-white transition-colors focus:outline-none flex items-center gap-1.5"
-            aria-label="Върни 10 секунди"
-            title="Върни 10 секунди (двоен клик върху видеото)"
-          >
-            <RotateCcw className="w-5 h-5" />
-            <span className="text-[10px] font-medium tracking-wider">10s</span>
-          </button>
-
-          <button
-            onClick={toggleMute}
-            className="text-white/80 hover:text-white transition-colors focus:outline-none ml-2"
-            aria-label={isMuted ? "Включи звук" : "Изключи звук"}
-          >
-            {isMuted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
-          </button>
-
-          <div className="text-xs text-white/75 tabular-nums font-medium tracking-wide">
-            {formatTime(progress)} / {formatTime(duration)}
+          {/* Skip Controls */}
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleRewind}
+              className="hover:text-white transition-colors focus:outline-none flex items-center gap-1 opacity-70 hover:opacity-100"
+              aria-label="Върни 10 секунди"
+            >
+              <RotateCcw className="w-4 h-4" />
+              <span className="text-[11px] font-semibold tracking-wide">10s</span>
+            </button>
+            <button
+              onClick={handleSkipForward}
+              className="hover:text-white transition-colors focus:outline-none flex items-center gap-1 opacity-70 hover:opacity-100"
+              aria-label="Напред 10 секунди"
+            >
+              <RotateCw className="w-4 h-4" />
+              <span className="text-[11px] font-semibold tracking-wide">10s</span>
+            </button>
           </div>
 
-          <div className="ml-auto text-[10px] font-bold uppercase tracking-[0.25em] text-white/30 truncate max-w-[120px] select-none">
-            {siteName}
+          {/* Volume Control */}
+          <div
+            className="flex items-center group/volume relative ml-1"
+            onMouseEnter={() => setIsHoveringVolume(true)}
+            onMouseLeave={() => setIsHoveringVolume(false)}
+          >
+            <button
+              onClick={toggleMute}
+              className="hover:text-white transition-colors focus:outline-none opacity-80 hover:opacity-100"
+              aria-label={isMuted ? "Включи звук" : "Изключи звук"}
+            >
+              {isMuted || volume === 0 ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
+            </button>
+
+            <div
+              className={`overflow-hidden transition-[width,margin] duration-300 ease-out flex items-center ${isHoveringVolume ? 'w-16 ml-2' : 'w-0 ml-0'
+                }`}
+            >
+              <input
+                type="range"
+                min="0"
+                max="100"
+                value={isMuted ? 0 : volume}
+                onChange={handleVolumeChange}
+                className="w-full h-1 bg-white/30 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-2.5 [&::-webkit-slider-thumb]:h-2.5 [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:rounded-full [&::-moz-range-thumb]:w-2.5 [&::-moz-range-thumb]:h-2.5 [&::-moz-range-thumb]:bg-white [&::-moz-range-thumb]:border-none [&::-moz-range-thumb]:rounded-full accent-white"
+                style={{
+                  background: `linear-gradient(to right, white ${isMuted ? 0 : volume}%, rgba(255,255,255,0.3) ${isMuted ? 0 : volume}%)`
+                }}
+              />
+            </div>
+          </div>
+
+          {/* Time */}
+          <div className="text-[13px] font-medium tracking-wide opacity-80 ml-1">
+            {formatTime(progress)} <span className="opacity-50 mx-0.5">/</span> {formatTime(duration)}
+          </div>
+
+          <div className="flex-1" />
+
+          {/* Right Side Controls */}
+          <div className="flex items-center gap-4">
+            <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-white/50 select-none hidden sm:block">
+              {siteName}
+            </div>
+
+            <button
+              onClick={toggleFullscreen}
+              className="hover:text-white transition-colors focus:outline-none opacity-80 hover:opacity-100"
+              aria-label={isFullscreen ? "Изход от цял екран" : "Цял екран"}
+            >
+              <Maximize className="w-5 h-5" />
+            </button>
           </div>
         </div>
       </div>
