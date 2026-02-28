@@ -16,6 +16,8 @@ export default function VideoPlayer({ embedUrl, youtubeVideoId, title, siteName 
   const [showSpeedMenu, setShowSpeedMenu] = useState(false);
   const [animState, setAnimState] = useState(null);
   const [animKey, setAnimKey] = useState(0);
+  const [hoverTime, setHoverTime] = useState(null);
+  const [hoverPos, setHoverPos] = useState(null);
 
   const playerRef = useRef(null);
   const containerRef = useRef(null);
@@ -244,6 +246,20 @@ export default function VideoPlayer({ embedUrl, youtubeVideoId, title, siteName 
     setProgress(newTime);
   };
 
+  const handleProgressMouseMove = (e) => {
+    if (!duration) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const percentage = Math.max(0, Math.min(1, x / rect.width));
+    setHoverTime(percentage * duration);
+    setHoverPos(percentage * 100);
+  };
+
+  const handleProgressMouseLeave = () => {
+    setHoverTime(null);
+    setHoverPos(null);
+  };
+
   const handleDoubleClick = (e) => {
     e.stopPropagation();
     const rect = e.currentTarget.getBoundingClientRect();
@@ -379,7 +395,18 @@ export default function VideoPlayer({ embedUrl, youtubeVideoId, title, siteName 
         <div
           className="relative w-full h-[3px] bg-white/20 rounded-full mb-3 cursor-pointer group/progress transition-all hover:h-1"
           onClick={handleSeek}
+          onMouseMove={handleProgressMouseMove}
+          onMouseLeave={handleProgressMouseLeave}
         >
+          {/* Hover Tooltip */}
+          {hoverTime !== null && hoverPos !== null && (
+            <div
+              className="absolute -top-8 -translate-x-1/2 bg-black/80 backdrop-blur-sm text-white text-[11px] font-semibold px-2 py-1 rounded pointer-events-none z-30 shadow-md border border-white/5 whitespace-nowrap"
+              style={{ left: `${hoverPos}%` }}
+            >
+              {formatTime(hoverTime)}
+            </div>
+          )}
           {/* Fill */}
           <div
             className="absolute top-0 left-0 h-full bg-[var(--accent-gold)] rounded-full transition-all duration-100 ease-linear"
