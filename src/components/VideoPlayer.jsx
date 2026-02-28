@@ -149,8 +149,9 @@ export default function VideoPlayer({ embedUrl, title, siteName = 'Платфо�
 
   if (!embedUrl) return null;
 
-  // Fallback for non-YouTube videos
-  if (!videoId) {
+  // Fallback for non-YouTube videos (or if no embedUrl but fallback is somehow requested)
+  // If we have an embedUrl but it's not a YouTube video (videoId is missing), we use the normal iframe
+  if (!videoId && embedUrl) {
     return (
       <motion.div
         initial={{ opacity: 0, scale: 0.98 }}

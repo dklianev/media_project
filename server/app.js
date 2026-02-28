@@ -108,7 +108,7 @@ export function createApp() {
           'https://kick.com',
         ],
         imgSrc: ["'self'", 'data:', 'https://cdn.discordapp.com', 'blob:'],
-        scriptSrc: ["'self'", (req, res) => `'nonce-${res.locals.cspNonce}'`],
+        scriptSrc: ["'self'", 'https://www.youtube.com', 'https://s.ytimg.com', (req, res) => `'nonce-${res.locals.cspNonce}'`],
         styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
         fontSrc: ["'self'", 'https://fonts.gstatic.com'],
       },
