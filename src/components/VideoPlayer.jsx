@@ -928,12 +928,12 @@ export default function VideoPlayer({
 
       <div className={`absolute bottom-0 inset-x-0 z-30 bg-gradient-to-t from-black/90 px-4 pb-3 pt-16 transition-opacity duration-300 ${shouldShowControls ? 'opacity-100' : 'pointer-events-none opacity-0'}`}>
         <div
-          className="group/progress mb-1 flex w-full cursor-pointer items-center py-2"
+          className="group/progress mb-1 flex w-full cursor-pointer items-center py-3"
           onClick={handleSeek}
           onMouseMove={handleProgressMouseMove}
           onMouseLeave={handleProgressMouseLeave}
         >
-          <div className="relative h-[3px] w-full rounded-full bg-white/20 transition-all duration-200 group-hover/progress:h-[6px]">
+          <div className="relative h-[3px] w-full rounded-full bg-white/20 transition-all duration-200 group-hover/progress:h-[8px]">
             {hoverTime !== null && hoverPos !== null && (
               <div
                 className="pointer-events-none absolute -top-10 z-30 -translate-x-1/2 whitespace-nowrap rounded border border-white/5 bg-black/80 px-2 py-1 text-[11px] font-semibold text-white shadow-md backdrop-blur-sm"
