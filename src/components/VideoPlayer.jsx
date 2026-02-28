@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { Play, Pause, RotateCcw, RotateCw, Volume2, VolumeX, Maximize, SkipForward } from 'lucide-react';
+import { Play, Pause, RotateCcw, RotateCw, Volume2, VolumeX, Maximize, SkipForward, Settings } from 'lucide-react';
 
 export default function VideoPlayer({ embedUrl, youtubeVideoId, title, siteName = 'Платформа', nextEpisodeId }) {
   const navigate = useNavigate();
@@ -12,11 +12,14 @@ export default function VideoPlayer({ embedUrl, youtubeVideoId, title, siteName 
   const [volume, setVolume] = useState(100);
   const [playerReady, setPlayerReady] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [playbackSpeed, setPlaybackSpeed] = useState(1);
+  const [showSpeedMenu, setShowSpeedMenu] = useState(false);
 
   const playerRef = useRef(null);
   const containerRef = useRef(null);
   const wrapperRef = useRef(null);
   const progressInterval = useRef(null);
+  const speedMenuRef = useRef(null);
 
   // Parse YouTube video ID from URL
   const getYouTubeId = (url) => {
@@ -115,6 +118,16 @@ export default function VideoPlayer({ embedUrl, youtubeVideoId, title, siteName 
     return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
   }, []);
 
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (speedMenuRef.current && !speedMenuRef.current.contains(event.target)) {
+        setShowSpeedMenu(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   const togglePlay = (e) => {
     if (e) e.stopPropagation();
     if (!playerRef.current || !playerReady) return;
@@ -174,6 +187,15 @@ export default function VideoPlayer({ embedUrl, youtubeVideoId, title, siteName 
       playerRef.current.unMute();
       setIsMuted(false);
     }
+  };
+
+  const changePlaybackSpeed = (speed, e) => {
+    if (e) e.stopPropagation();
+    setPlaybackSpeed(speed);
+    if (playerRef.current && playerRef.current.setPlaybackRate) {
+      playerRef.current.setPlaybackRate(speed);
+    }
+    setShowSpeedMenu(false);
   };
 
   const toggleFullscreen = async (e) => {
@@ -369,9 +391,36 @@ export default function VideoPlayer({ embedUrl, youtubeVideoId, title, siteName 
           <div className="hidden flex-1 sm:block" />
 
           {/* Right Side Controls */}
-          <div className="ml-auto flex items-center gap-3 sm:gap-4">
+          <div className="ml-auto flex items-center gap-3 sm:gap-4 relative">
             <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-white/50 select-none hidden sm:block">
               {siteName}
+            </div>
+
+            <div className="relative" ref={speedMenuRef}>
+              <button
+                onClick={() => setShowSpeedMenu(!showSpeedMenu)}
+                className={`hover:text-white transition-colors focus:outline-none flex items-center gap-1 ${showSpeedMenu ? 'opacity-100 text-white' : 'opacity-80 hover:opacity-100'}`}
+                aria-label="Скорост на възпроизвеждане"
+              >
+                <Settings className="w-5 h-5" />
+                {playbackSpeed !== 1 && (
+                  <span className="hidden text-[10px] font-bold sm:inline-block leading-none">{playbackSpeed}x</span>
+                )}
+              </button>
+
+              {showSpeedMenu && (
+                <div className="absolute bottom-full right-0 mb-4 bg-black/80 backdrop-blur-md rounded-xl border border-white/10 p-2 min-w-[120px] shadow-2xl flex flex-col gap-1 z-50">
+                  {[0.5, 1, 1.25, 1.5, 2].map((speed) => (
+                    <button
+                      key={speed}
+                      onClick={(e) => changePlaybackSpeed(speed, e)}
+                      className={`text-left px-3 py-1.5 text-sm rounded-lg hover:bg-white/10 transition-colors ${playbackSpeed === speed ? 'bg-white/15 font-semibold text-white' : 'text-white/80'}`}
+                    >
+                      {speed === 1 ? 'Нормална' : `${speed}x`}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
             <button
