@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { Play, Pause, RotateCcw, RotateCw, Volume2, VolumeX, Maximize, SkipForward, Settings } from 'lucide-react';
 
@@ -14,12 +14,15 @@ export default function VideoPlayer({ embedUrl, youtubeVideoId, title, siteName 
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
   const [showSpeedMenu, setShowSpeedMenu] = useState(false);
+  const [animState, setAnimState] = useState(null);
+  const [animKey, setAnimKey] = useState(0);
 
   const playerRef = useRef(null);
   const containerRef = useRef(null);
   const wrapperRef = useRef(null);
   const progressInterval = useRef(null);
   const speedMenuRef = useRef(null);
+  const animTimeoutRef = useRef(null);
 
   // Parse YouTube video ID from URL
   const getYouTubeId = (url) => {
@@ -128,14 +131,25 @@ export default function VideoPlayer({ embedUrl, youtubeVideoId, title, siteName 
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  const triggerAnimation = (type) => {
+    setAnimState(type);
+    setAnimKey((prev) => prev + 1);
+    if (animTimeoutRef.current) clearTimeout(animTimeoutRef.current);
+    animTimeoutRef.current = setTimeout(() => {
+      setAnimState(null);
+    }, 600);
+  };
+
   const togglePlay = (e) => {
     if (e) e.stopPropagation();
     if (!playerRef.current || !playerReady) return;
 
     if (isPlaying) {
       playerRef.current.pauseVideo();
+      triggerAnimation('pause');
     } else {
       playerRef.current.playVideo();
+      triggerAnimation('play');
     }
   };
 
@@ -146,6 +160,7 @@ export default function VideoPlayer({ embedUrl, youtubeVideoId, title, siteName 
     const newTime = Math.max(0, current - 10);
     playerRef.current.seekTo(newTime, true);
     setProgress(newTime);
+    triggerAnimation('rewind');
   };
 
   const handleSkipForward = (e) => {
@@ -155,6 +170,7 @@ export default function VideoPlayer({ embedUrl, youtubeVideoId, title, siteName 
     const newTime = Math.min(duration, current + 10);
     playerRef.current.seekTo(newTime, true);
     setProgress(newTime);
+    triggerAnimation('forward');
   };
 
   const toggleMute = (e) => {
@@ -228,6 +244,21 @@ export default function VideoPlayer({ embedUrl, youtubeVideoId, title, siteName 
     setProgress(newTime);
   };
 
+  const handleDoubleClick = (e) => {
+    e.stopPropagation();
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const width = rect.width;
+
+    if (x < width / 3) {
+      handleRewind();
+    } else if (x > (width / 3) * 2) {
+      handleSkipForward();
+    } else {
+      toggleFullscreen();
+    }
+  };
+
   const handleContextMenu = useCallback((event) => {
     event.preventDefault();
   }, []);
@@ -281,10 +312,63 @@ export default function VideoPlayer({ embedUrl, youtubeVideoId, title, siteName 
 
       {/* Invisible Overlay to block iframe clicks and prevent visiting YouTube */}
       <div
-        className="absolute inset-0 z-10 cursor-pointer"
+        className="absolute inset-0 z-10 cursor-pointer flex items-center justify-center overflow-hidden"
         onClick={togglePlay}
-        onDoubleClick={toggleFullscreen}
-      />
+        onDoubleClick={handleDoubleClick}
+      >
+        <AnimatePresence>
+          {animState === 'play' && (
+            <motion.div
+              key="anim-play"
+              initial={{ opacity: 0, scale: 0.5 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 1.5 }}
+              transition={{ duration: 0.4 }}
+              className="bg-black/40 rounded-full p-5 backdrop-blur-md"
+            >
+              <Play className="w-12 h-12 sm:w-16 sm:h-16 text-white fill-current ml-1 sm:ml-2" />
+            </motion.div>
+          )}
+          {animState === 'pause' && (
+            <motion.div
+              key="anim-pause"
+              initial={{ opacity: 0, scale: 0.5 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 1.5 }}
+              transition={{ duration: 0.4 }}
+              className="bg-black/40 rounded-full p-5 backdrop-blur-md"
+            >
+              <Pause className="w-12 h-12 sm:w-16 sm:h-16 text-white fill-current" />
+            </motion.div>
+          )}
+          {animState === 'rewind' && (
+            <motion.div
+              key={`anim-rewind-${animKey}`}
+              initial={{ opacity: 0, x: -50, scale: 0.8 }}
+              animate={{ opacity: 1, x: 0, scale: 1 }}
+              exit={{ opacity: 0, scale: 1.5 }}
+              transition={{ duration: 0.4 }}
+              className="bg-black/40 rounded-full p-5 backdrop-blur-md flex flex-col items-center justify-center mr-24 sm:mr-48"
+            >
+              <RotateCcw className="w-10 h-10 sm:w-14 sm:h-14 text-white mb-1" />
+              <span className="text-white font-bold text-xs sm:text-sm">10s</span>
+            </motion.div>
+          )}
+          {animState === 'forward' && (
+            <motion.div
+              key={`anim-forward-${animKey}`}
+              initial={{ opacity: 0, x: 50, scale: 0.8 }}
+              animate={{ opacity: 1, x: 0, scale: 1 }}
+              exit={{ opacity: 0, scale: 1.5 }}
+              transition={{ duration: 0.4 }}
+              className="bg-black/40 rounded-full p-5 backdrop-blur-md flex flex-col items-center justify-center ml-24 sm:ml-48"
+            >
+              <RotateCw className="w-10 h-10 sm:w-14 sm:h-14 text-white mb-1" />
+              <span className="text-white font-bold text-xs sm:text-sm">10s</span>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
 
       {/* Custom Controls Overlay */}
       <div
