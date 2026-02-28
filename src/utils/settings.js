@@ -69,7 +69,10 @@ export async function getPublicSettings(force = false) {
 
   if (inflight && !force) return inflight;
 
-  inflight = api.get('/settings/public')
+  const endpoint = force ? `/settings/public?_=${Date.now()}` : '/settings/public';
+  const requestOptions = force ? { cache: 'no-store' } : {};
+
+  inflight = api.get(endpoint, requestOptions)
     .then((result) => {
       memoryCache = result || {};
       memoryCacheAt = Date.now();
