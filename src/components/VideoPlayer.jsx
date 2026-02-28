@@ -391,32 +391,35 @@ export default function VideoPlayer({ embedUrl, youtubeVideoId, title, siteName 
         className={`absolute bottom-0 inset-x-0 z-20 bg-gradient-to-t from-black/90 pt-16 pb-3 px-4 transition-opacity duration-300 ${isPlaying ? 'opacity-0 group-hover:opacity-100' : 'opacity-100'
           }`}
       >
-        {/* Progress Bar */}
+        {/* Progress Container (Larger Hit Area) */}
         <div
-          className="relative w-full h-[3px] bg-white/20 rounded-full mb-3 cursor-pointer group/progress transition-all hover:h-1"
+          className="w-full flex items-center cursor-pointer group/progress py-2 mb-1"
           onClick={handleSeek}
           onMouseMove={handleProgressMouseMove}
           onMouseLeave={handleProgressMouseLeave}
         >
-          {/* Hover Tooltip */}
-          {hoverTime !== null && hoverPos !== null && (
+          {/* Visible Progress Bar */}
+          <div className="relative w-full h-[3px] group-hover/progress:h-[6px] bg-white/20 rounded-full transition-all duration-200">
+            {/* Hover Tooltip */}
+            {hoverTime !== null && hoverPos !== null && (
+              <div
+                className="absolute -top-10 -translate-x-1/2 bg-black/80 backdrop-blur-sm text-white text-[11px] font-semibold px-2 py-1 rounded pointer-events-none z-30 shadow-md border border-white/5 whitespace-nowrap"
+                style={{ left: `${hoverPos}%` }}
+              >
+                {formatTime(hoverTime)}
+              </div>
+            )}
+            {/* Fill */}
             <div
-              className="absolute -top-8 -translate-x-1/2 bg-black/80 backdrop-blur-sm text-white text-[11px] font-semibold px-2 py-1 rounded pointer-events-none z-30 shadow-md border border-white/5 whitespace-nowrap"
-              style={{ left: `${hoverPos}%` }}
-            >
-              {formatTime(hoverTime)}
-            </div>
-          )}
-          {/* Fill */}
-          <div
-            className="absolute top-0 left-0 h-full bg-[var(--accent-gold)] rounded-full transition-all duration-100 ease-linear"
-            style={{ width: `${duration > 0 ? (progress / duration) * 100 : 0}%` }}
-          />
-          {/* Thumb */}
-          <div
-            className="absolute top-1/2 -mt-1.5 w-3 h-3 bg-[var(--accent-gold)] rounded-full shadow-sm scale-0 group-hover/progress:scale-100 transition-transform"
-            style={{ left: `calc(${duration > 0 ? (progress / duration) * 100 : 0}% - 6px)` }}
-          />
+              className="absolute top-0 left-0 h-full bg-[var(--accent-gold)] rounded-full transition-all duration-100 ease-linear"
+              style={{ width: `${duration > 0 ? (progress / duration) * 100 : 0}%` }}
+            />
+            {/* Thumb */}
+            <div
+              className="absolute top-1/2 -mt-1.5 w-3 h-3 bg-[var(--accent-gold)] rounded-full shadow-sm scale-0 group-hover/progress:scale-100 transition-transform"
+              style={{ left: `calc(${duration > 0 ? (progress / duration) * 100 : 0}% - 6px)` }}
+            />
+          </div>
         </div>
 
         {/* Buttons and Info */}
