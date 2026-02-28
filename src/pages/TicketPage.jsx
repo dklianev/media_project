@@ -109,8 +109,8 @@ export default function TicketPage() {
                     <div className="flex-1 overflow-y-auto p-6 space-y-6">
 
                         {/* Original Ticket Message (treated as first message) */}
-                        <div className={`flex w-full ${ticket.user_id === user.id ? 'justify-end' : 'justify-start'}`}>
-                            <div className={`max-w-[80%] rounded-2xl p-4 ${ticket.user_id === user.id ? 'bg-[var(--accent-primary)] text-white shadow-lg' : 'bg-white/5 border border-white/10 text-[var(--text-primary)]'}`}>
+                        <div className="flex w-full justify-start">
+                            <div className="max-w-[80%] rounded-2xl rounded-tl-sm p-4 bg-[var(--bg-primary)] border border-[var(--border)] text-[var(--text-primary)] shadow-sm">
                                 <div className="flex items-center justify-between gap-4 mb-2">
                                     <span className="font-semibold text-sm opacity-90">{ticket.username}</span>
                                     <span className="text-xs opacity-70">{new Date(ticket.created_at).toLocaleString('bg-BG')}</span>
@@ -121,16 +121,20 @@ export default function TicketPage() {
 
                         {/* Thread Messages */}
                         {messages.map((msg) => {
-                            const isMe = msg.user_id === user.id;
-                            const isAdmin = msg.role === 'admin' || msg.role === 'superadmin';
+                            const msgIsAdmin = msg.role === 'admin' || msg.role === 'superadmin';
+
+                            const justifyClass = msgIsAdmin ? 'justify-end' : 'justify-start';
+                            const bubbleClass = msgIsAdmin
+                                ? 'rounded-2xl rounded-tr-sm p-4 bg-[var(--accent-primary)] text-[var(--accent-foreground, #fff)] shadow-lg'
+                                : 'rounded-2xl rounded-tl-sm p-4 bg-[var(--bg-primary)] border border-[var(--border)] text-[var(--text-primary)] shadow-sm';
 
                             return (
-                                <div key={msg.id} className={`flex w-full ${isMe ? 'justify-end' : 'justify-start'}`}>
-                                    <div className={`max-w-[80%] rounded-2xl p-4 ${isMe ? 'bg-[var(--accent-primary)] text-white shadow-lg' : isAdmin ? 'bg-emerald-500/20 border border-emerald-500/30 text-[var(--text-primary)]' : 'bg-white/5 border border-white/10 text-[var(--text-primary)]'}`}>
+                                <div key={msg.id} className={`flex w-full ${justifyClass}`}>
+                                    <div className={`max-w-[80%] ${bubbleClass}`}>
                                         <div className="flex items-center justify-between gap-4 mb-2">
                                             <span className="font-semibold text-sm opacity-90 flex items-center gap-2">
                                                 {msg.username}
-                                                {isAdmin && <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/30 text-emerald-200">Admin</span>}
+                                                {msgIsAdmin && <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/20 text-white border border-white/10 font-medium">Admin</span>}
                                             </span>
                                             <span className="text-xs opacity-70">{new Date(msg.created_at).toLocaleString('bg-BG')}</span>
                                         </div>
@@ -143,7 +147,7 @@ export default function TicketPage() {
                     </div>
 
                     {/* Chat Input Area */}
-                    <div className="p-4 border-t border-[var(--border)] bg-black/20">
+                    <div className="p-4 border-t border-[var(--border)] bg-[var(--bg-primary)]">
                         <form onSubmit={handleReply} className="relative">
                             <textarea
                                 value={replyText}

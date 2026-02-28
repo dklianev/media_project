@@ -60,19 +60,20 @@ export default function ManageSupport() {
 
                 <div className="flex bg-[var(--bg-tertiary)] p-1 rounded-lg w-full sm:w-auto overflow-x-auto shrink-0">
                     <button
-                        className={`px - 4 py - 1.5 rounded - md text - sm font - medium transition - colors ${filter === 'all' ? 'bg-[var(--accent-gold)] text-black' : 'text-[var(--text-secondary)] hover:text-white'} `}
+                        onClick={() => setFilter('all')}
+                        className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${filter === 'all' ? 'bg-[var(--accent-gold)] text-black' : 'text-[var(--text-secondary)] hover:text-white'}`}
                     >
                         Всички
                     </button>
                     <button
                         onClick={() => setFilter('open')}
-                        className={`px - 4 py - 1.5 rounded - md text - sm font - medium transition - colors flex items - center gap - 1.5 ${filter === 'open' ? 'bg-amber-500/20 text-amber-500' : 'text-[var(--text-secondary)] hover:text-white'} `}
+                        className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-1.5 ${filter === 'open' ? 'bg-amber-500/20 text-amber-500' : 'text-[var(--text-secondary)] hover:text-white'}`}
                     >
                         <Clock className="w-3.5 h-3.5" /> Отворени
                     </button>
                     <button
                         onClick={() => setFilter('closed')}
-                        className={`px - 4 py - 1.5 rounded - md text - sm font - medium transition - colors flex items - center gap - 1.5 ${filter === 'closed' ? 'bg-emerald-500/20 text-emerald-500' : 'text-[var(--text-secondary)] hover:text-white'} `}
+                        className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-1.5 ${filter === 'closed' ? 'bg-emerald-500/20 text-emerald-500' : 'text-[var(--text-secondary)] hover:text-white'}`}
                     >
                         <CheckCircle className="w-3.5 h-3.5" /> Затворени
                     </button>
@@ -94,7 +95,7 @@ export default function ManageSupport() {
                     {filteredTickets.map(ticket => (
                         <div
                             key={ticket.id}
-                            className={`glass - card p - 5 transition - all hover: bg - white / 5`}
+                            className="glass-card p-5 transition-all hover:bg-white/5"
                         >
                             <div className="flex items-start justify-between gap-4 mb-3">
                                 <h3 className="font-semibold text-lg line-clamp-1">{ticket.subject}</h3>
