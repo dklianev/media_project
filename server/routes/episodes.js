@@ -287,6 +287,27 @@ router.get('/:id', requireAuth, (req, res) => {
     sideImages = [];
   }
 
+  let nextEpisodeId = null;
+  let previousEpisodeId = null;
+
+  if (episode.production_id) {
+    const nextEp = db.prepare(`
+      SELECT id FROM episodes 
+      WHERE production_id = ? AND episode_number > ? 
+      ${!admin ? 'AND is_published = 1 AND release_date <= CURRENT_TIMESTAMP' : ''}
+      ORDER BY episode_number ASC LIMIT 1
+    `).get(episode.production_id, episode.episode_number);
+    if (nextEp) nextEpisodeId = nextEp.id;
+
+    const prevEp = db.prepare(`
+      SELECT id FROM episodes 
+      WHERE production_id = ? AND episode_number < ? 
+      ${!admin ? 'AND is_published = 1 AND release_date <= CURRENT_TIMESTAMP' : ''}
+      ORDER BY episode_number DESC LIMIT 1
+    `).get(episode.production_id, episode.episode_number);
+    if (prevEp) previousEpisodeId = prevEp.id;
+  }
+
   const responsePayload = {
     ...episode,
     youtube_video_id: access.hasAccess ? (episode.youtube_video_id || undefined) : undefined,
@@ -301,6 +322,8 @@ router.get('/:id', requireAuth, (req, res) => {
     latest_episodes: [],
     required_tier: episode.required_tier || 0,
     has_access: access.hasAccess,
+    next_episode_id: nextEpisodeId,
+    previous_episode_id: previousEpisodeId,
   };
 
   if (!access.hasAccess) {
