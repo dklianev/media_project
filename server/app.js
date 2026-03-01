@@ -45,6 +45,19 @@ const JSON_LIMIT = process.env.JSON_LIMIT || '1mb';
 const MAX_FILE_SIZE_MB = Number(process.env.UPLOAD_MAX_FILE_SIZE_MB || 10);
 const TRUST_PROXY_ENV = String(process.env.TRUST_PROXY ?? '1').trim().toLowerCase();
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me';
+const IS_PROD = process.env.NODE_ENV === 'production';
+const EXTRA_CSP_IMG_SRC = String(process.env.CSP_IMG_SRC_EXTRA || '')
+  .split(',')
+  .map((value) => value.trim())
+  .filter(Boolean);
+const CSP_IMG_SRC = Array.from(new Set([
+  "'self'",
+  'data:',
+  'blob:',
+  'https:',
+  ...(IS_PROD ? [] : ['http:']),
+  ...EXTRA_CSP_IMG_SRC,
+]));
 
 // ─── Maintenance mode in-memory cache (30s TTL) ───
 let _maintenanceCache = { value: false, ts: 0 };
@@ -111,7 +124,7 @@ export function createApp() {
           'https://player.kick.com',
           'https://kick.com',
         ],
-        imgSrc: ["'self'", 'data:', 'https://cdn.discordapp.com', 'blob:'],
+        imgSrc: CSP_IMG_SRC,
         scriptSrc: ["'self'", 'https://www.youtube.com', 'https://s.ytimg.com', (req, res) => `'nonce-${res.locals.cspNonce}'`],
         styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
         fontSrc: ["'self'", 'https://fonts.gstatic.com'],
