@@ -42,10 +42,24 @@ const ManageSettings = lazy(() => import('./pages/admin/ManageSettings'));
 const ManageAuditLogs = lazy(() => import('./pages/admin/ManageAuditLogs'));
 const ManageSupport = lazy(() => import('./pages/admin/ManageSupport'));
 
+import { Crown } from 'lucide-react';
+
 function PageLoader() {
   return (
-    <div className="min-h-[60vh] flex items-center justify-center">
-      <div className="w-10 h-10 border-[3px] border-[var(--accent-gold)] border-t-transparent rounded-full animate-spin" />
+    <div className="min-h-[60vh] flex flex-col items-center justify-center gap-4">
+      <div className="relative flex items-center justify-center">
+        {/* Outer rotating ring */}
+        <div className="absolute inset-x-[-12px] inset-y-[-12px] rounded-full border border-[var(--accent-gold)]/30 border-t-[var(--accent-gold)] animate-spin" />
+        {/* Inner static icon with pulse */}
+        <motion.div
+          animate={{ scale: [0.95, 1.05, 0.95], opacity: [0.7, 1, 0.7] }}
+          transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+          className="w-12 h-12 rounded-full bg-[var(--bg-secondary)] flex items-center justify-center shadow-[0_0_20px_rgba(212,175,55,0.15)]"
+        >
+          <Crown className="w-6 h-6 text-[var(--accent-gold)]" />
+        </motion.div>
+      </div>
+      <p className="text-sm font-medium text-[var(--text-muted)] tracking-widest uppercase animate-pulse">Зареждане на съдържание...</p>
     </div>
   );
 }
