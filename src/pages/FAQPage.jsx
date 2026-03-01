@@ -137,7 +137,10 @@ export default function FAQPage() {
                         <HelpCircle className="w-8 h-8" />
                     </div>
                     <h1 className="text-3xl md:text-4xl font-bold mb-4">{ui.faq_title}</h1>
-                    <p className="text-center text-[var(--text-secondary)] max-w-2xl mx-auto">
+                    <p
+                        className="mx-auto max-w-[34rem] text-center leading-relaxed text-[var(--text-secondary)]"
+                        style={{ textWrap: 'balance' }}
+                    >
                         {ui.faq_description}
                     </p>
                 </div>
