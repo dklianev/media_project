@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MessageSquare, Send, Trash2, User, Smile } from 'lucide-react';
-import EmojiPicker, { Theme } from 'emoji-picker-react';
+import EmojiPicker, { EmojiStyle, Theme } from 'emoji-picker-react';
 import { api } from '../utils/api';
 import { useAuth } from '../context/AuthContext';
 import { useToastContext } from '../context/ToastContext';
@@ -148,6 +148,7 @@ export default function CommentsSection({ episodeId }) {
                             >
                                 <EmojiPicker
                                     theme={Theme.DARK}
+                                    emojiStyle={EmojiStyle.NATIVE}
                                     onEmojiClick={(emojiData) => {
                                         setNewComment(prev => prev + emojiData.emoji);
                                     }}
