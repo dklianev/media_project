@@ -125,39 +125,52 @@ export default function ManagePromoCodes() {
       <div className="glass-card p-5 sm:p-6 mb-8">
         <h2 className="text-lg font-semibold mb-6">{editing ? 'Редактирай' : 'Нов промо код'}</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <input
-            value={form.code}
-            onChange={(e) => setForm({ ...form, code: e.target.value })}
-            placeholder="Код (напр. NANCY10)"
-            className="input-dark uppercase"
-          />
-          <input
-            value={form.discount_percent}
-            onChange={(e) => setForm({ ...form, discount_percent: e.target.value })}
-            placeholder="Отстъпка (%)"
-            type="number"
-            min="1"
-            max="100"
-            className="input-dark"
-          />
-          <input
-            value={form.max_uses}
-            onChange={(e) => setForm({ ...form, max_uses: e.target.value })}
-            placeholder="Макс. използвания (празно = неограничено)"
-            type="number"
-            className="input-dark"
-          />
-          <input
-            value={form.expires_at}
-            onChange={(e) => setForm({ ...form, expires_at: e.target.value })}
-            placeholder="Изтича на"
-            type="date"
-            className="input-dark"
-          />
-          <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={form.is_active} onChange={(e) => setForm({ ...form, is_active: e.target.checked })} />
-            Активен
-          </label>
+          <div>
+            <label className="text-sm text-[var(--text-muted)] block mb-1">Код</label>
+            <input
+              value={form.code}
+              onChange={(e) => setForm({ ...form, code: e.target.value })}
+              placeholder="напр. NANCY10"
+              className="input-dark uppercase"
+            />
+          </div>
+          <div>
+            <label className="text-sm text-[var(--text-muted)] block mb-1">Отстъпка <span className="text-xs opacity-70">(в %)</span></label>
+            <input
+              value={form.discount_percent}
+              onChange={(e) => setForm({ ...form, discount_percent: e.target.value })}
+              placeholder="напр. 10"
+              type="number"
+              min="1"
+              max="100"
+              className="input-dark"
+            />
+          </div>
+          <div>
+            <label className="text-sm text-[var(--text-muted)] block mb-1">Макс. използвания <span className="text-xs opacity-70">(празно = неограничено)</span></label>
+            <input
+              value={form.max_uses}
+              onChange={(e) => setForm({ ...form, max_uses: e.target.value })}
+              placeholder="напр. 100"
+              type="number"
+              className="input-dark"
+            />
+          </div>
+          <div>
+            <label className="text-sm text-[var(--text-muted)] block mb-1">Изтича на <span className="text-xs opacity-70">(по желание)</span></label>
+            <input
+              value={form.expires_at}
+              onChange={(e) => setForm({ ...form, expires_at: e.target.value })}
+              type="date"
+              className="input-dark text-sm"
+            />
+          </div>
+          <div className="md:col-span-2">
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={form.is_active} onChange={(e) => setForm({ ...form, is_active: e.target.checked })} />
+              Активен код
+            </label>
+          </div>
         </div>
         <div className="flex gap-2 mt-4">
           <button onClick={handleSave} className="btn-gold flex items-center gap-2">

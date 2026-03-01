@@ -188,50 +188,68 @@ export default function ManageProductions() {
       >
         <h2 className="text-lg font-semibold mb-6">{editing ? 'Редактирай продукция' : 'Нова продукция'}</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <input
-            value={form.title}
-            onChange={(e) => setForm({ ...form, title: e.target.value })}
-            placeholder="Заглавие"
-            className="input-dark"
-          />
-          <select
-            value={form.access_group}
-            onChange={(e) => setForm({ ...form, access_group: e.target.value })}
-            className="input-dark"
-          >
-            {ACCESS_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>{option.label}</option>
-            ))}
-          </select>
-          <input
-            value={form.sort_order}
-            onChange={(e) => setForm({ ...form, sort_order: e.target.value })}
-            placeholder="Подреждане"
-            type="number"
-            className="input-dark"
-          />
-          <input
-            value={form.required_tier}
-            onChange={(e) => setForm({ ...form, required_tier: e.target.value })}
-            placeholder="Необходимо ниво (за абонамент)"
-            type="number"
-            min="1"
-            disabled={form.access_group !== 'subscription'}
-            className="input-dark disabled:opacity-55"
-          />
-          <textarea
-            value={form.description}
-            onChange={(e) => setForm({ ...form, description: e.target.value })}
-            placeholder="Описание"
-            className="input-dark md:col-span-2"
-            rows={2}
-          />
-          <input
-            value={form.genres}
-            onChange={(e) => setForm({ ...form, genres: e.target.value })}
-            placeholder="Жанрове (напр. Реалити, Драма, Комедия)"
-            className="input-dark md:col-span-2"
-          />
+          <div>
+            <label className="text-sm text-[var(--text-muted)] block mb-1">Заглавие</label>
+            <input
+              value={form.title}
+              onChange={(e) => setForm({ ...form, title: e.target.value })}
+              placeholder="Въведете заглавие"
+              className="input-dark"
+            />
+          </div>
+          <div>
+            <label className="text-sm text-[var(--text-muted)] block mb-1">Ниво на достъп</label>
+            <select
+              value={form.access_group}
+              onChange={(e) => setForm({ ...form, access_group: e.target.value })}
+              className="input-dark"
+            >
+              {ACCESS_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="text-sm text-[var(--text-muted)] block mb-1">Подреждане <span className="text-xs opacity-70">(0 = най-отпред)</span></label>
+            <input
+              value={form.sort_order}
+              onChange={(e) => setForm({ ...form, sort_order: e.target.value })}
+              placeholder="напр. 0, 1, 2..."
+              type="number"
+              className="input-dark"
+            />
+          </div>
+          <div>
+            <label className="text-sm text-[var(--text-muted)] block mb-1">Необходимо ниво <span className="text-xs opacity-70">(само за абонамент)</span></label>
+            <input
+              value={form.required_tier}
+              onChange={(e) => setForm({ ...form, required_tier: e.target.value })}
+              placeholder="напр. 1, 2, 3..."
+              type="number"
+              min="1"
+              disabled={form.access_group !== 'subscription'}
+              className="input-dark disabled:opacity-55"
+            />
+          </div>
+          <div className="md:col-span-2">
+            <label className="text-sm text-[var(--text-muted)] block mb-1">Описание</label>
+            <textarea
+              value={form.description}
+              onChange={(e) => setForm({ ...form, description: e.target.value })}
+              placeholder="Въведете описание на продукцията..."
+              className="input-dark"
+              rows={2}
+            />
+          </div>
+          <div className="md:col-span-2">
+            <label className="text-sm text-[var(--text-muted)] block mb-1">Жанрове</label>
+            <input
+              value={form.genres}
+              onChange={(e) => setForm({ ...form, genres: e.target.value })}
+              placeholder="Напр. Реалити, Драма, Комедия (разделени със запетая)"
+              className="input-dark"
+            />
+          </div>
           <div>
             <label className="text-xs text-[var(--text-muted)] block mb-1">Корица в каталог</label>
             <input type="file" ref={thumbnailRef} accept="image/*" className="input-dark text-sm" />

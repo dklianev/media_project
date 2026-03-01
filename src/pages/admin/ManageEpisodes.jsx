@@ -255,70 +255,94 @@ export default function ManageEpisodes() {
       >
         <h2 className="text-lg font-semibold mb-6">{editing ? 'Редактирай епизод' : 'Нов епизод'}</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <select value={form.production_id} onChange={(e) => setForm({ ...form, production_id: e.target.value })} className="input-dark">
-            <option value="">-- Продукция --</option>
-            {productions.map((production) => <option key={production.id} value={production.id}>{production.title}</option>)}
-          </select>
-          <input
-            value={form.episode_number}
-            onChange={(e) => setForm({ ...form, episode_number: e.target.value })}
-            placeholder="Номер на епизода"
-            type="number"
-            className="input-dark"
-          />
-          <select
-            value={form.access_group}
-            onChange={(e) => setForm({ ...form, access_group: e.target.value })}
-            className="input-dark"
-          >
-            {ACCESS_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>{option.label}</option>
-            ))}
-          </select>
-          <input
-            value={form.title}
-            onChange={(e) => setForm({ ...form, title: e.target.value })}
-            placeholder="Заглавие"
-            className="input-dark"
-          />
-          <input
-            value={form.youtube_video_id}
-            onChange={(e) => setForm({ ...form, youtube_video_id: e.target.value })}
-            placeholder="Видео ID от YouTube"
-            className="input-dark md:col-span-2"
-          />
-          <textarea
-            value={form.description}
-            onChange={(e) => setForm({ ...form, description: e.target.value })}
-            placeholder="Описание"
-            className="input-dark md:col-span-2"
-            rows={2}
-          />
-          <textarea
-            value={form.side_text}
-            onChange={(e) => setForm({ ...form, side_text: e.target.value })}
-            placeholder="Текст до видеото"
-            className="input-dark md:col-span-2"
-            rows={2}
-          />
+          <div>
+            <label className="text-sm text-[var(--text-muted)] block mb-1">Продукция</label>
+            <select value={form.production_id} onChange={(e) => setForm({ ...form, production_id: e.target.value })} className="input-dark">
+              <option value="">-- Изберете продукция --</option>
+              {productions.map((production) => <option key={production.id} value={production.id}>{production.title}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-sm text-[var(--text-muted)] block mb-1">Номер на епизода <span className="text-xs opacity-70">(1, 2, 3...)</span></label>
+            <input
+              value={form.episode_number}
+              onChange={(e) => setForm({ ...form, episode_number: e.target.value })}
+              placeholder="напр. 1"
+              type="number"
+              className="input-dark"
+            />
+          </div>
+          <div>
+            <label className="text-sm text-[var(--text-muted)] block mb-1">Ниво на достъп</label>
+            <select
+              value={form.access_group}
+              onChange={(e) => setForm({ ...form, access_group: e.target.value })}
+              className="input-dark"
+            >
+              {ACCESS_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="text-sm text-[var(--text-muted)] block mb-1">Заглавие</label>
+            <input
+              value={form.title}
+              onChange={(e) => setForm({ ...form, title: e.target.value })}
+              placeholder="Въведете заглавие"
+              className="input-dark"
+            />
+          </div>
+          <div className="md:col-span-2">
+            <label className="text-sm text-[var(--text-muted)] block mb-1">Видео ID от YouTube</label>
+            <input
+              value={form.youtube_video_id}
+              onChange={(e) => setForm({ ...form, youtube_video_id: e.target.value })}
+              placeholder="напр. dQw4w9WgXcQ"
+              className="input-dark"
+            />
+          </div>
+          <div className="md:col-span-2">
+            <label className="text-sm text-[var(--text-muted)] block mb-1">Описание</label>
+            <textarea
+              value={form.description}
+              onChange={(e) => setForm({ ...form, description: e.target.value })}
+              placeholder="Въведете описание на търсения епизод..."
+              className="input-dark"
+              rows={2}
+            />
+          </div>
+          <div className="md:col-span-2">
+            <label className="text-sm text-[var(--text-muted)] block mb-1">Текст до видеото <span className="text-xs opacity-70">(допълнително инфо)</span></label>
+            <textarea
+              value={form.side_text}
+              onChange={(e) => setForm({ ...form, side_text: e.target.value })}
+              placeholder="По желание..."
+              className="input-dark"
+              rows={2}
+            />
+          </div>
           <div>
             <label className="text-xs text-[var(--text-muted)] block mb-1">Кадър</label>
             <input type="file" ref={thumbnailRef} accept="image/*" className="input-dark text-sm" />
           </div>
           <div>
-            <label className="text-xs text-[var(--text-muted)] block mb-1">Рекламен банер</label>
+            <label className="text-xs text-[var(--text-muted)] block mb-1">Голямо изображение (по желание)</label>
             <input type="file" ref={adBannerRef} accept="image/*" className="input-dark text-sm" />
           </div>
           <div>
-            <label className="text-xs text-[var(--text-muted)] block mb-1">Снимки до видеото (до 5)</label>
+            <label className="text-xs text-[var(--text-muted)] block mb-1">Снимки до видеото (по желание, до 5)</label>
             <input type="file" ref={sideImagesRef} accept="image/*" multiple className="input-dark text-sm" />
           </div>
-          <input
-            value={form.ad_banner_link}
-            onChange={(e) => setForm({ ...form, ad_banner_link: e.target.value })}
-            placeholder="Линк на рекламата (по желание)"
-            className="input-dark"
-          />
+          <div>
+            <label className="text-xs text-[var(--text-muted)] block mb-1">Линк на изображението (по желание)</label>
+            <input
+              value={form.ad_banner_link}
+              onChange={(e) => setForm({ ...form, ad_banner_link: e.target.value })}
+              placeholder="напр. https://example.com"
+              className="input-dark"
+            />
+          </div>
           <div>
             <label className="text-xs text-[var(--text-muted)] block mb-1">Продълж. (секунди)</label>
             <input

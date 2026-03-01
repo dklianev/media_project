@@ -144,18 +144,36 @@ export default function ManagePlans() {
           {editing ? 'Редактирай план' : 'Нов план'}
         </h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
-            placeholder="Име (напр. Златен)" className="input-dark" />
-          <input value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })}
-            placeholder="Цена ($)" type="number" className="input-dark" />
-          <input value={form.tier_level} onChange={(e) => setForm({ ...form, tier_level: e.target.value })}
-            placeholder="Ниво достъп (1-5)" type="number" className="input-dark" />
-          <input value={form.sort_order} onChange={(e) => setForm({ ...form, sort_order: e.target.value })}
-            placeholder="Подреждане" type="number" className="input-dark" />
-          <textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })}
-            placeholder="Описание" className="input-dark md:col-span-2" rows={2} />
-          <textarea value={form.features} onChange={(e) => setForm({ ...form, features: e.target.value })}
-            placeholder="Функции (по една на ред)" className="input-dark md:col-span-2" rows={3} />
+          <div>
+            <label className="text-sm text-[var(--text-muted)] block mb-1">Име на плана</label>
+            <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
+              placeholder="напр. Златен" className="input-dark" />
+          </div>
+          <div>
+            <label className="text-sm text-[var(--text-muted)] block mb-1">Цена (в BGN)</label>
+            <input value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })}
+              placeholder="напр. 9.99" type="number" className="input-dark" />
+          </div>
+          <div>
+            <label className="text-sm text-[var(--text-muted)] block mb-1">Ниво на достъп <span className="text-xs opacity-70">(1, 2, 3...)</span></label>
+            <input value={form.tier_level} onChange={(e) => setForm({ ...form, tier_level: e.target.value })}
+              placeholder="напр. 1" type="number" className="input-dark" />
+          </div>
+          <div>
+            <label className="text-sm text-[var(--text-muted)] block mb-1">Подреждане <span className="text-xs opacity-70">(0 = най-отпред)</span></label>
+            <input value={form.sort_order} onChange={(e) => setForm({ ...form, sort_order: e.target.value })}
+              placeholder="напр. 0, 1, 2..." type="number" className="input-dark" />
+          </div>
+          <div className="md:col-span-2">
+            <label className="text-sm text-[var(--text-muted)] block mb-1">Описание</label>
+            <textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })}
+              placeholder="Кратко описание на плана..." className="input-dark" rows={2} />
+          </div>
+          <div className="md:col-span-2">
+            <label className="text-sm text-[var(--text-muted)] block mb-1">Функции <span className="text-xs opacity-70">(въвеждайте по една на ред)</span></label>
+            <textarea value={form.features} onChange={(e) => setForm({ ...form, features: e.target.value })}
+              placeholder="- Достъп до всички епизоди\n- Без реклами\n- 4K качество" className="input-dark" rows={3} />
+          </div>
           <label className="flex items-center gap-2 text-sm mt-2">
             <input type="checkbox" checked={form.is_active} onChange={(e) => setForm({ ...form, is_active: e.target.checked })} />
             Активен
