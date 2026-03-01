@@ -39,7 +39,7 @@ export default function ConfirmActionModal({
   return (
     <AnimatePresence>
       {open && (
-        <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4" role="dialog" aria-modal="true">
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4" role="alertdialog" aria-modal="true" aria-labelledby="confirm-modal-title">
           <motion.div
             className="absolute inset-0 bg-black/60 backdrop-blur-sm"
             initial={{ opacity: 0 }}
@@ -56,7 +56,7 @@ export default function ConfirmActionModal({
             exit={{ opacity: 0, scale: 0.95, y: 8 }}
             transition={{ type: 'spring', stiffness: 350, damping: 25 }}
           >
-            <h3 className="text-lg font-semibold mb-2">{title}</h3>
+            <h3 id="confirm-modal-title" className="text-lg font-semibold mb-2">{title}</h3>
             {message && <p className="text-sm text-[var(--text-secondary)] mb-4">{message}</p>}
 
             {withReason && (
@@ -80,6 +80,7 @@ export default function ConfirmActionModal({
                 className="btn-outline"
                 onClick={() => !loading && onClose?.()}
                 disabled={loading}
+                autoFocus
                 whileHover={{ scale: 1.03 }}
                 whileTap={{ scale: 0.97 }}
                 transition={{ type: 'spring', stiffness: 400, damping: 20 }}

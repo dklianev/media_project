@@ -46,8 +46,24 @@ function NavPill({ to, label, icon: Icon, onClick }) {
 
 /* ── Mobile Drawer ── */
 function MobileDrawer({ open, onClose, navLinks, isAdmin, adminLabel, user, theme, toggleTheme, logout }) {
-  // Close on route change
   const location = useLocation();
+
+  useEffect(() => {
+    if (open) {
+      const prevActiveElement = document.activeElement;
+      document.body.style.overflow = 'hidden';
+
+      // Auto-focus the close button or first element if needed, 
+      // but for now just locking scroll and restoring focus is the priority.
+      return () => {
+        document.body.style.overflow = '';
+        if (prevActiveElement && prevActiveElement.focus) {
+          prevActiveElement.focus();
+        }
+      };
+    }
+  }, [open]);
+
   useEffect(() => { if (open) onClose(); }, [location.pathname]);
 
   return (

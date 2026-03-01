@@ -101,7 +101,7 @@ export default function HorizontalScroller({ title, seeAllLink, children }) {
           tabIndex={0}
           role="region"
           aria-label={title || 'Хоризонтален списък'}
-          className="flex gap-4 overflow-x-auto scroll-smooth hide-scrollbar py-3 -my-3 px-1 pr-6"
+          className="flex gap-4 overflow-x-auto scroll-smooth custom-scrollbar py-3 pb-5 -mb-2 px-1 pr-6"
           style={{ scrollSnapType: 'x mandatory', overflowY: 'visible' }}
         >
           {children}

@@ -58,9 +58,18 @@ export default function NotificationDropdown() {
                 setOpen(false);
             }
         };
+        const handleEsc = (event) => {
+            if (open && event.key === 'Escape') {
+                setOpen(false);
+            }
+        };
         document.addEventListener('mousedown', handleClickOutside);
-        return () => document.removeEventListener('mousedown', handleClickOutside);
-    }, []);
+        document.addEventListener('keydown', handleEsc);
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+            document.removeEventListener('keydown', handleEsc);
+        }
+    }, [open]);
 
     const markAsRead = async (id) => {
         try {
@@ -95,6 +104,8 @@ export default function NotificationDropdown() {
         <div className="relative" ref={dropdownRef}>
             <motion.button
                 onClick={() => setOpen(!open)}
+                aria-haspopup="dialog"
+                aria-expanded={open}
                 className="relative w-9 h-9 rounded-full border border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition flex items-center justify-center bg-[var(--bg-secondary)]/50"
                 whileTap={{ scale: 0.9 }}
             >
@@ -113,7 +124,9 @@ export default function NotificationDropdown() {
                         animate={{ opacity: 1, y: 0, scale: 1 }}
                         exit={{ opacity: 0, y: 10, scale: 0.95 }}
                         transition={{ duration: 0.2 }}
-                        className="absolute right-0 mt-3 w-80 max-h-[400px] flex flex-col bg-[var(--bg-secondary)] border border-[var(--border)] rounded-2xl shadow-premium-lg overflow-hidden z-[100]"
+                        role="dialog"
+                        aria-label={ui.notifications_title}
+                        className="absolute right-0 mt-3 w-[calc(100vw-32px)] max-w-[360px] sm:w-80 max-h-[400px] flex flex-col bg-[var(--bg-secondary)] border border-[var(--border)] rounded-2xl shadow-premium-lg overflow-hidden z-[100]"
                     >
                         <div className="flex items-center justify-between p-3 border-b border-[var(--border)] bg-[var(--bg-secondary)]">
                             <h3 className="text-sm font-semibold">{ui.notifications_title}</h3>

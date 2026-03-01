@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { motion, useReducedMotion } from 'framer-motion';
 import { AlertCircle, Crown, Moon, Sparkles, Sun, TvMinimalPlay, Waves } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
@@ -24,8 +24,10 @@ function DiscordEyesIcon() {
 /* ── Floating particles canvas ── */
 function FloatingParticles({ theme }) {
   const canvasRef = useRef(null);
+  const prefersReducedMotion = useReducedMotion();
 
   useEffect(() => {
+    if (prefersReducedMotion) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
@@ -107,6 +109,7 @@ const itemV = {
 export default function LoginPage() {
   const { theme, toggleTheme } = useTheme();
   const { user, loading } = useAuth();
+  const prefersReducedMotion = useReducedMotion();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [settings, setSettings] = useState({});
@@ -149,7 +152,7 @@ export default function LoginPage() {
       {/* Content Teaser Marquee (Background) */}
       <div className="login-marquee-container absolute inset-x-0 top-[60%] -translate-y-1/2 overflow-hidden pointer-events-none select-none flex items-center z-0">
         <motion.div
-          animate={{ x: [0, -2000] }}
+          animate={prefersReducedMotion ? { x: 0 } : { x: [0, -2000] }}
           transition={{ repeat: Infinity, duration: 60, ease: "linear" }}
           className="flex gap-12 whitespace-nowrap text-[8rem] sm:text-[12rem] font-black uppercase tracking-tighter"
         >

@@ -33,7 +33,24 @@ export default function ProductionsPage() {
     const [watchlistIds, setWatchlistIds] = useState(new Set());
     const [s, setS] = useState({});
     const [filterPills, setFilterPills] = useState(DEFAULT_PILLS);
+    const [headerHeight, setHeaderHeight] = useState(68);
     const debouncedQuery = useDebounce(query, 300);
+
+    useEffect(() => {
+        const updateHeight = () => {
+            const nav = document.querySelector('header');
+            if (nav) {
+                setHeaderHeight(nav.getBoundingClientRect().bottom);
+            }
+        };
+        updateHeight();
+        window.addEventListener('scroll', updateHeight, { passive: true });
+        window.addEventListener('resize', updateHeight, { passive: true });
+        return () => {
+            window.removeEventListener('scroll', updateHeight);
+            window.removeEventListener('resize', updateHeight);
+        };
+    }, []);
 
     useEffect(() => {
         let active = true;
@@ -193,12 +210,15 @@ export default function ProductionsPage() {
 
                     {/* Filtering & Listing */}
                     <div className="mt-8">
-                        <div className="sticky top-[68px] z-40 bg-[var(--bg-primary)]/95 backdrop-blur-xl pb-4 pt-2 -mx-4 px-4 sm:-mx-6 sm:px-6 shadow-[0_10px_30px_-15px_rgba(0,0,0,0.5)] border-b border-[var(--border)]/50 mb-6">
+                        <div
+                            className="sticky z-40 bg-[var(--bg-primary)]/95 backdrop-blur-xl pb-4 pt-2 -mx-4 px-4 sm:-mx-6 sm:px-6 shadow-[0_10px_30px_-15px_rgba(0,0,0,0.5)] border-b border-[var(--border)]/50 mb-6"
+                            style={{ top: `${headerHeight}px` }}
+                        >
 
                             {/* Filter Summary & Result Count */}
                             <div className="flex items-center justify-between mb-4">
                                 <span className="text-sm font-medium text-[var(--text-secondary)]">
-                                    Намерени <strong className="text-white">{filtered.length}</strong> {filtered.length === 1 ? 'резултат' : 'резултата'}
+                                    Намерени <strong className="text-[var(--text-primary)]">{filtered.length}</strong> {filtered.length === 1 ? 'резултат' : 'резултата'}
                                 </span>
                                 {hasActiveFilters && (
                                     <button
@@ -289,7 +309,7 @@ export default function ProductionsPage() {
 
                                 <StaggerItem>
                                     <div className="mt-4">
-                                        <button onClick={clearFilters} className="btn-outline border-[var(--border)] text-white hover:border-[var(--accent-gold)] hover:text-[var(--accent-gold)] transition-colors px-6 py-2.5 rounded-xl text-sm uppercase tracking-widest cursor-pointer">
+                                        <button onClick={clearFilters} className="btn-outline border-[var(--border)] text-[var(--text-primary)] hover:border-[var(--accent-gold)] hover:text-[var(--accent-gold)] transition-colors px-6 py-2.5 rounded-xl text-sm uppercase tracking-widest cursor-pointer">
                                             Изчисти филтрите
                                         </button>
                                     </div>

@@ -804,7 +804,7 @@ export default function VideoPlayer({
       initial={{ opacity: 0, scale: 0.98 }}
       animate={{ opacity: 1, scale: 1 }}
       transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-      className={`relative w-full overflow-hidden bg-black shadow-premium-md focus:outline-none ${isFullscreen ? 'h-screen rounded-none border-none' : 'rounded-2xl border border-[var(--border)]'}`}
+      className={`relative w-full overflow-hidden bg-black shadow-premium-md focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-gold)] focus-visible:ring-offset-1 focus-visible:ring-offset-black rounded-sm ${isFullscreen ? 'h-screen rounded-none border-none' : 'rounded-2xl border border-[var(--border)]'}`}
       style={!isFullscreen ? { paddingBottom: '56.25%' } : {}}
       onContextMenu={handleContextMenu}
       onPointerMove={(event) => {
@@ -965,24 +965,24 @@ export default function VideoPlayer({
         </div>
 
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-white/90 sm:flex-nowrap sm:gap-4">
-          <button onClick={togglePlay} className="flex-shrink-0 transition-colors hover:text-white focus:outline-none" aria-label={isPlaying ? 'Пауза' : 'Възпроизвеждане'}>
+          <button onClick={togglePlay} className="flex-shrink-0 transition-colors hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-gold)] focus-visible:ring-offset-1 focus-visible:ring-offset-black rounded-sm" aria-label={isPlaying ? 'Пауза' : 'Възпроизвеждане'}>
             {isPlaying ? <Pause className="h-6 w-6 fill-current" /> : <Play className="ml-0.5 h-6 w-6 fill-current" />}
           </button>
           <div className="flex items-center gap-2 sm:gap-3">
             {previousEpisode && (
               <button
                 onClick={(event) => navigateToEpisode(previousEpisode, event)}
-                className="flex items-center gap-1 opacity-75 transition-colors hover:text-white hover:opacity-100 focus:outline-none"
+                className="flex items-center gap-1 opacity-75 transition-colors hover:text-white hover:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-gold)] focus-visible:ring-offset-1 focus-visible:ring-offset-black rounded-sm"
                 aria-label="Предишен епизод"
               >
                 <SkipBack className="h-5 w-5 fill-current" />
               </button>
             )}
-            <button onClick={handleRewind} className="flex items-center gap-1 opacity-70 transition-colors hover:text-white hover:opacity-100 focus:outline-none" aria-label="Върни 10 секунди">
+            <button onClick={handleRewind} className="flex items-center gap-1 opacity-70 transition-colors hover:text-white hover:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-gold)] focus-visible:ring-offset-1 focus-visible:ring-offset-black rounded-sm" aria-label="Върни 10 секунди">
               <RotateCcw className="h-4 w-4" />
               <span className="hidden text-[11px] font-semibold tracking-wide sm:inline">10s</span>
             </button>
-            <button onClick={handleSkipForward} className="flex items-center gap-1 opacity-70 transition-colors hover:text-white hover:opacity-100 focus:outline-none" aria-label="Напред 10 секунди">
+            <button onClick={handleSkipForward} className="flex items-center gap-1 opacity-70 transition-colors hover:text-white hover:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-gold)] focus-visible:ring-offset-1 focus-visible:ring-offset-black rounded-sm" aria-label="Напред 10 секунди">
               <RotateCw className="h-4 w-4" />
               <span className="hidden text-[11px] font-semibold tracking-wide sm:inline">10s</span>
             </button>
@@ -992,7 +992,7 @@ export default function VideoPlayer({
                   e.stopPropagation();
                   navigate(`/episodes/${nextEpisodeId}`);
                 }}
-                className="ml-1 flex items-center gap-1 opacity-70 transition-colors hover:text-white hover:opacity-100 focus:outline-none sm:ml-2"
+                className="ml-1 flex items-center gap-1 opacity-70 transition-colors hover:text-white hover:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-gold)] focus-visible:ring-offset-1 focus-visible:ring-offset-black rounded-sm sm:ml-2"
                 aria-label="Следващ епизод"
               >
                 <SkipForward className="h-5 w-5 fill-current" />
@@ -1000,7 +1000,7 @@ export default function VideoPlayer({
             )}
           </div>
           <div className="group/volume relative ml-1 flex items-center gap-2">
-            <button onClick={toggleMute} className="opacity-80 transition-colors hover:text-white hover:opacity-100 focus:outline-none" aria-label={isMuted ? 'Включи звук' : 'Изключи звук'}>
+            <button onClick={toggleMute} className="opacity-80 transition-colors hover:text-white hover:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-gold)] focus-visible:ring-offset-1 focus-visible:ring-offset-black rounded-sm" aria-label={isMuted ? 'Включи звук' : 'Изключи звук'}>
               {isMuted || volume === 0 ? <VolumeX className="h-5 w-5" /> : <Volume2 className="h-5 w-5" />}
             </button>
             <div className="flex w-16 items-center rounded-full bg-black/30 px-2 py-1.5 backdrop-blur-sm transition-colors duration-200 group-hover/volume:bg-black/45 sm:w-20">
@@ -1032,10 +1032,10 @@ export default function VideoPlayer({
                   reportProgress(initialProgressSeconds, duration);
                   revealControls();
                 }}
-                className="ml-3 hidden cursor-pointer rounded-full border border-[var(--accent-gold)]/30 bg-[var(--accent-gold)]/15 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.16em] text-[var(--accent-gold-light)] transition-colors hover:bg-[var(--accent-gold)]/30 sm:inline-block focus:outline-none"
+                className="ml-3 hidden cursor-pointer rounded-full border border-[var(--accent-gold)]/30 bg-[var(--accent-gold)]/15 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.16em] text-[var(--accent-gold-light)] transition-colors hover:bg-[var(--accent-gold)]/30 sm:inline-block focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-gold)] focus-visible:ring-offset-1 focus-visible:ring-offset-black rounded-sm"
                 aria-label={`Продължи от ${formatTime(initialProgressSeconds)}`}
               >
-                Resume {formatTime(initialProgressSeconds)}
+                Продължи от {formatTime(initialProgressSeconds)}
               </button>
             )}
           </div>
@@ -1049,7 +1049,7 @@ export default function VideoPlayer({
                   setShowInfoPanel((current) => !current);
                   revealControls(true);
                 }}
-                className={`flex items-center gap-1 transition-colors focus:outline-none ${showInfoPanel ? 'text-white opacity-100' : 'opacity-80 hover:text-white hover:opacity-100'}`}
+                className={`flex items-center gap-1 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-gold)] focus-visible:ring-offset-1 focus-visible:ring-offset-black rounded-sm ${showInfoPanel ? 'text-white opacity-100' : 'opacity-80 hover:text-white hover:opacity-100'}`}
                 aria-label="Информация за плеъра"
               >
                 <Info className="h-5 w-5" />
@@ -1058,7 +1058,7 @@ export default function VideoPlayer({
               {showInfoPanel && (
                 <div className="absolute bottom-full right-0 mb-4 w-72 rounded-2xl border border-white/10 bg-black/80 p-4 text-sm text-white/85 shadow-2xl backdrop-blur-md">
                   <div className="mb-3">
-                    <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-white/45">Source</p>
+                    <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-white/45">Източник</p>
                     <p className="mt-1 font-medium">YouTube secure embed</p>
                   </div>
                   <div className="grid grid-cols-2 gap-3 text-[13px]">
@@ -1079,7 +1079,7 @@ export default function VideoPlayer({
                       <p className="mt-1 font-medium">{currentVolume}%</p>
                     </div>
                     <div>
-                      <p className="text-white/45">Resume</p>
+                      <p className="text-white/45">Продължи от</p>
                       <p className="mt-1 font-medium">{initialProgressSeconds > 0 ? formatTime(initialProgressSeconds) : 'Няма'}</p>
                     </div>
                     <div>
@@ -1109,7 +1109,7 @@ export default function VideoPlayer({
                   setShowSpeedMenu((current) => !current);
                   revealControls(true);
                 }}
-                className={`flex items-center gap-1 transition-colors focus:outline-none ${showSpeedMenu ? 'text-white opacity-100' : 'opacity-80 hover:text-white hover:opacity-100'}`}
+                className={`flex items-center gap-1 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-gold)] focus-visible:ring-offset-1 focus-visible:ring-offset-black rounded-sm ${showSpeedMenu ? 'text-white opacity-100' : 'opacity-80 hover:text-white hover:opacity-100'}`}
                 aria-label="Скорост на възпроизвеждане"
               >
                 <Settings className="h-5 w-5" />
@@ -1129,7 +1129,7 @@ export default function VideoPlayer({
                 </div>
               )}
             </div>
-            <button onClick={toggleFullscreen} className="opacity-80 transition-colors hover:text-white hover:opacity-100 focus:outline-none" aria-label={isFullscreen ? 'Изход от цял екран' : 'Цял екран'}>
+            <button onClick={toggleFullscreen} className="opacity-80 transition-colors hover:text-white hover:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-gold)] focus-visible:ring-offset-1 focus-visible:ring-offset-black rounded-sm" aria-label={isFullscreen ? 'Изход от цял екран' : 'Цял екран'}>
               <Maximize className="h-5 w-5" />
             </button>
           </div>

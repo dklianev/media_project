@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import {
   ArrowRight,
   Clapperboard,
@@ -26,6 +26,8 @@ import { getPublicSettings } from '../utils/settings';
 export default function HomePage() {
   const { user } = useAuth();
   const { showToast } = useToastContext();
+  const shouldReduceMotion = useReducedMotion();
+
   const [productions, setProductions] = useState([]);
   const [latestEpisodes, setLatestEpisodes] = useState([]);
   const [watchHistory, setWatchHistory] = useState([]);
@@ -101,12 +103,12 @@ export default function HomePage() {
   const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
 
   useEffect(() => {
-    if (carouselItems.length <= 1) return;
+    if (carouselItems.length <= 1 || shouldReduceMotion) return;
     const interval = setInterval(() => {
       setCurrentSlideIndex((prev) => (prev + 1) % carouselItems.length);
     }, 7000); // Rotate every 7 seconds
     return () => clearInterval(interval);
-  }, [carouselItems]);
+  }, [carouselItems, shouldReduceMotion]);
 
   const featured = carouselItems[currentSlideIndex] || null;
 

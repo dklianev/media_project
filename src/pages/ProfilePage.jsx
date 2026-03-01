@@ -11,9 +11,11 @@ import { getPublicSettings } from '../utils/settings';
 import { api } from '../utils/api';
 import PageBackground from '../components/PageBackground';
 import ProductionCard from '../components/ProductionCard';
+import { useToastContext } from '../context/ToastContext';
 
 export default function ProfilePage() {
   const { user } = useAuth();
+  const { showToast } = useToastContext();
   const [s, setS] = useState({});
   const [watchlist, setWatchlist] = useState([]);
   const [watchlistIds, setWatchlistIds] = useState(new Set());
@@ -55,7 +57,12 @@ export default function ProfilePage() {
       if (isIn) await api.delete(`/watchlist/${productionId}`);
       else await api.post(`/watchlist/${productionId}`);
     } catch {
-      // ignoring optimistic revert for brevity inside profile
+      setWatchlistIds(prev => {
+        const next = new Set(prev);
+        if (isIn) next.add(productionId); else next.delete(productionId);
+        return next;
+      });
+      showToast('Възникна грешка при запазване в любими.', 'error');
     }
   };
 
@@ -108,7 +115,7 @@ export default function ProfilePage() {
               {/* Status Badge Over Avatar */}
               <div className="absolute -bottom-3 left-1/2 -translate-x-1/2 flex items-center justify-center gap-1.5 px-3 py-1 rounded-full bg-[var(--bg-card)] border border-[var(--border)] shadow-lg shadow-black/50 whitespace-nowrap z-20">
                 <Shield className="w-3 h-3 text-[var(--accent-gold)]" />
-                <span className="text-[10px] uppercase tracking-wider font-bold text-white drop-shadow-md">
+                <span className="text-[10px] uppercase tracking-wider font-bold text-[var(--text-primary)] drop-shadow-md">
                   {user?.role === 'superadmin' ? 'Администратор' :
                     user?.role === 'admin' ? 'Модератор' :
                       user?.role === 'vip' ? 'VIP Потребител' : 'Потребител'}

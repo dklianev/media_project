@@ -396,7 +396,7 @@ export default function SubscribePage() {
               <div className="w-16 h-16 rounded-full bg-[var(--success)]/10 border border-[var(--success)] text-[var(--success)] flex items-center justify-center mx-auto mb-4 shadow-[0_0_20px_rgba(34,197,94,0.2)]">
                 <CheckCircle2 className="w-8 h-8" />
               </div>
-              <h2 className="text-2xl font-bold mb-2 text-white">Успешно генерирано основание</h2>
+              <h2 className="text-2xl font-bold mb-2 text-[var(--text-primary)]">Успешно генерирано основание</h2>
               <p className="text-[var(--text-secondary)]">
                 Моля, преведи посочената сума по следния IBAN със съответното основание.
               </p>
@@ -424,7 +424,7 @@ export default function SubscribePage() {
               <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] p-4 flex flex-col justify-between">
                 <div>
                   <p className="text-xs uppercase tracking-[0.18em] text-[var(--text-muted)] mb-2">Основание</p>
-                  <p className="font-mono text-xl text-white font-bold">{paymentResult.reference_code}</p>
+                  <p className="font-mono text-xl text-[var(--text-primary)] font-bold">{paymentResult.reference_code}</p>
                 </div>
                 <button onClick={() => copyText(paymentResult.reference_code)} className="mt-4 btn-outline text-xs inline-flex items-center justify-center gap-1.5 w-full py-2">
                   <Copy className="w-3.5 h-3.5" aria-hidden="true" />
@@ -468,7 +468,7 @@ export default function SubscribePage() {
                     <div className="flex items-start justify-between mb-3">
                       <div>
                         <p className="text-xs uppercase tracking-[0.1em] text-[var(--text-muted)] mb-1">Основание</p>
-                        <p className="font-mono text-base font-bold text-white">{payment.reference_code}</p>
+                        <p className="font-mono text-base font-bold text-[var(--text-primary)]">{payment.reference_code}</p>
                       </div>
                       <span className={`inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider px-2 py-1 rounded-full border ${payment.status === 'pending' ? 'bg-[var(--warning)]/10 border-[var(--warning)]/30 text-[var(--warning)]' : ''} ${payment.status === 'confirmed' ? 'bg-[var(--success)]/10 border-[var(--success)]/30 text-[var(--success)]' : ''} ${payment.status === 'rejected' ? 'bg-[var(--danger)]/10 border-[var(--danger)]/30 text-[var(--danger)]' : ''}`}>
                         <Icon className="w-3.5 h-3.5" aria-hidden="true" />
