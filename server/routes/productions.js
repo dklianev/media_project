@@ -413,4 +413,36 @@ router.delete('/admin/:id', requireAdmin, (req, res) => {
   res.json({ success: true });
 });
 
+router.put('/admin/:id/status', requireAdmin, (req, res) => {
+  const { is_active } = req.body;
+  if (is_active === undefined) {
+    return res.status(400).json({ error: 'Липсва is_active параметър' });
+  }
+
+  const production = db.prepare('SELECT id, title, is_active FROM productions WHERE id = ?').get(req.params.id);
+  if (!production) {
+    return res.status(404).json({ error: 'Продукцията не е намерена' });
+  }
+
+  const newValue = is_active ? 1 : 0;
+  if (production.is_active === newValue) {
+    return res.json({ success: true, updated: false });
+  }
+
+  db.prepare('UPDATE productions SET is_active = ?, updated_at = datetime(\'now\') WHERE id = ?').run(newValue, req.params.id);
+
+  logAdminAction(req, {
+    action: 'production.status_update',
+    entity_type: 'production',
+    entity_id: req.params.id,
+    metadata: {
+      title: production.title,
+      from_is_active: production.is_active,
+      to_is_active: newValue,
+    },
+  });
+
+  res.json({ success: true, updated: true, is_active: newValue });
+});
+
 export default router;

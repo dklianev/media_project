@@ -278,4 +278,36 @@ router.delete('/:id', requireAdmin, (req, res) => {
   res.json({ success: true });
 });
 
+router.put('/:id/status', requireAdmin, (req, res) => {
+  const { is_active } = req.body;
+  if (is_active === undefined) {
+    return res.status(400).json({ error: 'Липсва is_active параметър' });
+  }
+
+  const promo = db.prepare('SELECT id, code, is_active FROM promo_codes WHERE id = ?').get(req.params.id);
+  if (!promo) {
+    return res.status(404).json({ error: 'Промо кодът не е намерен' });
+  }
+
+  const newValue = is_active ? 1 : 0;
+  if (promo.is_active === newValue) {
+    return res.json({ success: true, updated: false });
+  }
+
+  db.prepare('UPDATE promo_codes SET is_active = ?, updated_at = datetime(\'now\') WHERE id = ?').run(newValue, req.params.id);
+
+  logAdminAction(req, {
+    action: 'promo.status_update',
+    entity_type: 'promo_code',
+    entity_id: req.params.id,
+    metadata: {
+      code: promo.code,
+      from_is_active: promo.is_active,
+      to_is_active: newValue,
+    },
+  });
+
+  res.json({ success: true, updated: true, is_active: newValue });
+});
+
 export default router;

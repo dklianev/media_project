@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { ArrowDown, ArrowUp, Pencil, Save, Search, Trash2, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, Pencil, Save, Search, Trash2, X, Eye, EyeOff } from 'lucide-react';
 import { api } from '../../utils/api';
 import AdminPagination from '../../components/AdminPagination';
 import ConfirmActionModal from '../../components/ConfirmActionModal';
 import { useToastContext } from '../../context/ToastContext';
 import { getProductionAccessGroup } from '../../utils/accessGroups';
+import { useUnsavedChanges } from '../../hooks/useUnsavedChanges';
 
 const ACCESS_OPTIONS = [
   { value: 'free', label: 'Безплатно' },
@@ -43,6 +44,38 @@ export default function ManageProductions() {
     is_active: true,
   });
 
+  const [initialFormState, setInitialFormState] = useState(JSON.stringify(form));
+  const isDirty = JSON.stringify(form) !== initialFormState;
+
+  // Only import useUnsavedChanges if not already imported
+  // import { useUnsavedChanges } from '../../hooks/useUnsavedChanges';
+  useUnsavedChanges(isDirty);
+
+  const useImagePreview = (ref) => {
+    const [preview, setPreview] = useState(null);
+    useEffect(() => {
+      const input = ref.current;
+      if (!input) return;
+      const handleOpen = () => {
+        if (input.files && input.files[0]) {
+          const url = URL.createObjectURL(input.files[0]);
+          setPreview(url);
+        } else {
+          setPreview(null);
+        }
+      };
+      input.addEventListener('change', handleOpen);
+      return () => {
+        input.removeEventListener('change', handleOpen);
+        if (preview) URL.revokeObjectURL(preview);
+      };
+    }, [ref, preview]);
+    return { preview, setPreview };
+  };
+
+  const thumbnailPreviewState = useImagePreview(thumbnailRef);
+  const coverPreviewState = useImagePreview(coverRef);
+
   const fetchData = () => {
     const seq = ++fetchSeq.current;
     const params = new URLSearchParams();
@@ -77,7 +110,7 @@ export default function ManageProductions() {
   }, [page, pageSize, search, groupFilter, activeFilter]);
 
   const resetForm = () => {
-    setForm({
+    const initialState = {
       title: '',
       description: '',
       genres: '',
@@ -85,15 +118,19 @@ export default function ManageProductions() {
       required_tier: '1',
       sort_order: '0',
       is_active: true,
-    });
+    };
+    setForm(initialState);
+    setInitialFormState(JSON.stringify(initialState));
     setEditing(null);
     if (thumbnailRef.current) thumbnailRef.current.value = '';
     if (coverRef.current) coverRef.current.value = '';
+    thumbnailPreviewState.setPreview(null);
+    coverPreviewState.setPreview(null);
   };
 
   const startEdit = (production) => {
     setEditing(production.id);
-    setForm({
+    const newState = {
       title: production.title,
       description: production.description || '',
       genres: (() => {
@@ -108,9 +145,14 @@ export default function ManageProductions() {
       required_tier: String(production.required_tier || 1),
       sort_order: String(production.sort_order || 0),
       is_active: !!production.is_active,
-    });
+    };
+    setForm(newState);
+    setInitialFormState(JSON.stringify(newState));
+
     if (thumbnailRef.current) thumbnailRef.current.value = '';
     if (coverRef.current) coverRef.current.value = '';
+    thumbnailPreviewState.setPreview(production.thumbnail_url || null);
+    coverPreviewState.setPreview(production.cover_image_url || null);
   };
 
   const handleSave = async () => {
@@ -251,12 +293,28 @@ export default function ManageProductions() {
             />
           </div>
           <div>
-            <label className="text-xs text-[var(--text-muted)] block mb-1">Корица в каталог</label>
-            <input type="file" ref={thumbnailRef} accept="image/*" className="input-dark text-sm" />
+            <label className="text-xs text-[var(--text-muted)] block mb-1 flex items-center justify-between">
+              Корица в каталог
+              {thumbnailPreviewState.preview && <span className="text-[10px] text-[var(--accent-primary)]">Preview</span>}
+            </label>
+            <div className="flex items-center gap-3">
+              {thumbnailPreviewState.preview && (
+                <img src={thumbnailPreviewState.preview} alt="Thumbnail preview" className="w-16 h-10 object-cover rounded shadow-sm" />
+              )}
+              <input type="file" ref={thumbnailRef} accept="image/*" className="input-dark text-sm flex-1" />
+            </div>
           </div>
           <div>
-            <label className="text-xs text-[var(--text-muted)] block mb-1">Голямо изображение</label>
-            <input type="file" ref={coverRef} accept="image/*" className="input-dark text-sm" />
+            <label className="text-xs text-[var(--text-muted)] block mb-1 flex items-center justify-between">
+              Голямо изображение
+              {coverPreviewState.preview && <span className="text-[10px] text-[var(--accent-primary)]">Preview</span>}
+            </label>
+            <div className="flex items-center gap-3">
+              {coverPreviewState.preview && (
+                <img src={coverPreviewState.preview} alt="Cover preview" className="w-16 h-10 object-cover rounded shadow-sm" />
+              )}
+              <input type="file" ref={coverRef} accept="image/*" className="input-dark text-sm flex-1" />
+            </div>
           </div>
           <label className="flex items-center gap-2 text-sm">
             <input type="checkbox" checked={form.is_active} onChange={(e) => setForm({ ...form, is_active: e.target.checked })} />
@@ -287,7 +345,7 @@ export default function ManageProductions() {
         </div>
       </motion.div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_auto_auto] gap-2 mb-4">
+      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_auto_auto] gap-2 mb-4 sticky top-[72px] bg-[var(--bg-primary)]/90 backdrop-blur z-30 py-3 border-b border-white/5 mx-[-16px] px-[16px]">
         <div className="relative min-w-0">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]" />
           <input
@@ -330,7 +388,15 @@ export default function ManageProductions() {
       {loading ? (
         <div className="space-y-3">{[...Array(3)].map((_, i) => <div key={i} className="skeleton h-20 rounded-lg" />)}</div>
       ) : productions.length === 0 ? (
-        <p className="text-[var(--text-muted)] text-center py-10">Няма продукции</p>
+        <div className="glass-card p-10 flex flex-col items-center justify-center text-center">
+          <div className="w-16 h-16 rounded-full bg-[var(--bg-tertiary)] flex items-center justify-center mb-4 text-[var(--text-muted)]">
+            <Search className="w-8 h-8" />
+          </div>
+          <h3 className="text-xl font-bold mb-2">Няма намерени продукции</h3>
+          <p className="text-[var(--text-muted)] max-w-sm">
+            Все още няма добавени продукции или не са намерени резултати за вашето търсене.
+          </p>
+        </div>
       ) : (
         <div className="space-y-3">
           {productions.map((production, index) => (
@@ -362,13 +428,32 @@ export default function ManageProductions() {
                 <p className="text-xs text-[var(--text-muted)]">/{production.slug}</p>
               </div>
               <div className="flex items-center gap-1">
+                <motion.button
+                  whileHover={{ scale: 1.1 }}
+                  whileTap={{ scale: 0.9 }}
+                  onClick={async () => {
+                    try {
+                      await api.put(`/productions/admin/${production.id}/status`, {
+                        is_active: !production.is_active,
+                      });
+                      fetchData();
+                      showToast(production.is_active ? 'Продукцията е скрита' : 'Продукцията е активна', 'success');
+                    } catch (err) {
+                      showToast(err.message, 'error');
+                    }
+                  }}
+                  className={`admin-icon-btn ${production.is_active ? 'text-[var(--text-primary)]' : 'text-[var(--text-muted)]'}`}
+                  title={production.is_active ? 'Скрий' : 'Покажи'}
+                >
+                  {production.is_active ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+                </motion.button>
                 <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} onClick={() => reorderProduction(production.id, 'up')} className="admin-icon-btn" title="Нагоре">
                   <ArrowUp className="w-4 h-4" />
                 </motion.button>
                 <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} onClick={() => reorderProduction(production.id, 'down')} className="admin-icon-btn" title="Надолу">
                   <ArrowDown className="w-4 h-4" />
                 </motion.button>
-                <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} onClick={() => startEdit(production)} className="admin-icon-btn" aria-label="Редактирай продукция">
+                <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} onClick={() => startEdit(production)} className="admin-icon-btn" title="Редактирай">
                   <Pencil className="w-4 h-4" />
                 </motion.button>
                 <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} onClick={() => setDeleteId(production.id)} className="admin-icon-btn" aria-label="Изтрий продукция">

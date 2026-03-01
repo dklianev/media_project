@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { Filter, Pencil, Save, Search, Trash2, X } from 'lucide-react';
+import { Filter, Pencil, Save, Search, Trash2, X, Eye, EyeOff } from 'lucide-react';
 import { api } from '../../utils/api';
 import AdminPagination from '../../components/AdminPagination';
 import { formatDate } from '../../utils/formatters';
 import ConfirmActionModal from '../../components/ConfirmActionModal';
 import { useToastContext } from '../../context/ToastContext';
+import { useUnsavedChanges } from '../../hooks/useUnsavedChanges';
 
 export default function ManagePromoCodes() {
   const [codes, setCodes] = useState([]);
@@ -28,6 +29,10 @@ export default function ManagePromoCodes() {
     expires_at: '',
     is_active: true,
   });
+
+  const [initialFormState, setInitialFormState] = useState(JSON.stringify(form));
+  const isDirty = JSON.stringify(form) !== initialFormState;
+  useUnsavedChanges(isDirty);
 
   const fetchData = () => {
     const seq = ++fetchSeq.current;
@@ -62,19 +67,23 @@ export default function ManagePromoCodes() {
   }, [page, pageSize, search, activeFilter, sortBy, sortDir]);
 
   const resetForm = () => {
-    setForm({ code: '', discount_percent: '', max_uses: '', expires_at: '', is_active: true });
+    const initialState = { code: '', discount_percent: '', max_uses: '', expires_at: '', is_active: true };
+    setForm(initialState);
+    setInitialFormState(JSON.stringify(initialState));
     setEditing(null);
   };
 
   const startEdit = (code) => {
     setEditing(code.id);
-    setForm({
+    const newState = {
       code: code.code,
       discount_percent: String(code.discount_percent),
       max_uses: code.max_uses ? String(code.max_uses) : '',
       expires_at: code.expires_at || '',
       is_active: !!code.is_active,
-    });
+    };
+    setForm(newState);
+    setInitialFormState(JSON.stringify(newState));
   };
 
   const handleSave = async () => {
@@ -180,7 +189,7 @@ export default function ManagePromoCodes() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_auto_auto_auto] gap-2 mb-4">
+      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_auto_auto_auto] gap-2 mb-4 sticky top-[72px] bg-[var(--bg-primary)]/90 backdrop-blur z-30 py-3 border-b border-white/5 mx-[-16px] px-[16px]">
         <div className="relative min-w-0">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]" />
           <input
@@ -239,7 +248,15 @@ export default function ManagePromoCodes() {
       {loading ? (
         <div className="space-y-3">{[...Array(3)].map((_, i) => <div key={i} className="skeleton h-16 rounded-lg" />)}</div>
       ) : codes.length === 0 ? (
-        <p className="text-[var(--text-muted)] text-center py-10">Няма промо кодове</p>
+        <div className="glass-card p-10 flex flex-col items-center justify-center text-center">
+          <div className="w-16 h-16 rounded-full bg-[var(--bg-tertiary)] flex items-center justify-center mb-4 text-[var(--text-muted)]">
+            <Search className="w-8 h-8" />
+          </div>
+          <h3 className="text-xl font-bold mb-2">Няма намерени промо кодове</h3>
+          <p className="text-[var(--text-muted)] max-w-sm">
+            Все още няма добавени промо кодове или не са намерени резултати за вашето търсене.
+          </p>
+        </div>
       ) : (
         <div className="overflow-x-auto">
           <table className="admin-table">
@@ -271,6 +288,23 @@ export default function ManagePromoCodes() {
                   </td>
                   <td>
                     <div className="flex gap-1">
+                      <button
+                        onClick={async () => {
+                          try {
+                            await api.put(`/admin/promo-codes/${c.id}/status`, {
+                              is_active: !c.is_active,
+                            });
+                            fetchData();
+                            showToast(c.is_active ? 'Кодът е деактивиран' : 'Кодът е активиран', 'success');
+                          } catch (err) {
+                            showToast(err.message, 'error');
+                          }
+                        }}
+                        className={`p-1.5 hover:bg-[var(--bg-tertiary)] rounded ${c.is_active ? 'text-[var(--text-primary)]' : 'text-[var(--text-muted)]'}`}
+                        title={c.is_active ? 'Деактивирай' : 'Активирай'}
+                      >
+                        {c.is_active ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+                      </button>
                       <button onClick={() => startEdit(c)} className="p-1.5 hover:bg-[var(--bg-tertiary)] rounded" aria-label="Редактирай промо код">
                         <Pencil className="w-3.5 h-3.5 text-[var(--text-secondary)]" />
                       </button>

@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowDown, ArrowUp, Pencil, Save, Search, Trash2, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, Pencil, Save, Search, Trash2, X, Eye, EyeOff } from 'lucide-react';
 import { api } from '../../utils/api';
 import AdminPagination from '../../components/AdminPagination';
 import { formatMoney } from '../../utils/formatters';
 import ConfirmActionModal from '../../components/ConfirmActionModal';
 import { useToastContext } from '../../context/ToastContext';
+import { useUnsavedChanges } from '../../hooks/useUnsavedChanges';
 
 export default function ManagePlans() {
   const [plans, setPlans] = useState([]);
@@ -29,6 +30,10 @@ export default function ManagePlans() {
     is_active: true,
     is_popular: false,
   });
+
+  const [initialFormState, setInitialFormState] = useState(JSON.stringify(form));
+  const isDirty = JSON.stringify(form) !== initialFormState;
+  useUnsavedChanges(isDirty);
 
   const fetchPlans = () => {
     const seq = ++fetchSeq.current;
@@ -63,7 +68,7 @@ export default function ManagePlans() {
   }, [page, pageSize, search, activeFilter]);
 
   const resetForm = () => {
-    setForm({
+    const initialState = {
       name: '',
       description: '',
       price: '',
@@ -72,13 +77,15 @@ export default function ManagePlans() {
       sort_order: '0',
       is_active: true,
       is_popular: false,
-    });
+    };
+    setForm(initialState);
+    setInitialFormState(JSON.stringify(initialState));
     setEditing(null);
   };
 
   const startEdit = (plan) => {
     setEditing(plan.id);
-    setForm({
+    const newState = {
       name: plan.name,
       description: plan.description || '',
       price: String(plan.price),
@@ -87,7 +94,9 @@ export default function ManagePlans() {
       sort_order: String(plan.sort_order),
       is_active: !!plan.is_active,
       is_popular: !!plan.is_popular,
-    });
+    };
+    setForm(newState);
+    setInitialFormState(JSON.stringify(newState));
   };
 
   const handleSave = async () => {
@@ -195,7 +204,7 @@ export default function ManagePlans() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_auto] gap-2 mb-4">
+      <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_auto] gap-2 mb-4 sticky top-[72px] bg-[var(--bg-primary)]/90 backdrop-blur z-30 py-3 border-b border-white/5 mx-[-16px] px-[16px]">
         <div className="relative min-w-0">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]" />
           <input
@@ -225,7 +234,15 @@ export default function ManagePlans() {
       {loading ? (
         <div className="space-y-3">{[...Array(3)].map((_, i) => <div key={i} className="skeleton h-20 rounded-lg" />)}</div>
       ) : plans.length === 0 ? (
-        <p className="text-[var(--text-muted)] text-center py-10">Няма планове</p>
+        <div className="glass-card p-10 flex flex-col items-center justify-center text-center">
+          <div className="w-16 h-16 rounded-full bg-[var(--bg-tertiary)] flex items-center justify-center mb-4 text-[var(--text-muted)]">
+            <Search className="w-8 h-8" />
+          </div>
+          <h3 className="text-xl font-bold mb-2">Няма намерени абонаментни планове</h3>
+          <p className="text-[var(--text-muted)] max-w-sm">
+            Все още няма добавени абонаментни планове или не са намерени резултати за вашето търсене.
+          </p>
+        </div>
       ) : (
         <div className="space-y-3">
           {plans.map((plan) => (
@@ -242,6 +259,23 @@ export default function ManagePlans() {
                 </p>
               </div>
               <div className="flex items-center gap-1">
+                <button
+                  onClick={async () => {
+                    try {
+                      await api.put(`/plans/admin/${plan.id}/status`, {
+                        is_active: !plan.is_active,
+                      });
+                      fetchPlans();
+                      showToast(plan.is_active ? 'Планът е деактивиран' : 'Планът е активиран', 'success');
+                    } catch (err) {
+                      showToast(err.message, 'error');
+                    }
+                  }}
+                  className={`p-2 hover:bg-[var(--bg-tertiary)] rounded-lg transition-colors ${plan.is_active ? 'text-[var(--text-primary)]' : 'text-[var(--text-muted)]'}`}
+                  title={plan.is_active ? 'Деактивирай' : 'Активирай'}
+                >
+                  {plan.is_active ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+                </button>
                 <button onClick={() => reorderPlan(plan.id, 'up')} className="p-2 hover:bg-[var(--bg-tertiary)] rounded-lg transition-colors" title="Нагоре">
                   <ArrowUp className="w-4 h-4 text-[var(--text-secondary)]" />
                 </button>

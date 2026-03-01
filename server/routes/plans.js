@@ -370,4 +370,36 @@ router.delete('/admin/:id', requireAdmin, (req, res) => {
   res.json({ success: true });
 });
 
+router.put('/admin/:id/status', requireAdmin, (req, res) => {
+  const { is_active } = req.body;
+  if (is_active === undefined) {
+    return res.status(400).json({ error: 'Липсва is_active параметър' });
+  }
+
+  const plan = db.prepare('SELECT id, name, is_active FROM subscription_plans WHERE id = ?').get(req.params.id);
+  if (!plan) {
+    return res.status(404).json({ error: 'Планът не е намерен' });
+  }
+
+  const newValue = is_active ? 1 : 0;
+  if (plan.is_active === newValue) {
+    return res.json({ success: true, updated: false });
+  }
+
+  db.prepare('UPDATE subscription_plans SET is_active = ?, updated_at = datetime(\'now\') WHERE id = ?').run(newValue, req.params.id);
+
+  logAdminAction(req, {
+    action: 'plan.status_update',
+    entity_type: 'subscription_plan',
+    entity_id: req.params.id,
+    metadata: {
+      name: plan.name,
+      from_is_active: plan.is_active,
+      to_is_active: newValue,
+    },
+  });
+
+  res.json({ success: true, updated: true, is_active: newValue });
+});
+
 export default router;
