@@ -261,7 +261,7 @@ export default function Navbar() {
               </div>
             </Link>
 
-            <nav className="hidden xl:flex items-center gap-1">
+            <nav className="hidden lg:flex items-center gap-1">
               {navLinks.map((link) => (
                 <NavPill key={link.to} {...link} />
               ))}
@@ -330,7 +330,7 @@ export default function Navbar() {
               {/* Mobile hamburger */}
               <motion.button
                 onClick={() => setMobileOpen(true)}
-                className="xl:hidden w-9 h-9 rounded-full border border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition flex items-center justify-center"
+                className="lg:hidden w-9 h-9 rounded-full border border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition flex items-center justify-center"
                 whileTap={{ scale: 0.85 }}
                 aria-label="Меню"
               >
