@@ -45,12 +45,6 @@ export default function ManageProductions() {
   });
 
   const [initialFormState, setInitialFormState] = useState(JSON.stringify(form));
-  const isDirty = JSON.stringify(form) !== initialFormState;
-
-  // Only import useUnsavedChanges if not already imported
-  // import { useUnsavedChanges } from '../../hooks/useUnsavedChanges';
-  useUnsavedChanges(isDirty);
-
   const useImagePreview = (ref) => {
     const [preview, setPreview] = useState(null);
     useEffect(() => {
@@ -75,6 +69,12 @@ export default function ManageProductions() {
 
   const thumbnailPreviewState = useImagePreview(thumbnailRef);
   const coverPreviewState = useImagePreview(coverRef);
+  const hasPendingUploads = Boolean(
+    thumbnailRef.current?.files?.length
+    || coverRef.current?.files?.length
+  );
+  const isDirty = JSON.stringify(form) !== initialFormState || hasPendingUploads;
+  useUnsavedChanges(isDirty);
 
   const fetchData = () => {
     const seq = ++fetchSeq.current;

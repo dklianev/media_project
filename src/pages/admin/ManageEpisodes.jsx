@@ -74,9 +74,6 @@ export default function ManageEpisodes() {
   });
 
   const [initialFormState, setInitialFormState] = useState(JSON.stringify(form));
-  const isDirty = JSON.stringify(form) !== initialFormState;
-  useUnsavedChanges(isDirty);
-
   const useImagePreview = (ref) => {
     const [preview, setPreview] = useState(null);
     useEffect(() => {
@@ -124,6 +121,13 @@ export default function ManageEpisodes() {
   const thumbnailPreviewState = useImagePreview(thumbnailRef);
   const adBannerPreviewState = useImagePreview(adBannerRef);
   const sideImagesPreviewState = useMultiImagePreview(sideImagesRef);
+  const hasPendingUploads = Boolean(
+    thumbnailRef.current?.files?.length
+    || adBannerRef.current?.files?.length
+    || sideImagesRef.current?.files?.length
+  );
+  const isDirty = JSON.stringify(form) !== initialFormState || hasPendingUploads;
+  useUnsavedChanges(isDirty);
 
   const fetchProductions = async () => {
     try {

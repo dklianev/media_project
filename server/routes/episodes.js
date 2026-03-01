@@ -749,6 +749,49 @@ router.put(
   }
 );
 
+router.put('/admin/:id/status', requireAdmin, (req, res) => {
+  const { is_active } = req.body;
+  if (is_active === undefined) {
+    return res.status(400).json({ error: 'Липсва is_active параметър' });
+  }
+
+  const episode = db.prepare(`
+    SELECT id, title, production_id, episode_number, is_active
+    FROM episodes
+    WHERE id = ?
+  `).get(req.params.id);
+
+  if (!episode) {
+    return res.status(404).json({ error: 'Епизодът не е намерен' });
+  }
+
+  const newValue = is_active ? 1 : 0;
+  if (episode.is_active === newValue) {
+    return res.json({ success: true, updated: false });
+  }
+
+  db.prepare(`
+    UPDATE episodes
+    SET is_active = ?, updated_at = datetime('now')
+    WHERE id = ?
+  `).run(newValue, req.params.id);
+
+  logAdminAction(req, {
+    action: 'episode.status_update',
+    entity_type: 'episode',
+    entity_id: req.params.id,
+    metadata: {
+      title: episode.title,
+      production_id: episode.production_id,
+      episode_number: episode.episode_number,
+      from_is_active: episode.is_active,
+      to_is_active: newValue,
+    },
+  });
+
+  res.json({ success: true, updated: true, is_active: newValue });
+});
+
 router.put('/admin/:id/reorder', requireAdmin, (req, res) => {
   const direction = String(req.body?.direction || '').toLowerCase();
   if (!['up', 'down'].includes(direction)) {
