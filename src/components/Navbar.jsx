@@ -316,7 +316,7 @@ export default function Navbar() {
               </div>
             </Link>
 
-            <nav className="hidden lg:flex items-center gap-1">
+            <nav className="hidden md:flex flex-1 justify-center items-center gap-1">
               {navLinks.map((link) => (
                 <NavPill key={link.to} {...link} />
               ))}
@@ -348,7 +348,7 @@ export default function Navbar() {
               ) : (
                 <div className="w-9 h-9 rounded-full border border-[var(--border)] bg-[var(--bg-tertiary)]" />
               )}
-              <div className="hidden md:block max-w-[110px] lg:max-w-[150px]">
+              <div className="hidden lg:block max-w-[150px]">
                 <p className="text-[13px] font-semibold leading-tight truncate">{user?.character_name || 'Без име'}</p>
                 <div className="flex items-center gap-1 mt-0.5">
                   <div className="shrink-0 scale-90 origin-left">
@@ -385,7 +385,7 @@ export default function Navbar() {
               {/* Mobile hamburger */}
               <motion.button
                 onClick={() => setMobileOpen(true)}
-                className="lg:hidden w-9 h-9 rounded-full border border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition flex items-center justify-center"
+                className="md:hidden w-9 h-9 rounded-full border border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition flex items-center justify-center"
                 whileTap={{ scale: 0.85 }}
                 aria-label="Меню"
                 aria-expanded={mobileOpen}

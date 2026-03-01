@@ -198,12 +198,20 @@ export default function HomePage() {
               </AnimatePresence>
 
               <div className="mt-7 flex flex-wrap gap-3">
-                <Link to="/productions" className="btn-gold no-underline inline-flex items-center gap-2">
-                  <Play className="w-4 h-4" />
-                  {settings.home_hero_button_1 || 'Гледай сега'}
-                </Link>
+                {watchHistory.length > 0 && watchHistory[0].has_access ? (
+                  <Link to={`/episodes/${watchHistory[0].episode_id}`} className="btn-gold no-underline inline-flex items-center gap-2 relative overflow-hidden group">
+                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000" />
+                    <Play className="w-4 h-4 fill-current ml-0.5" />
+                    Продължи: {watchHistory[0].title}
+                  </Link>
+                ) : (
+                  <Link to="/productions" className="btn-gold no-underline inline-flex items-center gap-2">
+                    <Play className="w-4 h-4 text-black" />
+                    {settings.home_hero_button_1 || 'Гледай сега'}
+                  </Link>
+                )}
                 <Link to="/subscribe" className="btn-outline no-underline inline-flex items-center gap-2">
-                  <Crown className="w-4 h-4" />
+                  <Crown className="w-4 h-4 text-[var(--accent-gold)]" />
                   {settings.home_hero_button_2 || 'Виж плановете'}
                 </Link>
               </div>
@@ -221,13 +229,13 @@ export default function HomePage() {
                     className="w-full aspect-[4/3] bg-[var(--bg-tertiary)]"
                   >
                     {featured?.cover_image_url || settings.hero_image ? (
-                        <img
-                          src={featured?.cover_image_url || settings.hero_image}
-                          alt={featured?.title || `${settings.home_hero_accent_label || 'Акцент'} съдържание`}
-                          decoding="async"
-                          fetchPriority="high"
-                          className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105"
-                        />
+                      <img
+                        src={featured?.cover_image_url || settings.hero_image}
+                        alt={featured?.title || `${settings.home_hero_accent_label || 'Акцент'} съдържание`}
+                        decoding="async"
+                        fetchPriority="high"
+                        className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105"
+                      />
                     ) : (
                       <div className="w-full h-full" style={{ background: 'var(--gradient-hero)' }} />
                     )}
@@ -315,7 +323,7 @@ export default function HomePage() {
               <span className="text-sm text-[var(--text-secondary)]">{freeProductions.length} продукции</span>
             </div>
             <StaggerContainer className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                {freeProductions.map((item) => (
+              {freeProductions.map((item) => (
                 <StaggerItem key={item.id} className="relative z-0 hover:z-[70] focus-within:z-[70]">
                   <ProductionCard production={item} isInWatchlist={watchlistIds.has(item.id)} onToggleWatchlist={toggleWatchlist} />
                 </StaggerItem>
@@ -332,11 +340,11 @@ export default function HomePage() {
               <span className="text-sm text-[var(--text-secondary)]">{trailerProductions.length} продукции</span>
             </div>
             <StaggerContainer className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                {trailerProductions.map((item) => (
-                  <StaggerItem key={item.id} className="relative z-0 hover:z-[70] focus-within:z-[70]">
-                    <ProductionCard production={item} isInWatchlist={watchlistIds.has(item.id)} onToggleWatchlist={toggleWatchlist} />
-                  </StaggerItem>
-                ))}
+              {trailerProductions.map((item) => (
+                <StaggerItem key={item.id} className="relative z-0 hover:z-[70] focus-within:z-[70]">
+                  <ProductionCard production={item} isInWatchlist={watchlistIds.has(item.id)} onToggleWatchlist={toggleWatchlist} />
+                </StaggerItem>
+              ))}
             </StaggerContainer>
           </ScrollReveal>
         )}
@@ -351,11 +359,11 @@ export default function HomePage() {
           </div>
           {subscriptionProductions.length > 0 ? (
             <StaggerContainer className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                {subscriptionProductions.map((item) => (
-                  <StaggerItem key={item.id} className="relative z-0 hover:z-[70] focus-within:z-[70]">
-                    <ProductionCard production={item} isInWatchlist={watchlistIds.has(item.id)} onToggleWatchlist={toggleWatchlist} />
-                  </StaggerItem>
-                ))}
+              {subscriptionProductions.map((item) => (
+                <StaggerItem key={item.id} className="relative z-0 hover:z-[70] focus-within:z-[70]">
+                  <ProductionCard production={item} isInWatchlist={watchlistIds.has(item.id)} onToggleWatchlist={toggleWatchlist} />
+                </StaggerItem>
+              ))}
             </StaggerContainer>
           ) : (
             <p className="text-[var(--text-muted)]">Няма премиум продукции в момента.</p>

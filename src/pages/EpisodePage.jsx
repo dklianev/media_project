@@ -311,6 +311,19 @@ export default function EpisodePage() {
         </aside>
       </div>
 
+      {/* Sticky Next Episode CTA (Desktop/Tablet) */}
+      {episode.next_episode && (
+        <div className="fixed bottom-6 right-6 z-50 hidden sm:block">
+          <Link
+            to={`/episodes/${episode.next_episode.id}`}
+            className="btn-gold shadow-premium-md flex items-center gap-2 px-6 py-3.5 rounded-full hover:scale-105 transition-transform group font-semibold text-sm no-underline"
+          >
+            Следващ епизод
+            <SkipForward className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+          </Link>
+        </div>
+      )}
+
       {/* Related episodes */}
       {episode.latest_episodes?.length > 0 && (
         <ScrollReveal variant="fadeUp" delay={0.1} className="mt-12">
