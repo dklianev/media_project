@@ -235,10 +235,10 @@ export default function ProfilePage() {
                     <div className="w-full h-full flex items-center justify-center text-[10px] text-[var(--text-muted)]">Няма Изглед</div>
                   )}
                   {/* Fine Progress Bar */}
-                  <div className="absolute inset-x-0 bottom-0 h-1 bg-black/60 backdrop-blur-sm z-10">
+                  <div className="absolute inset-x-0 bottom-0 h-1 bg-black/60 backdrop-blur-sm z-10 transition-all">
                     <div
-                      className="h-full bg-[var(--accent-cyan)] shadow-[0_0_10px_var(--accent-cyan)]"
-                      style={{ width: `${Math.min(100, Math.max(0, (item.progress_seconds / Math.max(1, item.duration_seconds || 1)) * 100))}%` }}
+                      className="h-full bg-[var(--accent-cyan)] shadow-[0_0_10px_var(--accent-cyan)] transition-all duration-300"
+                      style={{ width: `${Math.max(0.5, Math.min(100, (item.progress_seconds / Math.max(1, item.duration_seconds || 1)) * 100))}%` }}
                     />
                   </div>
                   <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none z-20">
