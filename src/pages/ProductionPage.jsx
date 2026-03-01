@@ -7,6 +7,7 @@ import AccessGate from '../components/AccessGate';
 import ScrollReveal from '../components/ScrollReveal';
 import { StaggerContainer, StaggerItem } from '../components/StaggerContainer';
 import PageBackground from '../components/PageBackground';
+import { getProductionAccessGroup } from '../utils/accessGroups';
 
 const ACCESS_LABEL = {
   free: 'Безплатно',
@@ -78,7 +79,7 @@ export default function ProductionPage() {
     );
   }
 
-  const productionGroup = production.access_group || (production.required_tier > 0 ? 'subscription' : 'free');
+  const productionGroup = getProductionAccessGroup(production);
 
   return (
     <div className="relative max-w-7xl mx-auto px-4 py-8 overflow-hidden">

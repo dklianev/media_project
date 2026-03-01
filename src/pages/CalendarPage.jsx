@@ -7,6 +7,7 @@ import ScrollReveal from '../components/ScrollReveal';
 import EpisodeCard from '../components/EpisodeCard';
 import { StaggerContainer, StaggerItem } from '../components/StaggerContainer';
 import { getPublicSettings } from '../utils/settings';
+import { formatSofiaLocalDate, getSofiaDateKey, getSofiaLocalDateKey } from '../utils/formatters';
 
 export default function CalendarPage() {
     const [episodes, setEpisodes] = useState([]);
@@ -48,33 +49,32 @@ export default function CalendarPage() {
 
     const groupedEpisodes = useMemo(() => {
         const groups = {};
-        const now = new Date();
+        const todayKey = getSofiaDateKey(new Date());
 
         episodes.forEach(ep => {
-            const pubDate = new Date(ep.published_at);
-            // Get date string (YYYY-MM-DD) for grouping
-            const dateStr = pubDate.toISOString().split('T')[0];
+            const dateStr = getSofiaLocalDateKey(ep.published_at);
+            if (!dateStr) return;
 
             if (!groups[dateStr]) {
                 groups[dateStr] = {
-                    date: pubDate,
+                    date: ep.published_at,
                     episodes: [],
-                    isPast: pubDate < now && dateStr !== now.toISOString().split('T')[0],
-                    isToday: dateStr === now.toISOString().split('T')[0]
+                    isPast: dateStr < todayKey,
+                    isToday: dateStr === todayKey,
                 };
             }
             groups[dateStr].episodes.push(ep);
         });
 
         // Convert to array and sort by date ascending
-        return Object.values(groups).sort((a, b) => a.date - b.date);
+        return Object.values(groups).sort((a, b) => a.date.localeCompare(b.date));
     }, [episodes]);
 
-    const formatDate = (dateObj, isToday) => {
+    const formatGroupDate = (value, isToday) => {
         if (isToday) return 'Днес';
 
         const options = { weekday: 'long', day: 'numeric', month: 'long' };
-        let formatted = dateObj.toLocaleDateString('bg-BG', options);
+        let formatted = formatSofiaLocalDate(value, 'bg-BG', options);
         // Capitalize first letter
         return formatted.charAt(0).toUpperCase() + formatted.slice(1);
     };
@@ -114,7 +114,7 @@ export default function CalendarPage() {
                 </div>
             ) : error ? (
                 <div className="glass-card p-5 border border-[var(--danger)]/35 text-center max-w-xl mx-auto mt-10">
-                    <p className="text-[#ffc9c9]">{error}</p>
+                    <p className="text-[var(--danger)]">{error}</p>
                 </div>
             ) : groupedEpisodes.length === 0 ? (
                 <div className="text-center py-20 glass-card">
@@ -137,7 +137,7 @@ export default function CalendarPage() {
                                                 : 'bg-[var(--bg-secondary)]/80 border-[var(--border)] text-[var(--text-primary)]'}
                   `}>
                                         <Clock className="w-4 h-4" />
-                                        {formatDate(group.date, group.isToday)}
+                                        {formatGroupDate(group.date, group.isToday)}
                                     </div>
                                     <div className="flex-1 h-px bg-gradient-to-r from-[var(--border)] to-transparent" />
                                 </div>

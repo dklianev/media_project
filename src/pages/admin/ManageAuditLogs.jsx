@@ -2,13 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Search } from 'lucide-react';
 import { api } from '../../utils/api';
 import AdminPagination from '../../components/AdminPagination';
-
-function formatDate(value) {
-  if (!value) return '—';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '—';
-  return date.toLocaleString('bg-BG');
-}
+import { formatDateTime } from '../../utils/formatters';
 
 const ACTION_MAP = {
   'payment.confirm': 'Потвърдено плащане',
@@ -214,7 +208,7 @@ export default function ManageAuditLogs() {
             <tbody>
               {items.map((item) => (
                 <tr key={item.id}>
-                  <td className="text-xs text-[var(--text-muted)] whitespace-nowrap">{formatDate(item.created_at)}</td>
+                  <td className="text-xs text-[var(--text-muted)] whitespace-nowrap">{formatDateTime(item.created_at)}</td>
                   <td>
                     <div>{item.admin_name || '—'}</div>
                     <div className="text-xs text-[var(--text-muted)]">

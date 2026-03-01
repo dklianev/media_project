@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Calendar, Shield, Sparkles, UserRound, ListVideo, Clock, PlayCircle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
@@ -14,11 +14,13 @@ import ProductionCard from '../components/ProductionCard';
 import { useToastContext } from '../context/ToastContext';
 
 export default function ProfilePage() {
+  const location = useLocation();
   const { user } = useAuth();
   const { showToast } = useToastContext();
   const [s, setS] = useState({});
   const [watchlist, setWatchlist] = useState([]);
   const [watchlistIds, setWatchlistIds] = useState(new Set());
+  const [recentlyWatched, setRecentlyWatched] = useState([]);
   const [loadingWatchlist, setLoadingWatchlist] = useState(true);
   const [stats, setStats] = useState(null);
 
@@ -27,13 +29,15 @@ export default function ProfilePage() {
 
     Promise.all([
       api.get('/productions'),
-      api.get('/watchlist')
-    ]).then(([prods, wlIds]) => {
+      api.get('/watchlist'),
+      api.get('/watch-history?limit=12').catch(() => []),
+    ]).then(([prods, wlIds, history]) => {
       if (Array.isArray(prods) && Array.isArray(wlIds)) {
         setWatchlistIds(new Set(wlIds));
         const filtered = prods.filter(p => wlIds.includes(p.id));
         setWatchlist(filtered);
       }
+      setRecentlyWatched(Array.isArray(history) ? history : []);
     }).catch(console.error).finally(() => setLoadingWatchlist(false));
 
     api.get('/users/me/stats')
@@ -41,8 +45,25 @@ export default function ProfilePage() {
       .catch(console.error);
   }, []);
 
+  useEffect(() => {
+    if (!location.hash) return;
+
+    const targetId = location.hash.replace('#', '');
+    const scrollToTarget = () => {
+      const target = document.getElementById(targetId);
+      if (!target) return;
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    };
+
+    const timeoutId = window.setTimeout(scrollToTarget, 80);
+    return () => window.clearTimeout(timeoutId);
+  }, [location.hash, stats]);
+
   const toggleWatchlist = async (productionId) => {
     const isIn = watchlistIds.has(productionId);
+    const previousWatchlistIds = new Set(watchlistIds);
+    const previousWatchlist = watchlist;
+
     setWatchlistIds(prev => {
       const next = new Set(prev);
       if (isIn) next.delete(productionId); else next.add(productionId);
@@ -57,11 +78,8 @@ export default function ProfilePage() {
       if (isIn) await api.delete(`/watchlist/${productionId}`);
       else await api.post(`/watchlist/${productionId}`);
     } catch {
-      setWatchlistIds(prev => {
-        const next = new Set(prev);
-        if (isIn) next.add(productionId); else next.delete(productionId);
-        return next;
-      });
+      setWatchlistIds(previousWatchlistIds);
+      setWatchlist(previousWatchlist);
       showToast('Възникна грешка при запазване в любими.', 'error');
     }
   };
@@ -216,8 +234,12 @@ export default function ProfilePage() {
       )}
 
       {/* --- 3. RECENTLY WATCHED HORIZONTAL ROW --- */}
-      {stats?.recently_watched?.length > 0 && (
-        <ScrollReveal variant="fadeUp" delay={0.25} className="mt-2">
+      <div
+        id="recently-watched"
+        style={{ scrollMarginTop: 'calc(var(--app-chrome-offset, 0px) + 24px)' }}
+      >
+        {recentlyWatched.length > 0 && (
+          <ScrollReveal variant="fadeUp" delay={0.25} className="mt-2">
           <div className="flex items-center justify-between mb-4 px-1">
             <h2 className="text-xl font-semibold flex items-center gap-2 text-[var(--text-primary)]">
               <PlayCircle className="w-5 h-5 text-[var(--accent-cyan)]" />
@@ -229,7 +251,7 @@ export default function ProfilePage() {
           </div>
 
           <div className="flex gap-4 overflow-x-auto pb-4 custom-scrollbar snap-x snap-mandatory">
-            {stats.recently_watched.map(item => (
+            {recentlyWatched.map(item => (
               <Link
                 key={item.episode_id}
                 to={`/episodes/${item.episode_id}`}
@@ -264,8 +286,9 @@ export default function ProfilePage() {
               </Link>
             ))}
           </div>
-        </ScrollReveal>
-      )}
+          </ScrollReveal>
+        )}
+      </div>
 
       {/* --- 4. FULL WIDTH WATCHLIST --- */}
       <ScrollReveal variant="fadeUp" delay={0.3} className="mt-2 flex-1">

@@ -91,7 +91,7 @@ export default function CharacterNamePage() {
             />
 
             {error && (
-              <p className="mt-3 text-sm text-[#ffc9c9] rounded-lg border border-[var(--danger)]/45 bg-[var(--danger)]/10 px-3 py-2">
+              <p className="mt-3 text-sm text-[var(--danger)] rounded-lg border border-[var(--danger)]/45 bg-[var(--danger)]/10 px-3 py-2">
                 {error}
               </p>
             )}

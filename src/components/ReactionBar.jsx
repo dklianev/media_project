@@ -95,7 +95,7 @@ export default function ReactionBar({ episodeId, reactions: initialReactions, us
         </span>
       )}
 
-      {error && <span className="text-xs text-[#ffc9c9] ml-2">{error}</span>}
+      {error && <span className="text-xs text-[var(--danger)] ml-2">{error}</span>}
     </div>
   );
 }

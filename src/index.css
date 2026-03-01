@@ -27,6 +27,7 @@ button:hover,
 }
 
 :root {
+  --app-chrome-offset: 0px;
   --bg-primary: #04060f;
   --bg-secondary: #0b1222;
   --bg-tertiary: #151f36;
@@ -764,12 +765,6 @@ a {
   animation-name: panel-slide-in-from-bottom-2;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .animate-in {
-    animation-duration: 1ms;
-  }
-}
-
 /* ─── Premium Utility Classes ─── */
 
 .animated-border {
@@ -1007,18 +1002,6 @@ a {
   text-align: center;
   border-radius: 0 0 8px 8px;
   box-shadow: 0 4px 12px rgba(212, 175, 55, 0.3);
-}
-
-/* Reduced motion */
-@media (prefers-reduced-motion: reduce) {
-
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-  }
 }
 
 @media (max-width: 768px) {
@@ -1425,6 +1408,11 @@ a {
   width: 6px;
 }
 
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.16) rgba(255, 255, 255, 0.02);
+}
+
 .custom-scrollbar::-webkit-scrollbar-track {
   background: rgba(255, 255, 255, 0.02);
   border-radius: 8px;
@@ -1439,14 +1427,18 @@ a {
   background: rgba(255, 255, 255, 0.2);
 }
 
-.light .custom-scrollbar::-webkit-scrollbar-track {
+[data-theme="light"] .custom-scrollbar {
+  scrollbar-color: rgba(0, 0, 0, 0.16) rgba(0, 0, 0, 0.03);
+}
+
+[data-theme="light"] .custom-scrollbar::-webkit-scrollbar-track {
   background: rgba(0, 0, 0, 0.02);
 }
 
-.light .custom-scrollbar::-webkit-scrollbar-thumb {
+[data-theme="light"] .custom-scrollbar::-webkit-scrollbar-thumb {
   background: rgba(0, 0, 0, 0.1);
 }
 
-.light .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+[data-theme="light"] .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   background: rgba(0, 0, 0, 0.2);
 }

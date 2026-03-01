@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, NavLink, useLocation } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Calendar as CalendarIcon, Crown, Film, Home, LogOut, Menu, Moon, Settings, Sparkles, Sun, User, X } from 'lucide-react';
@@ -47,24 +47,58 @@ function NavPill({ to, label, icon: Icon, onClick }) {
 /* ── Mobile Drawer ── */
 function MobileDrawer({ open, onClose, navLinks, isAdmin, adminLabel, user, theme, toggleTheme, logout }) {
   const location = useLocation();
+  const drawerRef = useRef(null);
+  const closeButtonRef = useRef(null);
+  const previousFocusRef = useRef(null);
+  const previousPathnameRef = useRef(location.pathname);
 
   useEffect(() => {
-    if (open) {
-      const prevActiveElement = document.activeElement;
-      document.body.style.overflow = 'hidden';
+    if (!open) return undefined;
 
-      // Auto-focus the close button or first element if needed, 
-      // but for now just locking scroll and restoring focus is the priority.
-      return () => {
-        document.body.style.overflow = '';
-        if (prevActiveElement && prevActiveElement.focus) {
-          prevActiveElement.focus();
-        }
-      };
-    }
+    previousFocusRef.current = document.activeElement;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    closeButtonRef.current?.focus({ preventScroll: true });
+
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        onClose();
+        return;
+      }
+
+      if (event.key !== 'Tab' || !drawerRef.current) return;
+      const focusable = drawerRef.current.querySelectorAll(
+        'button:not([disabled]), [href], [tabindex]:not([tabindex="-1"])'
+      );
+      if (focusable.length === 0) return;
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', handleKeyDown);
+      previousFocusRef.current?.focus?.({ preventScroll: true });
+    };
   }, [open]);
 
-  useEffect(() => { if (open) onClose(); }, [location.pathname]);
+  useEffect(() => {
+    if (open && previousPathnameRef.current !== location.pathname) {
+      onClose();
+    }
+    previousPathnameRef.current = location.pathname;
+  }, [location.pathname, onClose, open]);
 
   return (
     <AnimatePresence>
@@ -81,11 +115,15 @@ function MobileDrawer({ open, onClose, navLinks, isAdmin, adminLabel, user, them
           />
           {/* Drawer */}
           <motion.aside
+            ref={drawerRef}
             initial={{ x: '100%' }}
             animate={{ x: 0 }}
             exit={{ x: '100%' }}
             transition={{ type: 'spring', stiffness: 320, damping: 30 }}
             className="fixed top-0 right-0 bottom-0 w-72 z-[70] bg-[var(--bg-secondary)] border-l border-[var(--border)] shadow-2xl flex flex-col"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Навигационно меню"
           >
             {/* Header */}
             <div className="flex items-center justify-between p-4 border-b border-[var(--border)]">
@@ -99,6 +137,7 @@ function MobileDrawer({ open, onClose, navLinks, isAdmin, adminLabel, user, them
                 </div>
               </div>
               <motion.button
+                ref={closeButtonRef}
                 onClick={onClose}
                 whileTap={{ scale: 0.85 }}
                 className="w-8 h-8 rounded-full border border-[var(--border)] flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--text-primary)] transition"
@@ -109,7 +148,7 @@ function MobileDrawer({ open, onClose, navLinks, isAdmin, adminLabel, user, them
 
             {/* Nav links */}
             <nav className="flex-1 overflow-y-auto p-4 space-y-1">
-              {navLinks.map((link, i) => {
+              {navLinks.map((link) => {
                 const Icon = link.icon;
                 return (
                   <NavLink
@@ -349,16 +388,14 @@ export default function Navbar() {
                 className="lg:hidden w-9 h-9 rounded-full border border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition flex items-center justify-center"
                 whileTap={{ scale: 0.85 }}
                 aria-label="Меню"
+                aria-expanded={mobileOpen}
+                aria-haspopup="dialog"
               >
                 <Menu className="w-4 h-4" />
               </motion.button>
             </div>
           </div>
         </div>
-
-        {location.pathname.startsWith('/admin') && (
-          <div className="max-w-7xl mx-auto px-4 pb-2 text-xs text-[var(--text-muted)]">{ui.adminZoneLabel}</div>
-        )}
       </motion.header>
 
       <MobileDrawer

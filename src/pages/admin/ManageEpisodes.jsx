@@ -16,6 +16,11 @@ import { api } from '../../utils/api';
 import AdminPagination from '../../components/AdminPagination';
 import ConfirmActionModal from '../../components/ConfirmActionModal';
 import { useToastContext } from '../../context/ToastContext';
+import {
+  formatSofiaLocalDateTime,
+  isFutureSofiaLocalDateTime,
+  toSofiaLocalDateTimeInputValue,
+} from '../../utils/formatters';
 
 const ACCESS_OPTIONS = [
   { value: 'inherit', label: 'Наследи от продукцията' },
@@ -147,7 +152,7 @@ export default function ManageEpisodes() {
       episode_number: String(episode.episode_number || 1),
       duration_seconds: episode.duration_seconds ? String(episode.duration_seconds) : '',
       is_active: !!episode.is_active,
-      published_at: episode.published_at ? episode.published_at.slice(0, 16) : '',
+      published_at: toSofiaLocalDateTimeInputValue(episode.published_at),
     });
     [thumbnailRef, adBannerRef, sideImagesRef].forEach((ref) => {
       if (ref.current) ref.current.value = '';
@@ -231,7 +236,7 @@ export default function ManageEpisodes() {
         initial={{ opacity: 0, y: -8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
-        className="flex flex-wrap items-center justify-between gap-3 mb-4"
+        className="flex flex-wrap items-center justify-between gap-3 mb-6"
       >
         <h1 className="text-2xl font-bold">Епизоди</h1>
         <p className="text-sm text-[var(--text-secondary)]">
@@ -246,9 +251,9 @@ export default function ManageEpisodes() {
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.35, delay: 0.05, ease: [0.16, 1, 0.3, 1] }}
-        className="glass-card p-5 mb-6"
+        className="glass-card p-5 sm:p-6 mb-8"
       >
-        <h2 className="text-lg font-semibold mb-4">{editing ? 'Редактирай епизод' : 'Нов епизод'}</h2>
+        <h2 className="text-lg font-semibold mb-6">{editing ? 'Редактирай епизод' : 'Нов епизод'}</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <select value={form.production_id} onChange={(e) => setForm({ ...form, production_id: e.target.value })} className="input-dark">
             <option value="">-- Продукция --</option>
@@ -339,9 +344,9 @@ export default function ManageEpisodes() {
               onChange={(e) => setForm({ ...form, published_at: e.target.value })}
               className="input-dark text-sm"
             />
-            {form.published_at && new Date(form.published_at) > new Date() && (
+            {form.published_at && isFutureSofiaLocalDateTime(form.published_at) && (
               <p className="text-[10px] text-[var(--warning)] mt-1">
-                Ще бъде видим след {new Date(form.published_at).toLocaleString('bg-BG')}
+                Ще бъде видим след {formatSofiaLocalDateTime(form.published_at)}
               </p>
             )}
           </div>
@@ -473,7 +478,7 @@ export default function ManageEpisodes() {
                     </span>
                   )}
                   {!episode.is_active && <span className="badge bg-[var(--danger)]/10 text-[var(--danger)] border border-[var(--danger)]/30 text-[10px]">Скрит</span>}
-                  {episode.published_at && new Date(episode.published_at) > new Date() && (
+                  {episode.published_at && isFutureSofiaLocalDateTime(episode.published_at) && (
                     <span className="badge bg-[var(--warning)]/10 text-[var(--warning)] border border-[var(--warning)]/30 text-[10px] inline-flex items-center gap-0.5">
                       <Calendar className="w-3 h-3" />
                       Планиран

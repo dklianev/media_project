@@ -3,9 +3,11 @@ import db from '../db.js';
 import { requireAdmin, requireAuth } from '../middleware/auth.js';
 import { logAdminAction } from '../utils/audit.js';
 import { buildPageResult, parsePagination, toInt } from '../utils/pagination.js';
+import { getCurrentSofiaDbTimestamp } from '../utils/sofiaTime.js';
 import {
   normalizeEpisodeGroup,
   normalizeProductionGroup,
+  resolveProductionGroup,
   hasGroupAccess,
   resolveEffectiveGroup,
   isUserAdmin,
@@ -41,7 +43,8 @@ function getCommentById(commentId) {
 
 function validateEpisodeAccess(episodeId, user) {
   const admin = isUserAdmin(user);
-  const episode = db.prepare(`
+  const currentTimestamp = getCurrentSofiaDbTimestamp();
+  const statement = db.prepare(`
     SELECT
       e.id,
       e.access_group as episode_access_group,
@@ -53,8 +56,10 @@ function validateEpisodeAccess(episodeId, user) {
     FROM episodes e
     JOIN productions p ON e.production_id = p.id
     WHERE e.id = ?
-      ${admin ? '' : "AND e.is_active = 1 AND p.is_active = 1 AND (e.published_at IS NULL OR e.published_at <= datetime('now'))"}
-  `).get(episodeId);
+      ${admin ? '' : 'AND e.is_active = 1 AND p.is_active = 1 AND (e.published_at IS NULL OR e.published_at <= ?)'}
+  `);
+
+  const episode = admin ? statement.get(episodeId) : statement.get(episodeId, currentTimestamp);
 
   if (!episode) {
     return { ok: false, status: 404, error: 'Епизодът не е намерен' };
@@ -62,7 +67,7 @@ function validateEpisodeAccess(episodeId, user) {
 
   const effectiveGroup = resolveEffectiveGroup(
     normalizeEpisodeGroup(episode.episode_access_group),
-    normalizeProductionGroup(episode.production_access_group)
+    resolveProductionGroup(episode.production_access_group, episode.required_tier)
   );
   const hasAccess = hasGroupAccess(
     effectiveGroup,

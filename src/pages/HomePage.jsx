@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import {
   ArrowRight,
   Clapperboard,
@@ -22,11 +22,12 @@ import ScrollReveal from '../components/ScrollReveal';
 import { StaggerContainer, StaggerItem } from '../components/StaggerContainer';
 import PageBackground from '../components/PageBackground';
 import { getPublicSettings } from '../utils/settings';
+import { getProductionAccessGroup } from '../utils/accessGroups';
+import { parseHeroProductionIds } from '../utils/homeHeroSettings';
 
 export default function HomePage() {
   const { user } = useAuth();
   const { showToast } = useToastContext();
-  const shouldReduceMotion = useReducedMotion();
 
   const [productions, setProductions] = useState([]);
   const [latestEpisodes, setLatestEpisodes] = useState([]);
@@ -95,26 +96,47 @@ export default function HomePage() {
   }, [watchlistIds, showToast]);
 
   const carouselItems = useMemo(() => {
+    const manualHeroIds = parseHeroProductionIds(settings.home_hero_production_ids);
+    if (manualHeroIds.length > 0) {
+      const productionsById = new Map(productions.map((item) => [item.id, item]));
+      const manualItems = manualHeroIds
+        .map((id) => productionsById.get(id))
+        .filter(Boolean);
+
+      if (manualItems.length > 0) {
+        return manualItems;
+      }
+    }
+
     let items = productions.filter((item) => item.has_access);
     if (items.length === 0) items = productions;
     return items.slice(0, 5);
-  }, [productions]);
+  }, [productions, settings.home_hero_production_ids]);
 
   const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
 
   useEffect(() => {
-    if (carouselItems.length <= 1 || shouldReduceMotion) return;
+    if (carouselItems.length <= 1) return;
     const interval = setInterval(() => {
       setCurrentSlideIndex((prev) => (prev + 1) % carouselItems.length);
     }, 7000); // Rotate every 7 seconds
     return () => clearInterval(interval);
-  }, [carouselItems, shouldReduceMotion]);
+  }, [carouselItems]);
+
+  useEffect(() => {
+    if (carouselItems.length === 0) {
+      setCurrentSlideIndex(0);
+      return;
+    }
+
+    setCurrentSlideIndex((prev) => (prev >= carouselItems.length ? 0 : prev));
+  }, [carouselItems.length]);
 
   const featured = carouselItems[currentSlideIndex] || null;
 
-  const freeProductions = productions.filter((item) => item.access_group === 'free');
-  const trailerProductions = productions.filter((item) => item.access_group === 'trailer');
-  const subscriptionProductions = productions.filter((item) => item.access_group === 'subscription');
+  const freeProductions = productions.filter((item) => getProductionAccessGroup(item) === 'free');
+  const trailerProductions = productions.filter((item) => getProductionAccessGroup(item) === 'trailer');
+  const subscriptionProductions = productions.filter((item) => getProductionAccessGroup(item) === 'subscription');
 
   return (
     <div className="relative min-h-screen pb-12">
@@ -199,13 +221,13 @@ export default function HomePage() {
                     className="w-full aspect-[4/3] bg-[var(--bg-tertiary)]"
                   >
                     {featured?.cover_image_url || settings.hero_image ? (
-                      <img
-                        src={featured?.cover_image_url || settings.hero_image}
-                        alt={featured?.title || 'Акцентно съдържание'}
-                        decoding="async"
-                        fetchPriority="high"
-                        className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105"
-                      />
+                        <img
+                          src={featured?.cover_image_url || settings.hero_image}
+                          alt={featured?.title || `${settings.home_hero_accent_label || 'Акцент'} съдържание`}
+                          decoding="async"
+                          fetchPriority="high"
+                          className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105"
+                        />
                     ) : (
                       <div className="w-full h-full" style={{ background: 'var(--gradient-hero)' }} />
                     )}
@@ -222,7 +244,9 @@ export default function HomePage() {
                       exit={{ opacity: 0, y: -10 }}
                       transition={{ duration: 0.4, delay: 0.2 }}
                     >
-                      <p className="text-xs text-[var(--text-muted)] uppercase tracking-[0.18em] mb-1">Акцент</p>
+                      <p className="text-xs text-[var(--text-muted)] uppercase tracking-[0.18em] mb-1">
+                        {settings.home_hero_accent_label || 'Акцент'}
+                      </p>
                       <p className="text-xl font-semibold">{featured?.title || 'Предстоящо заглавие'}</p>
                     </motion.div>
                   </AnimatePresence>
@@ -262,7 +286,7 @@ export default function HomePage() {
         {/* Continue Watching */}
         {watchHistory.length > 0 && (
           <ScrollReveal className="mb-11">
-            <HorizontalScroller title={settings.home_continue_watching_title || 'Продължи гледането'} seeAllLink="/profile">
+            <HorizontalScroller title={settings.home_continue_watching_title || 'Продължи гледането'} seeAllLink="/profile#recently-watched">
               {watchHistory.map((item) => (
                 <EpisodeCard key={item.episode_id} episode={item} showProgress showProductionTitle />
               ))}
@@ -291,8 +315,8 @@ export default function HomePage() {
               <span className="text-sm text-[var(--text-secondary)]">{freeProductions.length} продукции</span>
             </div>
             <StaggerContainer className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              {freeProductions.map((item) => (
-                <StaggerItem key={item.id}>
+                {freeProductions.map((item) => (
+                <StaggerItem key={item.id} className="relative z-0 hover:z-[70] focus-within:z-[70]">
                   <ProductionCard production={item} isInWatchlist={watchlistIds.has(item.id)} onToggleWatchlist={toggleWatchlist} />
                 </StaggerItem>
               ))}
@@ -308,11 +332,11 @@ export default function HomePage() {
               <span className="text-sm text-[var(--text-secondary)]">{trailerProductions.length} продукции</span>
             </div>
             <StaggerContainer className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              {trailerProductions.map((item) => (
-                <StaggerItem key={item.id}>
-                  <ProductionCard production={item} isInWatchlist={watchlistIds.has(item.id)} onToggleWatchlist={toggleWatchlist} />
-                </StaggerItem>
-              ))}
+                {trailerProductions.map((item) => (
+                  <StaggerItem key={item.id} className="relative z-0 hover:z-[70] focus-within:z-[70]">
+                    <ProductionCard production={item} isInWatchlist={watchlistIds.has(item.id)} onToggleWatchlist={toggleWatchlist} />
+                  </StaggerItem>
+                ))}
             </StaggerContainer>
           </ScrollReveal>
         )}
@@ -327,11 +351,11 @@ export default function HomePage() {
           </div>
           {subscriptionProductions.length > 0 ? (
             <StaggerContainer className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              {subscriptionProductions.map((item) => (
-                <StaggerItem key={item.id}>
-                  <ProductionCard production={item} isInWatchlist={watchlistIds.has(item.id)} onToggleWatchlist={toggleWatchlist} />
-                </StaggerItem>
-              ))}
+                {subscriptionProductions.map((item) => (
+                  <StaggerItem key={item.id} className="relative z-0 hover:z-[70] focus-within:z-[70]">
+                    <ProductionCard production={item} isInWatchlist={watchlistIds.has(item.id)} onToggleWatchlist={toggleWatchlist} />
+                  </StaggerItem>
+                ))}
             </StaggerContainer>
           ) : (
             <p className="text-[var(--text-muted)]">Няма премиум продукции в момента.</p>
@@ -349,7 +373,7 @@ export default function HomePage() {
 
         {error && (
           <div className="glass-card p-6 mt-6 border border-[var(--danger)]/35">
-            <p className="text-sm text-[#ffc9c9]">{error}</p>
+            <p className="text-sm text-[var(--danger)]">{error}</p>
           </div>
         )}
 

@@ -116,7 +116,7 @@ export default function LiveStreamPage() {
             <div className="w-full max-w-7xl mx-auto flex flex-col gap-6">
                 {error && (
                     <div className="glass-card p-4 border border-[var(--danger)]/35">
-                        <p className="text-sm text-[#ffc9c9]">{error}</p>
+                        <p className="text-sm text-[var(--danger)]">{error}</p>
                     </div>
                 )}
                 <motion.div

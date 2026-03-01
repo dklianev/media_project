@@ -188,7 +188,7 @@ export default function SubscribePage() {
           })}
         </div>
         {initialError && (
-          <p className="mt-3 rounded-xl border border-[var(--danger)]/45 bg-[var(--danger)]/10 p-3 text-sm text-[#ffc9c9]">
+          <p className="mt-3 rounded-xl border border-[var(--danger)]/45 bg-[var(--danger)]/10 p-3 text-sm text-[var(--danger)]">
             {initialError}
           </p>
         )}
@@ -205,10 +205,10 @@ export default function SubscribePage() {
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: -20 }}
             transition={{ duration: 0.3 }}
-            className="premium-panel p-4 sm:p-5 mb-8" style={{ overflow: 'visible' }}
+            className="premium-panel p-5 sm:p-6 pt-6 sm:pt-7 mb-10" style={{ overflow: 'visible' }}
           >
-            <h2 className="text-xl sm:text-2xl font-semibold mb-8 relative z-20">Избери своя план</h2>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-5" style={{ overflow: 'visible' }}>
+            <h2 className="text-xl sm:text-2xl font-semibold mb-8 sm:mb-10 relative z-30">Избери своя план</h2>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-5 pt-4" style={{ overflow: 'visible' }}>
               {plans.map((plan, index) => {
                 const active = String(plan.id) === selectedPlanId;
                 const isPopular = !!plan.is_popular;
@@ -216,7 +216,7 @@ export default function SubscribePage() {
                   <motion.button
                     key={plan.id}
                     onClick={() => handlePlanSelect(plan.id)}
-                    className={`relative text-left rounded-2xl border p-5 transition-all duration-500 z-10 hover:z-20 ${active
+                    className={`relative text-left rounded-2xl border p-5 transition-all duration-500 ${active
                       ? 'border-[var(--accent-gold)]/55 bg-[var(--accent-gold)]/12 glow-pulse animated-border shadow-[0_10px_30px_rgba(212,175,55,0.15)]'
                       : 'border-[var(--border)] bg-[var(--bg-card)] hover:border-[var(--border-light)] hover:shadow-lg'
                       }`}
@@ -292,7 +292,7 @@ export default function SubscribePage() {
             <div className="glass-card p-6 sm:p-8">
               <button
                 onClick={handleBackToStep1}
-                className="text-xs text-[var(--text-muted)] hover:text-white transition-colors mb-6 flex items-center gap-1"
+                className="text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors mb-6 flex items-center gap-1"
               >
                 &larr; Назад към плановете
               </button>
@@ -348,7 +348,7 @@ export default function SubscribePage() {
                 </div>
               )}
               {promoStatus === 'invalid' && (
-                <div className="mb-6 p-3 rounded-lg bg-[#ffc9c9]/10 border border-[#ffc9c9]/30 text-[#ffc9c9] text-sm font-medium flex items-center gap-2">
+                <div className="mb-6 p-3 rounded-lg bg-[var(--danger)]/10 border border-[var(--danger)]/30 text-[var(--danger)] text-sm font-medium flex items-center gap-2">
                   <XCircle className="w-4 h-4 shrink-0" />
                   {promoError}
                 </div>
@@ -448,12 +448,12 @@ export default function SubscribePage() {
       {/* --- RECENT REQUESTS --- */}
       <ScrollReveal variant="fadeUp" className="mt-8">
         <section className="glass-card p-5 sm:p-6 mb-8 max-w-6xl mx-auto">
-          <h2 className="text-xl font-semibold mb-6 flex items-center gap-2">
+          <h2 className="text-xl font-semibold mb-8 sm:mb-10 flex items-center gap-2">
             <Clock className="w-5 h-5 text-[var(--accent-gold)]" />
             {settings.subscribe_my_requests_title || 'Моите активни заявки'}
           </h2>
           {myPayments.length === 0 ? (
-            <div className="text-center py-12 rounded-xl border border-dashed border-[var(--border)]/50 bg-[var(--bg-secondary)]/30">
+            <div className="mt-2 text-center py-12 rounded-xl border border-dashed border-[var(--border)]/50 bg-[var(--bg-secondary)]/30">
               <Clock className="w-8 h-8 text-[var(--text-muted)] mx-auto mb-3 opacity-50" />
               <p className="text-sm text-[var(--text-secondary)]">Все още нямаш генерирани заявки за плащане.</p>
             </div>
@@ -492,7 +492,7 @@ export default function SubscribePage() {
                         </button>
                       )}
                       {payment.rejection_reason && (
-                        <p className="text-xs text-[#ffb8b8] bg-[#ffc9c9]/10 p-2 rounded-lg">Отказано: {payment.rejection_reason}</p>
+                        <p className="text-xs text-[var(--danger)] bg-[var(--danger)]/10 p-2 rounded-lg">Отказано: {payment.rejection_reason}</p>
                       )}
                       {payment.cancelled_reason && (
                         <p className="text-xs text-[var(--text-muted)] bg-white/5 p-2 rounded-lg">Анулирано: {payment.cancelled_reason}</p>

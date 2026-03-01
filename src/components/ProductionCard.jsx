@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Clapperboard, Crown, Heart, Lock, Play } from 'lucide-react';
 import { getAccessLabelSync } from '../utils/accessLabels';
+import { getProductionAccessGroup } from '../utils/accessGroups';
 import Tooltip from './Tooltip';
 
 const BADGE_CLS = {
@@ -16,14 +17,14 @@ const tapSpring = { type: 'spring', stiffness: 400, damping: 25 };
 
 export default function ProductionCard({ production, isInWatchlist, onToggleWatchlist }) {
   const { title, slug, description, thumbnail_url, required_tier, has_access } = production;
-  const group = production.access_group || (required_tier > 0 ? 'subscription' : 'free');
+  const group = getProductionAccessGroup(production);
   const accessLabel = getAccessLabelSync(group);
   const accessCls = BADGE_CLS[group] || BADGE_CLS.subscription;
 
   return (
     <Link to={`/productions/${slug}`} className="no-underline block">
       <motion.article
-        className="group/card glass-card relative rounded-2xl border border-[var(--border)] shadow-premium-sm transition-all duration-300 hover:border-[var(--accent-gold)]/40 hover:shadow-[0_12px_40px_rgba(212,175,55,0.15),0_0_0_1px_rgba(212,175,55,0.08)] hover:z-50"
+        className="group/card glass-card relative isolate rounded-2xl border border-[var(--border)] shadow-premium-sm transition-all duration-300 hover:border-[var(--accent-gold)]/40 hover:shadow-[0_12px_40px_rgba(212,175,55,0.15),0_0_0_1px_rgba(212,175,55,0.08)] hover:z-[60] focus-within:z-[60]"
         whileHover={{ y: -6 }}
         whileTap={{ scale: 0.97 }}
         transition={hoverSpring}
@@ -86,16 +87,12 @@ export default function ProductionCard({ production, isInWatchlist, onToggleWatc
           {/* Centered play button — springs in on hover */}
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
             <motion.div
-              className={`w-14 h-14 rounded-full flex items-center justify-center border backdrop-blur-sm ${has_access
+              className={`w-14 h-14 rounded-full flex items-center justify-center border backdrop-blur-sm opacity-0 scale-75 transition-all duration-500 group-hover/card:opacity-100 group-hover/card:scale-100 ${has_access
                 ? 'border-[var(--accent-gold)]/50 bg-[var(--accent-gold)]/20 shadow-[0_0_40px_rgba(212,175,55,0.4)]'
                 : 'border-white/25 bg-black/45'
                 }`}
-              initial={{ scale: 0.4, opacity: 0 }}
-              whileHover={{ scale: 1, opacity: 1 }}
-              variants={{
-                rest: { scale: 0.4, opacity: 0 },
-                hover: { scale: 1, opacity: 1 },
-              }}
+              initial={false}
+              animate={{}}
               transition={{ type: 'spring', stiffness: 400, damping: 15 }}
               style={{ pointerEvents: 'none' }}
             >
@@ -120,10 +117,10 @@ export default function ProductionCard({ production, isInWatchlist, onToggleWatc
           <div className="flex items-start justify-between gap-2 mb-2">
             <h3 className="text-[15px] font-semibold leading-snug line-clamp-2">{title}</h3>
             {onToggleWatchlist && (
-              <Tooltip text={isInWatchlist ? 'Премахни от любими' : 'Добави в любими'}>
+              <Tooltip text={isInWatchlist ? 'Премахни от любими' : 'Добави в любими'} align="right">
                 <motion.button
                   onClick={(e) => { e.preventDefault(); e.stopPropagation(); onToggleWatchlist(production.id); }}
-                  className={`shrink-0 mt-0.5 p-2 rounded-full z-20 transition-all duration-300 ${isInWatchlist
+                  className={`relative shrink-0 mt-0.5 p-2 rounded-full z-20 transition-all duration-300 ${isInWatchlist
                     ? 'bg-[var(--danger)]/15 ring-1 ring-[var(--danger)]/30 shadow-[0_0_12px_rgba(239,68,68,0.2)]'
                     : 'hover:bg-white/10'
                     }`}

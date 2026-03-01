@@ -4,8 +4,9 @@ import { requireAuth, requireAdmin } from '../middleware/auth.js';
 import { optimizeUploadedImages, upload } from '../middleware/upload.js';
 import { buildPageResult, parsePagination, parseSort, toInt } from '../utils/pagination.js';
 import { logAdminAction } from '../utils/audit.js';
+import { getCurrentSofiaDbTimestamp } from '../utils/sofiaTime.js';
 import {
-  normalizeEpisodeGroup, normalizeProductionGroup,
+  normalizeEpisodeGroup, normalizeProductionGroup, resolveProductionGroup,
   hasGroupAccess, isUserAdmin,
 } from '../utils/access.js';
 
@@ -48,7 +49,7 @@ router.get('/', requireAuth, (req, res) => {
       return parsedGenres.includes(genreFilter);
     } catch { return false; }
   }).map((item) => {
-    const group = normalizeGroup(item.access_group);
+    const group = resolveProductionGroup(item.access_group, item.required_tier);
     let parsedGenres = [];
     try { parsedGenres = JSON.parse(item.genres || '[]'); } catch { }
 
@@ -74,7 +75,7 @@ router.get('/:slug', requireAuth, (req, res) => {
 
   const userTier = req.user.tier_level || 0;
   const isAdmin = req.user.role === 'admin' || req.user.role === 'superadmin';
-  const productionGroup = normalizeGroup(production.access_group);
+  const productionGroup = resolveProductionGroup(production.access_group, production.required_tier);
   const hasProductionAccess = hasGroupAccess(
     productionGroup,
     userTier,
@@ -82,14 +83,16 @@ router.get('/:slug', requireAuth, (req, res) => {
     production.required_tier || 0
   );
 
-  const publishedFilter = isAdmin ? '' : "AND (published_at IS NULL OR published_at <= datetime('now'))";
-  const episodes = db.prepare(`
+  const currentTimestamp = getCurrentSofiaDbTimestamp();
+  const publishedFilter = isAdmin ? '' : 'AND (published_at IS NULL OR published_at <= ?)';
+  const statement = db.prepare(`
     SELECT id, title, description, thumbnail_url, episode_number,
            access_group, published_at, created_at, ${isAdmin ? 'view_count,' : ''} is_active
     FROM episodes
     WHERE production_id = ? AND is_active = 1 ${publishedFilter}
     ORDER BY episode_number ASC, created_at ASC
-  `).all(production.id).map((episode) => {
+  `);
+  const episodes = (isAdmin ? statement.all(production.id) : statement.all(production.id, currentTimestamp)).map((episode) => {
     const episodeGroupRaw = normalizeEpisodeGroup(episode.access_group);
     const effectiveGroup = episodeGroupRaw === 'inherit' ? productionGroup : episodeGroupRaw;
     return {
@@ -146,7 +149,7 @@ router.get('/admin/all', requireAdmin, (req, res) => {
     LIMIT ? OFFSET ?
   `).all(...params, pageSize, offset).map((item) => ({
     ...item,
-    access_group: normalizeGroup(item.access_group),
+    access_group: resolveProductionGroup(item.access_group, item.required_tier),
   }));
 
   res.json(
@@ -193,7 +196,7 @@ router.post(
       ? `/uploads/${req.files.cover_image[0].filename}`
       : null;
 
-    const group = normalizeGroup(access_group);
+    const group = resolveProductionGroup(access_group, required_tier);
     const tier = group === 'subscription' ? toInt(required_tier, 1) : 0;
 
     const result = db.prepare(`
@@ -264,7 +267,11 @@ router.put(
       ? `/uploads/${req.files.cover_image[0].filename}`
       : existing.cover_image_url;
 
-    const group = normalizeGroup(access_group, normalizeGroup(existing.access_group));
+    const group = resolveProductionGroup(
+      access_group,
+      required_tier,
+      resolveProductionGroup(existing.access_group, existing.required_tier)
+    );
     const tier =
       group === 'subscription'
         ? toInt(required_tier, existing.required_tier || 1)
@@ -306,7 +313,7 @@ router.put(
           title: existing.title,
           slug: existing.slug,
           required_tier: existing.required_tier,
-          access_group: normalizeGroup(existing.access_group),
+          access_group: resolveProductionGroup(existing.access_group, existing.required_tier),
           is_active: existing.is_active,
           sort_order: existing.sort_order,
         },
@@ -314,13 +321,13 @@ router.put(
           title: updated.title,
           slug: updated.slug,
           required_tier: updated.required_tier,
-          access_group: normalizeGroup(updated.access_group),
+          access_group: resolveProductionGroup(updated.access_group, updated.required_tier),
           is_active: updated.is_active,
           sort_order: updated.sort_order,
         },
       },
     });
-    res.json({ ...updated, access_group: normalizeGroup(updated.access_group) });
+    res.json({ ...updated, access_group: resolveProductionGroup(updated.access_group, updated.required_tier) });
   }
 );
 

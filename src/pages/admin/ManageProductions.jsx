@@ -5,6 +5,7 @@ import { api } from '../../utils/api';
 import AdminPagination from '../../components/AdminPagination';
 import ConfirmActionModal from '../../components/ConfirmActionModal';
 import { useToastContext } from '../../context/ToastContext';
+import { getProductionAccessGroup } from '../../utils/accessGroups';
 
 const ACCESS_OPTIONS = [
   { value: 'free', label: 'Безплатно' },
@@ -103,7 +104,7 @@ export default function ManageProductions() {
           return '';
         }
       })(),
-      access_group: production.access_group || (production.required_tier > 0 ? 'subscription' : 'free'),
+      access_group: getProductionAccessGroup(production),
       required_tier: String(production.required_tier || 1),
       sort_order: String(production.sort_order || 0),
       is_active: !!production.is_active,
@@ -174,7 +175,7 @@ export default function ManageProductions() {
         initial={{ opacity: 0, y: -8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
-        className="text-2xl font-bold mb-6"
+        className="text-2xl font-bold mb-8"
       >
         Продукции
       </motion.h1>
@@ -183,9 +184,9 @@ export default function ManageProductions() {
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
-        className="glass-card p-5 mb-6"
+        className="glass-card p-5 sm:p-6 mb-8"
       >
-        <h2 className="text-lg font-semibold mb-4">{editing ? 'Редактирай продукция' : 'Нова продукция'}</h2>
+        <h2 className="text-lg font-semibold mb-6">{editing ? 'Редактирай продукция' : 'Нова продукция'}</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <input
             value={form.title}
@@ -334,8 +335,8 @@ export default function ManageProductions() {
               <div className="flex-1 min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
                   <h3 className="font-semibold truncate">{production.title}</h3>
-                  <span className="badge badge-gold text-[10px]">{accessLabel(production.access_group)}</span>
-                  {(production.access_group || 'free') === 'subscription' && (
+                  <span className="badge badge-gold text-[10px]">{accessLabel(getProductionAccessGroup(production))}</span>
+                  {getProductionAccessGroup(production) === 'subscription' && (
                     <span className="text-[10px] uppercase tracking-[0.12em] text-[var(--text-muted)]">Ниво {production.required_tier}</span>
                   )}
                   {!production.is_active && <span className="badge bg-[var(--danger)]/10 text-[var(--danger)] border border-[var(--danger)]/30 text-[10px]">Скрита</span>}

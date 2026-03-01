@@ -3,7 +3,7 @@ import rateLimit from 'express-rate-limit';
 import db from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
 import {
-  normalizeEpisodeGroup, normalizeProductionGroup,
+  normalizeEpisodeGroup, normalizeProductionGroup, resolveProductionGroup,
   hasGroupAccess, resolveEffectiveGroup, isUserAdmin,
 } from '../utils/access.js';
 
@@ -38,7 +38,7 @@ function validateEpisodeAccess(episodeId, user) {
 
   const userTier = user.tier_level || 0;
   const isAdmin = user.role === 'admin' || user.role === 'superadmin';
-  const productionGroup = normalizeProductionGroup(episode.production_access_group);
+  const productionGroup = resolveProductionGroup(episode.production_access_group, episode.required_tier);
   const episodeGroup = normalizeEpisodeGroup(episode.episode_access_group);
   const effectiveGroup = episodeGroup === 'inherit' ? productionGroup : episodeGroup;
 

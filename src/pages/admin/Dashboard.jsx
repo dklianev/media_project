@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { CreditCard, Crown, Download, Eye, Film, Loader2, Tv, TrendingUp, Users } from 'lucide-react';
 import { api, getTokens } from '../../utils/api';
+import { getSofiaDateKey } from '../../utils/formatters';
 
 const containerV = {
   hidden: {},
@@ -226,7 +227,7 @@ export default function Dashboard() {
                 onClick={async () => {
                   setExporting('users');
                   try {
-                    await downloadCsv('users', `users-${new Date().toISOString().slice(0, 10)}.csv`);
+                    await downloadCsv('users', `users-${getSofiaDateKey(new Date())}.csv`);
                   } catch { /* ignore */ }
                   setExporting(null);
                 }}
@@ -240,7 +241,7 @@ export default function Dashboard() {
                 onClick={async () => {
                   setExporting('payments');
                   try {
-                    await downloadCsv('payments', `payments-${new Date().toISOString().slice(0, 10)}.csv`);
+                    await downloadCsv('payments', `payments-${getSofiaDateKey(new Date())}.csv`);
                   } catch { /* ignore */ }
                   setExporting(null);
                 }}

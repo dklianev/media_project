@@ -1,8 +1,7 @@
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
-import { Suspense, lazy, useEffect, useState } from 'react';
+import { Suspense, lazy, useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useAuth } from './context/AuthContext';
-import { ThemeProvider } from './context/ThemeContext';
 import { ToastProvider } from './context/ToastContext';
 import Navbar from './components/Navbar';
 import Footer from './components/Footer';
@@ -114,6 +113,7 @@ export default function App() {
   const { user, isAdmin } = useAuth();
   const hideChrome = ['/login', '/auth/callback', '/character-name'].includes(location.pathname);
   const [maintenance, setMaintenance] = useState(null);
+  const chromeRef = useRef(null);
 
   useEffect(() => {
     let active = true;
@@ -158,6 +158,38 @@ export default function App() {
     };
   }, []);
 
+  useEffect(() => {
+    const root = document.documentElement;
+
+    if (hideChrome || !user || !chromeRef.current) {
+      root.style.setProperty('--app-chrome-offset', '0px');
+      return undefined;
+    }
+
+    const updateChromeOffset = () => {
+      const rect = chromeRef.current?.getBoundingClientRect();
+      root.style.setProperty('--app-chrome-offset', `${Math.max(0, Math.round(rect?.height || 0))}px`);
+    };
+
+    updateChromeOffset();
+
+    const resizeObserver = typeof ResizeObserver !== 'undefined'
+      ? new ResizeObserver(() => updateChromeOffset())
+      : null;
+
+    if (resizeObserver && chromeRef.current) {
+      resizeObserver.observe(chromeRef.current);
+    }
+
+    window.addEventListener('resize', updateChromeOffset, { passive: true });
+
+    return () => {
+      resizeObserver?.disconnect();
+      window.removeEventListener('resize', updateChromeOffset);
+      root.style.setProperty('--app-chrome-offset', '0px');
+    };
+  }, [hideChrome, location.pathname, user]);
+
   // Show maintenance page for non-admin users
   if (maintenance !== null && !isAdmin) {
     return (
@@ -170,8 +202,12 @@ export default function App() {
   return (
     <ErrorBoundary>
       <ToastProvider>
-        {!hideChrome && user && <AnnouncementBanner />}
-        {!hideChrome && user && <Navbar />}
+        {!hideChrome && user && (
+          <div ref={chromeRef}>
+            <AnnouncementBanner />
+            <Navbar />
+          </div>
+        )}
         {!hideChrome && user && <ScrollToTop />}
 
         <main className="flex-1 film-grain">

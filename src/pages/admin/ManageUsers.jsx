@@ -136,7 +136,7 @@ export default function ManageUsers() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold mb-4">Потребители</h1>
+      <h1 className="text-2xl font-bold mb-8">Потребители</h1>
 
       <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_auto_auto_auto] gap-2 mb-4">
         <div className="relative min-w-0">

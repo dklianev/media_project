@@ -5,6 +5,7 @@ import { Link } from 'react-router-dom';
 import { api } from '../utils/api';
 import { useAuth } from '../context/AuthContext';
 import { getPublicSettings } from '../utils/settings';
+import { formatDateTime } from '../utils/formatters';
 
 export default function NotificationDropdown() {
     const { user } = useAuth();
@@ -12,6 +13,7 @@ export default function NotificationDropdown() {
     const [open, setOpen] = useState(false);
     const [unreadCount, setUnreadCount] = useState(0);
     const dropdownRef = useRef(null);
+    const triggerRef = useRef(null);
     const [ui, setUi] = useState({
         notifications_title: 'Известия',
         notifications_mark_read: 'Маркирай всички',
@@ -61,6 +63,7 @@ export default function NotificationDropdown() {
         const handleEsc = (event) => {
             if (open && event.key === 'Escape') {
                 setOpen(false);
+                triggerRef.current?.focus({ preventScroll: true });
             }
         };
         document.addEventListener('mousedown', handleClickOutside);
@@ -103,6 +106,7 @@ export default function NotificationDropdown() {
     return (
         <div className="relative" ref={dropdownRef}>
             <motion.button
+                ref={triggerRef}
                 onClick={() => setOpen(!open)}
                 aria-haspopup="dialog"
                 aria-expanded={open}
@@ -111,7 +115,7 @@ export default function NotificationDropdown() {
             >
                 <Bell className="w-4 h-4" />
                 {unreadCount > 0 && (
-                    <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-[var(--danger)] text-[9px] font-bold text-white border-2 border-[#0a0b11]">
+                    <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-[var(--danger)] text-[9px] font-bold text-white border-2 border-[var(--bg-secondary)]">
                         {unreadCount > 9 ? '9+' : unreadCount}
                     </span>
                 )}
@@ -141,7 +145,7 @@ export default function NotificationDropdown() {
                             )}
                         </div>
 
-                        <div className="flex-1 overflow-y-auto bg-black/20 pb-2">
+                        <div className="flex-1 overflow-y-auto bg-[var(--bg-primary)]/20 pb-2">
                             {notifications.length === 0 ? (
                                 <div className="py-8 text-center text-[var(--text-muted)] text-sm">
                                     {ui.notifications_empty}
@@ -165,7 +169,12 @@ export default function NotificationDropdown() {
                                                 </p>
                                                 <div className="flex items-center justify-between mt-1">
                                                     <span className="text-[10px] text-[var(--text-muted)]">
-                                                        {new Date(notif.created_at).toLocaleDateString('bg-BG', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                                                        {formatDateTime(notif.created_at, 'bg-BG', {
+                                                            day: 'numeric',
+                                                            month: 'short',
+                                                            hour: '2-digit',
+                                                            minute: '2-digit',
+                                                        })}
                                                     </span>
                                                     {notif.link && (
                                                         <Link

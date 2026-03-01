@@ -4,6 +4,7 @@ import { api } from '../../utils/api';
 import { useToastContext } from '../../context/ToastContext';
 import { Mail, Search, CheckCircle, Clock, RefreshCw, User, ExternalLink } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { formatDateTime } from '../../utils/formatters';
 
 export default function ManageSupport() {
     const [tickets, setTickets] = useState([]);
@@ -117,7 +118,7 @@ export default function ManageSupport() {
                                         {ticket.username}
                                     </div>
                                     <div>•</div>
-                                    <div>{new Date(ticket.created_at).toLocaleString('bg-BG')}</div>
+                                    <div>{formatDateTime(ticket.created_at)}</div>
                                 </div>
                                 <button
                                     onClick={() => navigate(`/support/${ticket.id}`)}

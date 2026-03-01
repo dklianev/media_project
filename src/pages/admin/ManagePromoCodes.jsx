@@ -120,10 +120,10 @@ export default function ManagePromoCodes() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold mb-6">Промо кодове</h1>
+      <h1 className="text-2xl font-bold mb-8">Промо кодове</h1>
 
-      <div className="glass-card p-5 mb-6">
-        <h2 className="text-lg font-semibold mb-4">{editing ? 'Редактирай' : 'Нов промо код'}</h2>
+      <div className="glass-card p-5 sm:p-6 mb-8">
+        <h2 className="text-lg font-semibold mb-6">{editing ? 'Редактирай' : 'Нов промо код'}</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <input
             value={form.code}

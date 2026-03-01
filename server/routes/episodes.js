@@ -7,7 +7,12 @@ import { optimizeUploadedImages, upload } from '../middleware/upload.js';
 import { buildPageResult, parsePagination, parseSort, toInt } from '../utils/pagination.js';
 import { logAdminAction } from '../utils/audit.js';
 import {
-  normalizeEpisodeGroup, normalizeProductionGroup,
+  getCurrentSofiaDbTimestamp,
+  getShiftedSofiaDbTimestamp,
+  normalizePublishedAtToSofia,
+} from '../utils/sofiaTime.js';
+import {
+  normalizeEpisodeGroup, normalizeProductionGroup, resolveProductionGroup,
   hasGroupAccess, resolveEffectiveGroup, isUserAdmin,
 } from '../utils/access.js';
 
@@ -41,38 +46,17 @@ function isValidYouTubeId(value) {
   return normalized === '' || YOUTUBE_ID_REGEX.test(normalized);
 }
 
-function normalizePublishedAt(value) {
-  const raw = String(value ?? '').trim();
-  if (!raw) return null;
-
-  const cleaned = raw
-    .replace('T', ' ')
-    .replace('Z', '')
-    .replace(/\.\d+/, '')
-    .trim();
-
-  const match = cleaned.match(/^(\d{4}-\d{2}-\d{2}) (\d{2}):(\d{2})(?::(\d{2}))?/);
-  if (!match) return null;
-
-  const seconds = match[4] || '00';
-  return `${match[1]} ${match[2]}:${match[3]}:${seconds}`;
-}
-
-function currentDbTimestamp() {
-  return new Date().toISOString().slice(0, 19).replace('T', ' ');
-}
-
 function shouldNotifyEpisodeNow(episode) {
   return Number(episode?.is_active) === 1
-    && (!episode.published_at || String(episode.published_at) <= currentDbTimestamp());
+    && (!episode.published_at || String(episode.published_at) <= getCurrentSofiaDbTimestamp());
 }
 
-function getEpisodeWithProduction(id, { includeUnpublished = false } = {}) {
+function getEpisodeWithProduction(id, { includeUnpublished = false, currentTimestamp = getCurrentSofiaDbTimestamp() } = {}) {
   const visibilitySql = includeUnpublished
     ? ''
-    : "AND (e.published_at IS NULL OR e.published_at <= datetime('now'))";
+    : 'AND (e.published_at IS NULL OR e.published_at <= ?)';
 
-  return db.prepare(`
+  const statement = db.prepare(`
     SELECT e.*, p.title as production_title, p.slug as production_slug,
            p.required_tier, p.access_group as production_access_group,
            p.thumbnail_url as production_thumbnail
@@ -80,19 +64,21 @@ function getEpisodeWithProduction(id, { includeUnpublished = false } = {}) {
     JOIN productions p ON e.production_id = p.id
     WHERE e.id = ? AND e.is_active = 1 AND p.is_active = 1
       ${visibilitySql}
-  `).get(id);
+  `);
+
+  return includeUnpublished ? statement.get(id) : statement.get(id, currentTimestamp);
 }
 
-function getSiblingEpisode(productionId, episodeNumber, direction, user, { includeUnpublished = false } = {}) {
+function getSiblingEpisode(productionId, episodeNumber, direction, user, { includeUnpublished = false, currentTimestamp = getCurrentSofiaDbTimestamp() } = {}) {
   if (!productionId || !Number.isFinite(Number(episodeNumber))) return null;
 
   const operator = direction === 'next' ? '>' : '<';
   const order = direction === 'next' ? 'ASC' : 'DESC';
   const visibilitySql = includeUnpublished
     ? ''
-    : "AND (e.published_at IS NULL OR e.published_at <= datetime('now'))";
+    : 'AND (e.published_at IS NULL OR e.published_at <= ?)';
 
-  const siblings = db.prepare(`
+  const statement = db.prepare(`
     SELECT e.id, e.title, e.episode_number, e.access_group,
            p.required_tier, p.access_group as production_access_group
     FROM episodes e
@@ -103,7 +89,11 @@ function getSiblingEpisode(productionId, episodeNumber, direction, user, { inclu
       AND e.episode_number ${operator} ?
       ${visibilitySql}
     ORDER BY e.episode_number ${order}, e.id ${order}
-  `).all(productionId, episodeNumber);
+  `);
+
+  const siblings = includeUnpublished
+    ? statement.all(productionId, episodeNumber)
+    : statement.all(productionId, episodeNumber, currentTimestamp);
 
   return siblings.find((candidate) => resolveEpisodeAccess(candidate, user).hasAccess) || null;
 }
@@ -139,7 +129,7 @@ function getPlaybackUser(userId) {
 }
 
 function resolveEpisodeAccess(episode, user) {
-  const productionGroup = normalizeProductionGroup(episode.production_access_group);
+  const productionGroup = resolveProductionGroup(episode.production_access_group, episode.required_tier);
   const episodeGroup = normalizeEpisodeGroup(episode.access_group);
   const effectiveGroup = resolveEffectiveGroup(episodeGroup, productionGroup);
   const hasAccess = hasGroupAccess(
@@ -207,6 +197,7 @@ router.get('/latest', requireAuth, (req, res) => {
   const requestedLimit = toInt(req.query.limit, 12);
   const limit = Math.max(1, Math.min(30, requestedLimit));
   const fetchSize = Math.max(40, Math.min(220, limit * 6));
+  const currentTimestamp = getCurrentSofiaDbTimestamp();
 
   const userTier = req.user.tier_level || 0;
   const isAdmin = req.user.role === 'admin' || req.user.role === 'superadmin';
@@ -219,14 +210,14 @@ router.get('/latest', requireAuth, (req, res) => {
     FROM episodes e
     JOIN productions p ON e.production_id = p.id
     WHERE e.is_active = 1 AND p.is_active = 1
-      AND (e.published_at IS NULL OR e.published_at <= datetime('now'))
+      AND (e.published_at IS NULL OR e.published_at <= ?)
     ORDER BY e.created_at DESC, e.id DESC
     LIMIT ?
-  `).all(fetchSize);
+  `).all(currentTimestamp, fetchSize);
 
   const episodes = rawEpisodes
     .map((episode) => {
-      const productionGroup = normalizeProductionGroup(episode.production_access_group);
+      const productionGroup = resolveProductionGroup(episode.production_access_group, episode.required_tier);
       const episodeGroup = normalizeEpisodeGroup(episode.access_group);
       const effectiveGroup = resolveEffectiveGroup(episodeGroup, productionGroup);
       const hasAccess = hasGroupAccess(
@@ -252,6 +243,8 @@ router.get('/latest', requireAuth, (req, res) => {
 
 router.get('/calendar', requireAuth, (req, res) => {
   const admin = isUserAdmin(req.user);
+  const fromTimestamp = getShiftedSofiaDbTimestamp(-14);
+  const toTimestamp = getShiftedSofiaDbTimestamp(60);
 
   const rawEpisodes = db.prepare(`
     SELECT e.id, e.title, e.thumbnail_url, e.episode_number, e.published_at, e.created_at, e.is_active,
@@ -262,13 +255,13 @@ router.get('/calendar', requireAuth, (req, res) => {
     JOIN productions p ON e.production_id = p.id
     WHERE e.published_at IS NOT NULL
       ${admin ? '' : "AND e.is_active = 1 AND p.is_active = 1"}
-      AND e.published_at >= datetime('now', '-14 days')
-      AND e.published_at <= datetime('now', '+60 days')
+      AND e.published_at >= ?
+      AND e.published_at <= ?
     ORDER BY e.published_at ASC
-  `).all();
+  `).all(fromTimestamp, toTimestamp);
 
   const episodes = rawEpisodes.map((episode) => {
-    const productionGroup = normalizeProductionGroup(episode.production_access_group);
+    const productionGroup = resolveProductionGroup(episode.production_access_group, episode.required_tier);
     const episodeGroup = normalizeEpisodeGroup(episode.access_group);
     const effectiveGroup = resolveEffectiveGroup(episodeGroup, productionGroup);
     const hasAccess = hasGroupAccess(
@@ -347,7 +340,11 @@ router.get('/:id/embed', (req, res) => {
 
 router.get('/:id', requireAuth, (req, res) => {
   const admin = isUserAdmin(req.user);
-  const episode = getEpisodeWithProduction(req.params.id, { includeUnpublished: admin });
+  const currentTimestamp = getCurrentSofiaDbTimestamp();
+  const episode = getEpisodeWithProduction(req.params.id, {
+    includeUnpublished: admin,
+    currentTimestamp,
+  });
   if (!episode) {
     return res.status(404).json({ error: 'Епизодът не е намерен' });
   }
@@ -370,14 +367,14 @@ router.get('/:id', requireAuth, (req, res) => {
       episode.episode_number,
       'next',
       req.user,
-      { includeUnpublished: admin }
+      { includeUnpublished: admin, currentTimestamp }
     );
     previousEpisode = getSiblingEpisode(
       episode.production_id,
       episode.episode_number,
       'previous',
       req.user,
-      { includeUnpublished: admin }
+      { includeUnpublished: admin, currentTimestamp }
     );
   }
 
@@ -431,10 +428,10 @@ router.get('/:id', requireAuth, (req, res) => {
     SELECT id, title, thumbnail_url, episode_number
     FROM episodes
     WHERE production_id = ? AND id != ? AND is_active = 1
-      AND (published_at IS NULL OR published_at <= datetime('now'))
+      AND (published_at IS NULL OR published_at <= ?)
     ORDER BY episode_number DESC
     LIMIT 6
-  `).all(episode.production_id, episode.id);
+  `).all(episode.production_id, episode.id, currentTimestamp);
 
   responsePayload.video_embed_url =
     `/api/episodes/${episode.id}/embed?t=${encodeURIComponent(createEmbedToken(episode.id, req.user.id, req.get('user-agent')))}`;
@@ -500,7 +497,7 @@ router.get('/admin/all', requireAdmin, (req, res) => {
   `).all(...params, pageSize, offset).map((episode) => ({
     ...episode,
     access_group: normalizeEpisodeGroup(episode.access_group),
-    production_access_group: normalizeProductionGroup(episode.production_access_group),
+    production_access_group: resolveProductionGroup(episode.production_access_group, episode.required_tier),
   }));
 
   const totalViews = db.prepare(`
@@ -564,7 +561,7 @@ router.post(
 
     const group = normalizeEpisodeGroup(access_group);
     const hasPublishedAt = published_at !== undefined && String(published_at).trim() !== '';
-    const publishedAtValue = hasPublishedAt ? normalizePublishedAt(published_at) : null;
+    const publishedAtValue = hasPublishedAt ? normalizePublishedAtToSofia(published_at) : null;
     if (hasPublishedAt && !publishedAtValue) {
       return res.status(400).json({ error: 'Невалидна дата за публикуване' });
     }
@@ -685,7 +682,7 @@ router.put(
       if (!rawPublishedAt) {
         publishedAtValue = null;
       } else {
-        publishedAtValue = normalizePublishedAt(rawPublishedAt);
+        publishedAtValue = normalizePublishedAtToSofia(rawPublishedAt);
         if (!publishedAtValue) {
           return res.status(400).json({ error: 'Невалидна дата за публикуване' });
         }

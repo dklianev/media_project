@@ -12,6 +12,8 @@ const PUBLIC_KEYS = [
   'hero_image',
   'hero_title',
   'hero_subtitle',
+  'home_hero_accent_label',
+  'home_hero_production_ids',
   'landing_badge_text',
   'landing_title',
   'landing_subtitle',

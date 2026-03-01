@@ -291,6 +291,15 @@ if (!hasColumn('subscription_plans', 'is_popular')) {
 if (!hasColumn('productions', 'genres')) {
   db.exec(`ALTER TABLE productions ADD COLUMN genres TEXT DEFAULT '[]'`);
 }
+
+// Legacy rows created before access groups were configured correctly may end up
+// as "subscription" with tier 0, which breaks catalog filtering and labels.
+db.exec(`
+  UPDATE productions
+  SET access_group = 'free'
+  WHERE access_group = 'subscription'
+    AND COALESCE(required_tier, 0) <= 0
+`);
 if (!hasColumn('comments', 'status')) {
   db.exec(`ALTER TABLE comments ADD COLUMN status TEXT DEFAULT 'published'`);
 }
@@ -366,6 +375,8 @@ const defaultSettings = {
   hero_image: '',
   hero_title: 'Гледай най-новите формати',
   hero_subtitle: 'Премиум онлайн платформа за видео съдържание',
+  home_hero_accent_label: 'Акцент',
+  home_hero_production_ids: '[]',
   landing_badge_text: 'Премиум стрийминг',
   landing_title: 'Платформа',
   landing_subtitle: 'Платформа за сериали, трейлъри и ексклузивно съдържание',

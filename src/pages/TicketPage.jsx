@@ -5,6 +5,7 @@ import PageBackground from '../components/PageBackground';
 import { api } from '../utils/api';
 import { useAuth } from '../context/AuthContext';
 import { useToastContext } from '../context/ToastContext';
+import { formatDateTime } from '../utils/formatters';
 
 export default function TicketPage() {
     const { id } = useParams();
@@ -103,7 +104,10 @@ export default function TicketPage() {
                 </div>
 
                 {/* Chat Thread Area */}
-                <div className="bg-[var(--bg-secondary)] border border-[var(--border)] rounded-2xl flex flex-col h-[600px] shadow-2xl relative overflow-hidden backdrop-blur-xl">
+                <div
+                    className="bg-[var(--bg-secondary)] border border-[var(--border)] rounded-2xl flex flex-col shadow-2xl relative overflow-hidden backdrop-blur-xl"
+                    style={{ minHeight: '420px', height: 'min(70vh, 680px)' }}
+                >
 
                     {/* Chat Messages */}
                     <div className="flex-1 overflow-y-auto p-6 space-y-6">
@@ -113,7 +117,7 @@ export default function TicketPage() {
                             <div className="max-w-[80%] rounded-2xl rounded-tl-sm p-4 bg-[var(--bg-primary)] border border-[var(--border)] text-[var(--text-primary)] shadow-sm">
                                 <div className="flex items-center justify-between gap-4 mb-2">
                                     <span className="font-semibold text-sm opacity-90">{ticket.username}</span>
-                                    <span className="text-xs opacity-70">{new Date(ticket.created_at).toLocaleString('bg-BG')}</span>
+                                    <span className="text-xs opacity-70">{formatDateTime(ticket.created_at)}</span>
                                 </div>
                                 <p className="whitespace-pre-wrap leading-relaxed">{ticket.message}</p>
                             </div>
@@ -136,7 +140,7 @@ export default function TicketPage() {
                                                 {msg.username}
                                                 {msgIsAdmin && <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/20 text-white border border-white/10 font-medium">Admin</span>}
                                             </span>
-                                            <span className="text-xs opacity-70">{new Date(msg.created_at).toLocaleString('bg-BG')}</span>
+                                            <span className="text-xs opacity-70">{formatDateTime(msg.created_at)}</span>
                                         </div>
                                         <p className="whitespace-pre-wrap leading-relaxed">{msg.message}</p>
                                     </div>

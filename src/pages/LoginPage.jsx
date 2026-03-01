@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { motion, useReducedMotion } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { AlertCircle, Crown, Moon, Sparkles, Sun, TvMinimalPlay, Waves } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
@@ -24,10 +24,8 @@ function DiscordEyesIcon() {
 /* ── Floating particles canvas ── */
 function FloatingParticles({ theme }) {
   const canvasRef = useRef(null);
-  const prefersReducedMotion = useReducedMotion();
 
   useEffect(() => {
-    if (prefersReducedMotion) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
@@ -109,7 +107,6 @@ const itemV = {
 export default function LoginPage() {
   const { theme, toggleTheme } = useTheme();
   const { user, loading } = useAuth();
-  const prefersReducedMotion = useReducedMotion();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [settings, setSettings] = useState({});
@@ -152,8 +149,8 @@ export default function LoginPage() {
       {/* Content Teaser Marquee (Background) */}
       <div className="login-marquee-container absolute inset-x-0 top-[60%] -translate-y-1/2 overflow-hidden pointer-events-none select-none flex items-center z-0">
         <motion.div
-          animate={prefersReducedMotion ? { x: 0 } : { x: [0, -2000] }}
-          transition={{ repeat: Infinity, duration: 60, ease: "linear" }}
+          animate={{ x: [0, -2000] }}
+          transition={{ repeat: Infinity, duration: 60, ease: 'linear' }}
           className="flex gap-12 whitespace-nowrap text-[8rem] sm:text-[12rem] font-black uppercase tracking-tighter"
         >
           <span>{settings.login_marquee_text || 'ЕКСКЛУЗИВЕН КАТАЛОГ СЪДЪРЖАНИЕ ПРЕМИУМ ЕПИЗОДИ'}</span>
@@ -266,7 +263,7 @@ export default function LoginPage() {
 
             {/* Right — Features Section */}
             <motion.section
-              className="glass-card p-6 sm:p-8 relative overflow-hidden"
+              className="glass-card p-6 sm:p-8 lg:p-9 relative overflow-hidden flex flex-col"
               variants={containerV}
               initial="hidden"
               animate="visible"
@@ -274,10 +271,10 @@ export default function LoginPage() {
               <div className="absolute -right-16 -top-10 h-40 w-40 rounded-full bg-[var(--accent-gold)]/16 blur-2xl float-slow" />
               <div className="absolute -left-12 bottom-4 h-40 w-40 rounded-full bg-[var(--accent-cyan)]/16 blur-2xl float-medium" />
 
-              <motion.h2 variants={itemV} className="text-2xl font-semibold mb-4">
+              <motion.h2 variants={itemV} className="text-2xl font-semibold mb-6 sm:mb-7">
                 {settings.landing_reason_title || `Защо ${settings.site_name || 'Elite Capital'}`}
               </motion.h2>
-              <div className="space-y-3">
+              <div className="space-y-4">
                 {[
                   { label: 'Съдържание', text: settings.landing_feature_1 || 'Премиум каталози и оригинални формати' },
                   { label: 'Планове', text: settings.landing_feature_2 || 'Гъвкави абонаменти и промо кодове' },
@@ -302,12 +299,12 @@ export default function LoginPage() {
 
               <motion.div
                 variants={itemV}
-                className="mt-6 flex justify-center lg:justify-start"
+                className="mt-8 sm:mt-10 flex justify-center lg:justify-start"
               >
                 <motion.div
                   initial={{ opacity: 0.8, y: 0 }}
                   animate={{ y: [0, -6, 0] }}
-                  transition={{ duration: 3.5, repeat: Infinity, ease: "easeInOut" }}
+                  transition={{ duration: 3.5, repeat: Infinity, ease: 'easeInOut' }}
                   whileHover={{
                     scale: 1.05,
                     backgroundColor: 'var(--bg-secondary)',
@@ -325,7 +322,7 @@ export default function LoginPage() {
                 </motion.div>
               </motion.div>
 
-              <motion.div variants={itemV} className="mt-4 inline-flex items-center gap-2 text-xs text-[var(--text-muted)] uppercase tracking-[0.15em]">
+              <motion.div variants={itemV} className="mt-7 sm:mt-8 inline-flex items-center gap-2 text-xs text-[var(--text-muted)] uppercase tracking-[0.15em]">
                 <Waves className="w-3.5 h-3.5 text-[var(--accent-gold-light)]" />
                 {settings.login_bottom_text || 'Кино изживяване на ново ниво'}
               </motion.div>

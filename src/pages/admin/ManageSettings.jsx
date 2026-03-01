@@ -1,9 +1,10 @@
-import { useState, useEffect, useRef } from 'react';
-import { Save, Upload } from 'lucide-react';
+import { useState, useEffect, useMemo, useRef } from 'react';
+import { ArrowDown, ArrowUp, Film, Plus, Save, Trash2, Upload } from 'lucide-react';
 import { api } from '../../utils/api';
 import { useToastContext } from '../../context/ToastContext';
 import { invalidatePublicSettingsCache } from '../../utils/settings';
 import FaqEditor from '../../components/FaqEditor';
+import { parseHeroProductionIds, stringifyHeroProductionIds } from '../../utils/homeHeroSettings';
 
 const LANDING_FIELDS = [
   { key: 'landing_badge_text', label: 'Лента над заглавието' },
@@ -28,6 +29,7 @@ const HOME_FIELDS = [
   { key: 'home_hero_pill_2', label: 'Hero бадж 2 (напр. ВСЯКА СЕДМИЦА)' },
   { key: 'home_hero_button_1', label: 'Hero бутон 1 (Гледай сега)' },
   { key: 'home_hero_button_2', label: 'Hero бутон 2 (Виж плановете)' },
+  { key: 'home_hero_accent_label', label: 'Hero label над заглавието на картата' },
   { key: 'home_latest_title', label: 'Заглавие: Най-нови епизоди' },
   { key: 'home_free_title', label: 'Заглавие: Безплатна секция' },
   { key: 'home_premium_title', label: 'Заглавие: Премиум секция' },
@@ -135,12 +137,16 @@ const PROFILE_STAT_FIELDS = [
   { key: 'profile_stat_recent', label: 'Заглавие: Последно гледани' },
 ];
 
+const MAX_HERO_SLIDES = 5;
+
 export default function ManageSettings() {
   const [settings, setSettings] = useState({});
+  const [productions, setProductions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState('general');
+  const [heroProductionToAdd, setHeroProductionToAdd] = useState('');
   const { showToast } = useToastContext();
   const heroImageRef = useRef();
   const logoRef = useRef();
@@ -160,6 +166,14 @@ export default function ManageSettings() {
 
   useEffect(() => {
     fetchSettings();
+
+    api.get('/productions/admin/all?page=1&page_size=300&sort_by=sort_order&sort_dir=asc')
+      .then((data) => {
+        setProductions(Array.isArray(data?.items) ? data.items : []);
+      })
+      .catch((err) => {
+        showToast(err.message || 'Неуспешно зареждане на продукциите за hero секцията.', 'error');
+      });
   }, []);
 
   const handleSave = async () => {
@@ -209,6 +223,53 @@ export default function ManageSettings() {
 
   const updateField = (key, value) => {
     setSettings((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const selectedHeroProductionIds = useMemo(
+    () => parseHeroProductionIds(settings.home_hero_production_ids),
+    [settings.home_hero_production_ids]
+  );
+
+  const selectedHeroProductions = useMemo(() => {
+    const productionMap = new Map(productions.map((item) => [item.id, item]));
+    return selectedHeroProductionIds
+      .map((id) => productionMap.get(id))
+      .filter(Boolean);
+  }, [productions, selectedHeroProductionIds]);
+
+  const availableHeroProductions = useMemo(() => {
+    const selectedIds = new Set(selectedHeroProductionIds);
+    return productions.filter((item) => !selectedIds.has(item.id));
+  }, [productions, selectedHeroProductionIds]);
+
+  const setHeroProductionIds = (ids) => {
+    updateField('home_hero_production_ids', stringifyHeroProductionIds(ids));
+  };
+
+  const handleAddHeroProduction = () => {
+    const nextId = Number.parseInt(heroProductionToAdd, 10);
+    if (!Number.isFinite(nextId) || nextId <= 0) return;
+    if (selectedHeroProductionIds.includes(nextId)) return;
+    if (selectedHeroProductionIds.length >= MAX_HERO_SLIDES) {
+      showToast(`Hero carousel-ът поддържа до ${MAX_HERO_SLIDES} продукции.`, 'error');
+      return;
+    }
+
+    setHeroProductionIds([...selectedHeroProductionIds, nextId]);
+    setHeroProductionToAdd('');
+  };
+
+  const handleMoveHeroProduction = (index, direction) => {
+    const targetIndex = direction === 'up' ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= selectedHeroProductionIds.length) return;
+
+    const nextIds = [...selectedHeroProductionIds];
+    [nextIds[index], nextIds[targetIndex]] = [nextIds[targetIndex], nextIds[index]];
+    setHeroProductionIds(nextIds);
+  };
+
+  const handleRemoveHeroProduction = (id) => {
+    setHeroProductionIds(selectedHeroProductionIds.filter((itemId) => itemId !== id));
   };
 
   if (loading) {
@@ -403,13 +464,108 @@ export default function ManageSettings() {
                     </button>
                   </div>
                 </div>
-                {renderFields(HOME_FIELDS.slice(0, 6))}
+                {renderFields(HOME_FIELDS.slice(0, 7))}
+                <div className="rounded-2xl border border-[var(--border)] bg-[var(--bg-secondary)]/65 p-4 space-y-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h3 className="text-sm font-semibold">Hero carousel продукции</h3>
+                      <p className="text-xs text-[var(--text-muted)] mt-1">
+                        Избираш ръчно кои продукции да се въртят в hero секцията и в какъв ред. Лимит: {MAX_HERO_SLIDES}.
+                      </p>
+                    </div>
+                    <span className="text-xs rounded-full border border-[var(--border)] px-2.5 py-1 text-[var(--text-muted)]">
+                      {selectedHeroProductions.length}/{MAX_HERO_SLIDES}
+                    </span>
+                  </div>
+
+                  <div className="flex flex-col md:flex-row gap-3">
+                    <select
+                      value={heroProductionToAdd}
+                      onChange={(e) => setHeroProductionToAdd(e.target.value)}
+                      className="input-dark flex-1"
+                      disabled={availableHeroProductions.length === 0 || selectedHeroProductionIds.length >= MAX_HERO_SLIDES}
+                    >
+                      <option value="">Избери продукция за hero carousel</option>
+                      {availableHeroProductions.map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.title}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={handleAddHeroProduction}
+                      disabled={!heroProductionToAdd || selectedHeroProductionIds.length >= MAX_HERO_SLIDES}
+                      className="btn-outline inline-flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <Plus className="w-4 h-4" />
+                      Добави
+                    </button>
+                  </div>
+
+                  <div className="space-y-2">
+                    {selectedHeroProductions.length === 0 ? (
+                      <div className="rounded-xl border border-dashed border-[var(--border)] bg-[var(--bg-primary)]/35 px-4 py-5 text-sm text-[var(--text-muted)] flex items-center gap-3">
+                        <Film className="w-4 h-4" />
+                        Няма ръчно избрани hero продукции. Началната страница ще ползва автоматичната селекция.
+                      </div>
+                    ) : (
+                      selectedHeroProductions.map((item, index) => (
+                        <div
+                          key={item.id}
+                          className="rounded-xl border border-[var(--border)] bg-[var(--bg-primary)]/45 px-4 py-3 flex flex-col md:flex-row md:items-center gap-3 md:gap-4"
+                        >
+                          <div className="flex items-center gap-3 min-w-0 flex-1">
+                            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--accent-gold)]/15 text-sm font-semibold text-[var(--accent-gold)]">
+                              {index + 1}
+                            </span>
+                            <div className="min-w-0">
+                              <p className="font-medium truncate">{item.title}</p>
+                              <p className="text-xs text-[var(--text-muted)]">
+                                {item.is_active ? 'Активна продукция' : 'Скрита продукция'}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleMoveHeroProduction(index, 'up')}
+                              disabled={index === 0}
+                              className="btn-outline !px-3 !py-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                              aria-label={`Премести ${item.title} нагоре`}
+                            >
+                              <ArrowUp className="w-4 h-4" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleMoveHeroProduction(index, 'down')}
+                              disabled={index === selectedHeroProductions.length - 1}
+                              className="btn-outline !px-3 !py-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                              aria-label={`Премести ${item.title} надолу`}
+                            >
+                              <ArrowDown className="w-4 h-4" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveHeroProduction(item.id)}
+                              className="inline-flex items-center gap-2 rounded-xl border border-[var(--danger)]/35 bg-[var(--danger)]/10 px-3 py-2 text-sm text-[#ffc9c9] transition-colors hover:bg-[var(--danger)]/16"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                              Премахни
+                            </button>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
               </div>
             </div>
 
             <div className="glass-card p-5">
               <h2 className="text-lg font-semibold mb-3">Kатегории & Секции (Начало)</h2>
-              {renderFields(HOME_FIELDS.slice(6))}
+              {renderFields(HOME_FIELDS.slice(7))}
               <div className="mt-4 pt-4 border-t border-[var(--border)]">
                 {renderFields(HOME_EXTRA_FIELDS)}
               </div>

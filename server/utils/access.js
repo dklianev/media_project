@@ -13,6 +13,11 @@ export function normalizeProductionGroup(value, fallback = 'subscription') {
     return PROD_ACCESS_GROUPS.includes(normalized) ? normalized : fallback;
 }
 
+export function resolveProductionGroup(value, requiredTier, fallback = 'subscription') {
+    const normalized = normalizeProductionGroup(value, fallback);
+    return normalized === 'subscription' && Number(requiredTier || 0) <= 0 ? 'free' : normalized;
+}
+
 export function hasGroupAccess(group, userTier, isAdmin, requiredTier) {
     if (isAdmin) return true;
     if (group === 'free' || group === 'trailer') return true;

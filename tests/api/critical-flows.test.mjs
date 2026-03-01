@@ -754,14 +754,16 @@ test('admin settings приема и публикува новите community k
   const putResult = await apiRequest('/api/settings', {
     method: 'PUT',
     token,
-    body: {
-      nav_label_calendar: 'Програма',
-      comments_title: 'Коментари',
-      notifications_title: 'Алерти',
-      faq_title: 'Помощ',
-      calendar_title: 'График',
-      profile_stat_recent: 'Последно гледано',
-    },
+      body: {
+        nav_label_calendar: 'Програма',
+        comments_title: 'Коментари',
+        notifications_title: 'Алерти',
+        faq_title: 'Помощ',
+        calendar_title: 'График',
+        profile_stat_recent: 'Последно гледано',
+        home_hero_accent_label: 'Премиера',
+        home_hero_production_ids: '[3,5,8]',
+      },
   });
 
   assert.equal(putResult.response.status, 200);
@@ -771,11 +773,13 @@ test('admin settings приема и публикува новите community k
   assert.equal(publicResult.response.status, 200);
   assert.equal(publicResult.data?.nav_label_calendar, 'Програма');
   assert.equal(publicResult.data?.comments_title, 'Коментари');
-  assert.equal(publicResult.data?.notifications_title, 'Алерти');
-  assert.equal(publicResult.data?.faq_title, 'Помощ');
-  assert.equal(publicResult.data?.calendar_title, 'График');
-  assert.equal(publicResult.data?.profile_stat_recent, 'Последно гледано');
-});
+    assert.equal(publicResult.data?.notifications_title, 'Алерти');
+    assert.equal(publicResult.data?.faq_title, 'Помощ');
+    assert.equal(publicResult.data?.calendar_title, 'График');
+    assert.equal(publicResult.data?.profile_stat_recent, 'Последно гледано');
+    assert.equal(publicResult.data?.home_hero_accent_label, 'Премиера');
+    assert.equal(publicResult.data?.home_hero_production_ids, '[3,5,8]');
+  });
 
 test('faq_items settings round-trip запазва дълъг JSON без отрязване', async () => {
   const admin = createUser({ role: 'admin', character_name: 'FAQ Admin' });

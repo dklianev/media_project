@@ -6,6 +6,7 @@ import { api } from '../utils/api';
 import { useAuth } from '../context/AuthContext';
 import { useToastContext } from '../context/ToastContext';
 import { getPublicSettings } from '../utils/settings';
+import { formatDate } from '../utils/formatters';
 
 export default function CommentsSection({ episodeId }) {
     const { user, isAdmin } = useAuth();
@@ -187,7 +188,7 @@ export default function CommentsSection({ episodeId }) {
                                             {comment.character_name || comment.discord_username || 'Неизвестен'}
                                         </span>
                                         <span className="text-xs text-[var(--text-muted)] shrink-0">
-                                            {new Date(comment.created_at).toLocaleDateString('bg-BG', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                            {formatDate(comment.created_at, 'bg-BG', { day: '2-digit', month: 'short', year: 'numeric' })}
                                         </span>
                                     </div>
 

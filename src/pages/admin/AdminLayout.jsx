@@ -76,7 +76,8 @@ export default function AdminLayout() {
           initial={{ opacity: 0, x: -20 }}
           animate={{ opacity: 1, x: 0 }}
           transition={{ duration: 0.4, ease }}
-          className="premium-panel p-4 h-fit xl:sticky xl:top-24"
+          className="premium-panel p-4 h-fit xl:sticky"
+          style={{ top: 'calc(var(--app-chrome-offset, 72px) + 1rem)' }}
         >
           <Link
             to="/"
