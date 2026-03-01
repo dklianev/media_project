@@ -28,11 +28,12 @@ function createAccessToken(user) {
 }
 
 function createRefreshToken(user) {
+  const jti = randomBytes(16).toString('hex');
   const token = jwt.sign(
     {
       id: user.id,
       type: 'refresh',
-      jti: randomBytes(16).toString('hex'),
+      jti,
     },
     JWT_REFRESH_SECRET,
     { expiresIn: '7d' }
@@ -40,9 +41,9 @@ function createRefreshToken(user) {
 
   const tokenHash = createHash('sha256').update(token).digest('hex');
   db.prepare(`
-    INSERT INTO refresh_tokens (user_id, token, expires_at)
-    VALUES (?, ?, ?)
-  `).run(user.id, tokenHash, new Date(Date.now() + REFRESH_TTL_MS).toISOString());
+    INSERT INTO refresh_tokens (user_id, token, jti, expires_at, last_used_at)
+    VALUES (?, ?, ?, ?, datetime('now'))
+  `).run(user.id, tokenHash, jti, new Date(Date.now() + REFRESH_TTL_MS).toISOString());
 
   return token;
 }
@@ -173,8 +174,8 @@ function createEpisode(overrides = {}) {
   return db.prepare('SELECT * FROM episodes WHERE id = ?').get(result.lastInsertRowid);
 }
 
-async function apiRequest(path, { method = 'GET', token, body } = {}) {
-  const headers = {};
+async function apiRequest(path, { method = 'GET', token, body, headers: extraHeaders } = {}) {
+  const headers = { ...(extraHeaders || {}) };
   if (token) headers.Authorization = `Bearer ${token}`;
   if (body !== undefined) headers['Content-Type'] = 'application/json';
 
@@ -192,8 +193,8 @@ async function apiRequest(path, { method = 'GET', token, body } = {}) {
   return { response, data };
 }
 
-async function apiTextRequest(path, { method = 'GET', token, body } = {}) {
-  const headers = {};
+async function apiTextRequest(path, { method = 'GET', token, body, headers: extraHeaders } = {}) {
+  const headers = { ...(extraHeaders || {}) };
   if (token) headers.Authorization = `Bearer ${token}`;
   if (body !== undefined) headers['Content-Type'] = 'application/json';
 
@@ -205,6 +206,11 @@ async function apiTextRequest(path, { method = 'GET', token, body } = {}) {
 
   const text = await response.text();
   return { response, text };
+}
+
+function extractCookieValue(setCookieHeader, name) {
+  const match = String(setCookieHeader || '').match(new RegExp(`${name}=([^;]+)`));
+  return match ? decodeURIComponent(match[1]) : '';
 }
 
 function resetDatabase() {
@@ -283,10 +289,11 @@ beforeEach(() => {
 test('auth refresh ротира токена и блокира повторна употреба на стария', async () => {
   const user = createUser();
   const refreshToken = createRefreshToken(user);
+  const cookieHeader = { Cookie: `refresh_token=${encodeURIComponent(refreshToken)}` };
 
   const first = await apiRequest('/api/auth/refresh', {
     method: 'POST',
-    body: { refresh_token: refreshToken },
+    headers: cookieHeader,
   });
 
   assert.equal(first.response.status, 200);
@@ -303,12 +310,97 @@ test('auth refresh ротира токена и блокира повторна 
 
   const reused = await apiRequest('/api/auth/refresh', {
     method: 'POST',
-    body: { refresh_token: refreshToken },
+    headers: cookieHeader,
   });
 
   assert.equal(reused.response.status, 401);
   const leftTokens = db.prepare('SELECT COUNT(*) as count FROM refresh_tokens WHERE user_id = ?').get(user.id).count;
-  assert.equal(leftTokens, 0);
+  assert.equal(leftTokens, 1);
+});
+
+test('стар refresh token не инвалидира новата сесия при паралелен race', async () => {
+  const user = createUser();
+  const originalToken = createRefreshToken(user);
+  const originalCookie = { Cookie: `refresh_token=${encodeURIComponent(originalToken)}` };
+
+  const firstRefresh = await apiRequest('/api/auth/refresh', {
+    method: 'POST',
+    headers: originalCookie,
+  });
+  assert.equal(firstRefresh.response.status, 200);
+
+  const rotatedToken = extractCookieValue(firstRefresh.response.headers.get('set-cookie'), 'refresh_token');
+  assert.ok(rotatedToken);
+
+  const staleRefresh = await apiRequest('/api/auth/refresh', {
+    method: 'POST',
+    headers: originalCookie,
+  });
+  assert.equal(staleRefresh.response.status, 401);
+
+  const activeRefresh = await apiRequest('/api/auth/refresh', {
+    method: 'POST',
+    headers: { Cookie: `refresh_token=${encodeURIComponent(rotatedToken)}` },
+  });
+  assert.equal(activeRefresh.response.status, 200);
+  assert.equal(typeof activeRefresh.data?.access_token, 'string');
+});
+
+test('logout работи и при изтекъл access token ако refresh cookie-то е налично', async () => {
+  const user = createUser();
+  const refreshToken = createRefreshToken(user);
+  const expiredAccessToken = jwt.sign(
+    { id: user.id, discord_id: user.discord_id, role: user.role },
+    JWT_SECRET,
+    { expiresIn: -10 }
+  );
+
+  const logout = await apiRequest('/api/auth/logout', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${expiredAccessToken}`,
+      Cookie: `refresh_token=${encodeURIComponent(refreshToken)}`,
+    },
+  });
+  assert.equal(logout.response.status, 200);
+  assert.match(logout.response.headers.get('set-cookie') || '', /refresh_token=/);
+
+  const remaining = db.prepare('SELECT COUNT(*) as count FROM refresh_tokens WHERE user_id = ?').get(user.id).count;
+  assert.equal(remaining, 0);
+});
+
+test('banned user не може да exchange-не auth code', async () => {
+  const bannedUser = createUser({ role: 'banned', character_name: 'Banned Exchange' });
+  const code = randomBytes(24).toString('hex');
+  db.prepare(`
+    INSERT INTO auth_exchange_codes (user_id, code, expires_at)
+    VALUES (?, ?, ?)
+  `).run(bannedUser.id, code, new Date(Date.now() + 5 * 60 * 1000).toISOString());
+
+  const exchanged = await apiRequest('/api/auth/exchange', {
+    method: 'POST',
+    body: { code },
+  });
+  assert.equal(exchanged.response.status, 403);
+  assert.match(exchanged.data?.error || '', /ограничен/);
+
+  const tokenCount = db.prepare('SELECT COUNT(*) as count FROM refresh_tokens WHERE user_id = ?').get(bannedUser.id).count;
+  assert.equal(tokenCount, 0);
+});
+
+test('banned user не може да refresh-не съществуваща сесия', async () => {
+  const bannedUser = createUser({ role: 'banned', character_name: 'Banned Refresh' });
+  const refreshToken = createRefreshToken(bannedUser);
+
+  const refreshed = await apiRequest('/api/auth/refresh', {
+    method: 'POST',
+    headers: { Cookie: `refresh_token=${encodeURIComponent(refreshToken)}` },
+  });
+  assert.equal(refreshed.response.status, 403);
+  assert.match(refreshed.data?.error || '', /ограничен/);
+
+  const tokenCount = db.prepare('SELECT COUNT(*) as count FROM refresh_tokens WHERE user_id = ?').get(bannedUser.id).count;
+  assert.equal(tokenCount, 0);
 });
 
 test('admin confirm на плащане активира абонамент и записва audit лог', async () => {

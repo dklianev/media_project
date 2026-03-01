@@ -36,7 +36,13 @@ export function generateAccessToken(user) {
   );
 }
 
-export function generateRefreshToken(user) {
+export function hashUserAgent(userAgent) {
+  const raw = String(userAgent || '').trim();
+  if (!raw) return '';
+  return crypto.createHash('sha256').update(raw).digest('hex');
+}
+
+export function generateRefreshToken(user, options = {}) {
   const jti = crypto.randomBytes(16).toString('hex');
   const token = jwt.sign(
     { id: user.id, type: 'refresh', jti },
@@ -45,9 +51,17 @@ export function generateRefreshToken(user) {
   );
 
   const expiresAt = new Date(Date.now() + REFRESH_TTL_MS).toISOString();
+  const tokenHash = hashRefreshToken(token);
   db.prepare(
-    'INSERT INTO refresh_tokens (user_id, token, expires_at) VALUES (?, ?, ?)'
-  ).run(user.id, hashRefreshToken(token), expiresAt);
+    `INSERT INTO refresh_tokens (user_id, token, jti, user_agent_hash, expires_at, last_used_at)
+     VALUES (?, ?, ?, ?, ?, datetime('now'))`
+  ).run(
+    user.id,
+    tokenHash,
+    jti,
+    hashUserAgent(options.userAgent),
+    expiresAt
+  );
 
   return token;
 }

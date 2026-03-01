@@ -1,24 +1,24 @@
 const API_BASE = '/api';
 
-let accessToken = sessionStorage.getItem('access_token');
+let accessToken = null;
 let isRefreshing = false;
 let refreshQueue = [];
+if (typeof window !== 'undefined' && window.sessionStorage) {
+  window.sessionStorage.removeItem('access_token');
+}
 
 export function setTokens(access) {
-  accessToken = access;
-  if (access) sessionStorage.setItem('access_token', access);
-  else sessionStorage.removeItem('access_token');
+  accessToken = access || null;
 }
 
 export function getTokens() {
   return {
-    access_token: accessToken || sessionStorage.getItem('access_token'),
+    access_token: accessToken,
   };
 }
 
 export function clearTokens() {
   accessToken = null;
-  sessionStorage.removeItem('access_token');
 }
 
 export async function refreshAccessToken() {

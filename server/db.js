@@ -129,7 +129,10 @@ db.exec(`
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL,
     token TEXT UNIQUE NOT NULL,
+    jti TEXT UNIQUE,
+    user_agent_hash TEXT,
     expires_at TEXT NOT NULL,
+    last_used_at TEXT,
     created_at TEXT DEFAULT (datetime('now')),
     FOREIGN KEY (user_id) REFERENCES users(id)
   );
@@ -262,6 +265,16 @@ if (!hasColumn('payment_references', 'cancelled_reason')) {
   db.exec(`ALTER TABLE payment_references ADD COLUMN cancelled_reason TEXT`);
 }
 
+if (!hasColumn('refresh_tokens', 'jti')) {
+  db.exec(`ALTER TABLE refresh_tokens ADD COLUMN jti TEXT`);
+}
+if (!hasColumn('refresh_tokens', 'user_agent_hash')) {
+  db.exec(`ALTER TABLE refresh_tokens ADD COLUMN user_agent_hash TEXT`);
+}
+if (!hasColumn('refresh_tokens', 'last_used_at')) {
+  db.exec(`ALTER TABLE refresh_tokens ADD COLUMN last_used_at TEXT`);
+}
+
 if (!hasColumn('episodes', 'published_at')) {
   db.exec(`ALTER TABLE episodes ADD COLUMN published_at TEXT`);
 }
@@ -346,6 +359,11 @@ db.exec(`
 `);
 
 db.exec(`
+  UPDATE refresh_tokens
+  SET last_used_at = COALESCE(last_used_at, created_at, datetime('now'))
+`);
+
+db.exec(`
   CREATE INDEX IF NOT EXISTS idx_watchlist_user ON watchlist(user_id, created_at);
   CREATE INDEX IF NOT EXISTS idx_watchlist_prod ON watchlist(production_id);
   CREATE INDEX IF NOT EXISTS idx_watch_history_user ON watch_history(user_id, last_watched_at);
@@ -364,6 +382,8 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_payments_user_status ON payment_references(user_id, status, created_at);
   CREATE INDEX IF NOT EXISTS idx_payments_status_created ON payment_references(status, created_at);
   CREATE INDEX IF NOT EXISTS idx_tokens_user ON refresh_tokens(user_id, expires_at);
+  CREATE INDEX IF NOT EXISTS idx_tokens_user_jti ON refresh_tokens(user_id, jti);
+  CREATE INDEX IF NOT EXISTS idx_tokens_jti ON refresh_tokens(jti);
   CREATE INDEX IF NOT EXISTS idx_auth_exchange_code ON auth_exchange_codes(code, expires_at);
   CREATE INDEX IF NOT EXISTS idx_admin_audit_created ON admin_audit_logs(created_at);
   CREATE INDEX IF NOT EXISTS idx_admin_audit_admin_created ON admin_audit_logs(admin_user_id, created_at);

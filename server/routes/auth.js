@@ -5,12 +5,14 @@ import db from '../db.js';
 import {
   generateAccessToken,
   generateRefreshToken,
+  hashRefreshToken,
   removeRefreshToken,
   requireAuth,
   revokeAllRefreshTokens,
 } from '../middleware/auth.js';
 
 const router = Router();
+const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me';
 const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'dev-refresh-secret';
 const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:5173';
 const OAUTH_STATE_COOKIE = 'oauth_state';
@@ -98,10 +100,31 @@ function clearRefreshCookie(res) {
   res.clearCookie(REFRESH_COOKIE_NAME, refreshCookieOptions(0));
 }
 
-function getRefreshTokenFromRequest(req) {
-  const bodyToken = String(req.body?.refresh_token || '').trim();
-  const cookieToken = String(parseCookies(req)[REFRESH_COOKIE_NAME] || '').trim();
-  return cookieToken || bodyToken;
+function getRefreshTokenFromCookies(req) {
+  return String(parseCookies(req)[REFRESH_COOKIE_NAME] || '').trim();
+}
+
+function decodeOptionalAccessToken(req) {
+  const authHeader = String(req.headers.authorization || '');
+  if (!authHeader.startsWith('Bearer ')) return null;
+  try {
+    return jwt.verify(authHeader.slice(7), JWT_SECRET);
+  } catch {
+    return null;
+  }
+}
+
+function decodeRefreshToken(refreshToken) {
+  if (!refreshToken) return null;
+  try {
+    const decoded = jwt.verify(refreshToken, JWT_REFRESH_SECRET);
+    if (!decoded?.id || decoded?.type !== 'refresh' || !decoded?.jti) {
+      return null;
+    }
+    return decoded;
+  } catch {
+    return null;
+  }
 }
 
 function toUtcDateString(date) {
@@ -235,6 +258,10 @@ router.get('/discord/callback', async (req, res) => {
       user = db.prepare('SELECT * FROM users WHERE id = ?').get(user.id);
     }
 
+    if (user.role === 'banned') {
+      return redirectWithError(res, 'banned');
+    }
+
     cleanupAuthExchangeCodes();
     const authCode = saveAuthExchangeCode(user.id);
     res.redirect(`${CLIENT_URL}/auth/callback?code=${encodeURIComponent(authCode)}`);
@@ -284,10 +311,15 @@ router.post('/exchange', (req, res) => {
   if (!user) {
     return res.status(401).json({ error: 'Потребителят не съществува' });
   }
+  if (user.role === 'banned') {
+    revokeAllRefreshTokens(user.id);
+    clearRefreshCookie(res);
+    return res.status(403).json({ error: 'Профилът е ограничен от администратор' });
+  }
 
   cleanupExpiredRefreshTokens();
   const accessToken = generateAccessToken(user);
-  const refreshToken = generateRefreshToken(user);
+  const refreshToken = generateRefreshToken(user, { userAgent: req.get('user-agent') });
   setRefreshCookie(res, refreshToken);
   res.json({ access_token: accessToken });
 });
@@ -328,69 +360,100 @@ router.get('/me', requireAuth, (req, res) => {
 
 // Rotate refresh token and issue new access token
 router.post('/refresh', (req, res) => {
-  const refreshToken = getRefreshTokenFromRequest(req);
+  const refreshToken = getRefreshTokenFromCookies(req);
   if (!refreshToken) {
     return res.status(400).json({ error: 'Липсва валидна сесия' });
   }
 
-  try {
-    const decoded = jwt.verify(refreshToken, JWT_REFRESH_SECRET);
-    if (!decoded?.id || decoded?.type !== 'refresh') {
-      clearRefreshCookie(res);
-      return res.status(401).json({ error: 'Невалиден refresh token' });
-    }
-
-    cleanupExpiredRefreshTokens();
-    const hash = crypto.createHash('sha256').update(refreshToken).digest('hex');
-    const stored = db.prepare(`
-      SELECT *
-      FROM refresh_tokens
-      WHERE user_id = ?
-        AND token IN (?, ?)
-    `).get(decoded.id, hash, refreshToken);
-
-    if (!stored) {
-      revokeAllRefreshTokens(decoded.id);
-      clearRefreshCookie(res);
-      return res.status(401).json({ error: 'Сесията е невалидна. Влез отново.' });
-    }
-
-    if (new Date(stored.expires_at) <= new Date()) {
-      db.prepare('DELETE FROM refresh_tokens WHERE id = ?').run(stored.id);
-      clearRefreshCookie(res);
-      return res.status(401).json({ error: 'Refresh token е изтекъл' });
-    }
-
-    const user = db.prepare('SELECT * FROM users WHERE id = ?').get(decoded.id);
-    if (!user) {
-      revokeAllRefreshTokens(decoded.id);
-      clearRefreshCookie(res);
-      return res.status(401).json({ error: 'Потребителят не съществува' });
-    }
-
-    db.prepare('DELETE FROM refresh_tokens WHERE id = ?').run(stored.id);
-    const accessToken = generateAccessToken(user);
-    const newRefreshToken = generateRefreshToken(user);
-    setRefreshCookie(res, newRefreshToken);
-
-    res.json({
-      access_token: accessToken,
-    });
-  } catch {
+  const decoded = decodeRefreshToken(refreshToken);
+  if (!decoded) {
     clearRefreshCookie(res);
     return res.status(401).json({ error: 'Невалиден refresh token' });
   }
+
+  cleanupExpiredRefreshTokens();
+  const tokenHash = hashRefreshToken(refreshToken);
+
+  let stored = db.prepare(`
+    SELECT *
+    FROM refresh_tokens
+    WHERE user_id = ? AND jti = ?
+  `).get(decoded.id, decoded.jti);
+
+  if (!stored) {
+    stored = db.prepare(`
+      SELECT *
+      FROM refresh_tokens
+      WHERE user_id = ? AND token = ?
+    `).get(decoded.id, tokenHash);
+
+    if (stored && !stored.jti) {
+      db.prepare(`
+        UPDATE refresh_tokens
+        SET jti = ?, last_used_at = datetime('now')
+        WHERE id = ?
+      `).run(decoded.jti, stored.id);
+      stored = { ...stored, jti: decoded.jti };
+    }
+  }
+
+  if (!stored) {
+    clearRefreshCookie(res);
+    return res.status(401).json({ error: 'Сесията е невалидна. Влез отново.' });
+  }
+
+  if (stored.token !== tokenHash) {
+    db.prepare('DELETE FROM refresh_tokens WHERE id = ?').run(stored.id);
+    clearRefreshCookie(res);
+    return res.status(401).json({ error: 'Сесията е невалидна. Влез отново.' });
+  }
+
+  if (new Date(stored.expires_at) <= new Date()) {
+    db.prepare('DELETE FROM refresh_tokens WHERE id = ?').run(stored.id);
+    clearRefreshCookie(res);
+    return res.status(401).json({ error: 'Refresh token е изтекъл' });
+  }
+
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(decoded.id);
+  if (!user) {
+    revokeAllRefreshTokens(decoded.id);
+    clearRefreshCookie(res);
+    return res.status(401).json({ error: 'Потребителят не съществува' });
+  }
+  if (user.role === 'banned') {
+    revokeAllRefreshTokens(decoded.id);
+    clearRefreshCookie(res);
+    return res.status(403).json({ error: 'Профилът е ограничен от администратор' });
+  }
+
+  const rotated = db.transaction(() => {
+    db.prepare('DELETE FROM refresh_tokens WHERE id = ?').run(stored.id);
+    const nextAccessToken = generateAccessToken(user);
+    const nextRefreshToken = generateRefreshToken(user, { userAgent: req.get('user-agent') });
+    return {
+      accessToken: nextAccessToken,
+      refreshToken: nextRefreshToken,
+    };
+  })();
+
+  setRefreshCookie(res, rotated.refreshToken);
+  res.json({
+    access_token: rotated.accessToken,
+  });
 });
 
 // Logout
-router.post('/logout', requireAuth, (req, res) => {
-  const refreshToken = getRefreshTokenFromRequest(req);
+router.post('/logout', (req, res) => {
+  const refreshToken = getRefreshTokenFromCookies(req);
   const logoutAll = Boolean(req.body?.all_sessions);
+  const accessPayload = decodeOptionalAccessToken(req);
+  const refreshPayload = decodeRefreshToken(refreshToken);
+  const userId = accessPayload?.id || refreshPayload?.id || null;
 
-  if (logoutAll) {
-    revokeAllRefreshTokens(req.user.id);
+  if (logoutAll && userId) {
+    revokeAllRefreshTokens(userId);
   } else if (refreshToken) {
-    removeRefreshToken(refreshToken, req.user.id);
+    removeRefreshToken(refreshToken, userId);
   }
 
   clearRefreshCookie(res);
