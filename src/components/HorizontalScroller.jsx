@@ -61,9 +61,16 @@ export default function HorizontalScroller({ title, seeAllLink, children }) {
           )}
           <div className="flex-1 h-px bg-gradient-to-r from-[var(--accent-gold)]/30 to-transparent" />
           {seeAllLink && (
-            <Link to={seeAllLink} className="text-sm text-[var(--accent-gold-light)] no-underline whitespace-nowrap">
-              Виж всички
-            </Link>
+            <div className="flex items-center gap-3">
+              {canScrollRight && (
+                <span className="md:hidden text-[10px] text-[var(--text-muted)] flex items-center uppercase tracking-widest animate-pulse">
+                  Плъзни <ChevronRight className="w-3 h-3 ml-0.5" />
+                </span>
+              )}
+              <Link to={seeAllLink} className="text-sm text-[var(--accent-gold-light)] no-underline whitespace-nowrap hidden sm:inline-block">
+                Виж всички
+              </Link>
+            </div>
           )}
         </motion.div>
       )}
@@ -94,7 +101,7 @@ export default function HorizontalScroller({ title, seeAllLink, children }) {
           tabIndex={0}
           role="region"
           aria-label={title || 'Хоризонтален списък'}
-          className="flex gap-4 overflow-x-auto scroll-smooth hide-scrollbar py-3 -my-3 px-1"
+          className="flex gap-4 overflow-x-auto scroll-smooth hide-scrollbar py-3 -my-3 px-1 pr-6"
           style={{ scrollSnapType: 'x mandatory', overflowY: 'visible' }}
         >
           {children}
