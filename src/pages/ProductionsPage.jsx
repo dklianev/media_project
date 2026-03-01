@@ -146,6 +146,15 @@ export default function ProductionsPage() {
         return result;
     }, [productions, debouncedQuery, groupFilter, genreFilter, sortOption, watchlistIds]);
 
+    const clearFilters = () => {
+        setQuery('');
+        setGroupFilter('all');
+        setGenreFilter('all');
+        setSortOption('default');
+    };
+
+    const hasActiveFilters = query !== '' || groupFilter !== 'all' || genreFilter !== 'all' || sortOption !== 'default';
+
     return (
         <div className="relative max-w-7xl mx-auto px-4 py-8 overflow-hidden">
             <PageBackground />
@@ -184,45 +193,63 @@ export default function ProductionsPage() {
 
                     {/* Filtering & Listing */}
                     <div className="mt-8">
-                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
-                            <div className="flex flex-wrap gap-2">
-                                {filterPills.map((pill) => (
+                        <div className="sticky top-[68px] z-40 bg-[var(--bg-primary)]/95 backdrop-blur-xl pb-4 pt-2 -mx-4 px-4 sm:-mx-6 sm:px-6 shadow-[0_10px_30px_-15px_rgba(0,0,0,0.5)] border-b border-[var(--border)]/50 mb-6">
+
+                            {/* Filter Summary & Result Count */}
+                            <div className="flex items-center justify-between mb-4">
+                                <span className="text-sm font-medium text-[var(--text-secondary)]">
+                                    Намерени <strong className="text-white">{filtered.length}</strong> {filtered.length === 1 ? 'резултат' : 'резултата'}
+                                </span>
+                                {hasActiveFilters && (
                                     <button
-                                        key={pill.value}
-                                        type="button"
-                                        onClick={() => setGroupFilter(pill.value)}
-                                        aria-pressed={groupFilter === pill.value}
-                                        className={`px-5 py-2 rounded-full text-sm font-medium transition-all ${groupFilter === pill.value
-                                            ? 'bg-[var(--accent-gold)] text-[#0a0b11] shadow-[0_0_15px_rgba(212,175,55,0.3)]'
-                                            : 'bg-[var(--bg-secondary)]/80 text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)] hover:text-[var(--text-primary)] border border-[var(--border)]'
-                                            }`}
+                                        onClick={clearFilters}
+                                        className="text-xs font-semibold uppercase tracking-wider text-[var(--danger)] hover:text-[#ff8f8f] hover:bg-[var(--danger)]/10 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5"
                                     >
-                                        {pill.label}
+                                        Изчисти всички
                                     </button>
-                                ))}
+                                )}
                             </div>
 
-                            <div className="flex items-center gap-3 w-full sm:w-auto overflow-x-auto">
-                                <select
-                                    className="input-dark text-sm py-2 px-3 border border-[var(--border)] rounded-lg min-w-[170px]"
-                                    value={genreFilter}
-                                    onChange={(e) => setGenreFilter(e.target.value)}
-                                >
-                                    <option value="all">Всички жанрове</option>
-                                    {availableGenres.map(g => (
-                                        <option key={g} value={g}>{g}</option>
+                            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                                <div className="flex flex-wrap gap-2">
+                                    {filterPills.map((pill) => (
+                                        <button
+                                            key={pill.value}
+                                            type="button"
+                                            onClick={() => setGroupFilter(pill.value)}
+                                            aria-pressed={groupFilter === pill.value}
+                                            className={`px-5 py-2 rounded-full text-sm font-medium transition-all ${groupFilter === pill.value
+                                                ? 'bg-[var(--accent-gold)] text-[#0a0b11] shadow-[0_0_15px_rgba(212,175,55,0.3)]'
+                                                : 'bg-[var(--bg-secondary)]/80 text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)] hover:text-[var(--text-primary)] border border-[var(--border)]'
+                                                }`}
+                                        >
+                                            {pill.label}
+                                        </button>
                                     ))}
-                                </select>
+                                </div>
 
-                                <select
-                                    className="input-dark text-sm py-2 px-3 border border-[var(--border)] rounded-lg min-w-[160px]"
-                                    value={sortOption}
-                                    onChange={(e) => setSortOption(e.target.value)}
-                                >
-                                    <option value="default">Препоръчани</option>
-                                    <option value="newest">Най-нови</option>
-                                    <option value="alphabetical">А-Я</option>
-                                </select>
+                                <div className="flex items-center gap-3 w-full sm:w-auto overflow-x-auto">
+                                    <select
+                                        className="input-dark text-sm py-2 px-3 border border-[var(--border)] rounded-lg min-w-[170px]"
+                                        value={genreFilter}
+                                        onChange={(e) => setGenreFilter(e.target.value)}
+                                    >
+                                        <option value="all">Всички жанрове</option>
+                                        {availableGenres.map(g => (
+                                            <option key={g} value={g}>{g}</option>
+                                        ))}
+                                    </select>
+
+                                    <select
+                                        className="input-dark text-sm py-2 px-3 border border-[var(--border)] rounded-lg min-w-[160px]"
+                                        value={sortOption}
+                                        onChange={(e) => setSortOption(e.target.value)}
+                                    >
+                                        <option value="default">Препоръчани</option>
+                                        <option value="newest">Най-нови</option>
+                                        <option value="alphabetical">А-Я</option>
+                                    </select>
+                                </div>
                             </div>
                         </div>
 
@@ -241,10 +268,33 @@ export default function ProductionsPage() {
                                 <p className="text-sm text-[#ffc9c9]">{error}</p>
                             </div>
                         ) : filtered.length === 0 ? (
-                            <div className="text-center py-20 glass-card">
-                                <Film className="w-12 h-12 text-[var(--text-muted)] mx-auto mb-4 opacity-50" />
-                                <p className="text-[var(--text-muted)]">Няма намерени продукции с този филтър.</p>
-                            </div>
+                            <StaggerContainer className="flex flex-col items-center justify-center text-center py-20 px-4 bg-[var(--bg-secondary)]/30 rounded-2xl border border-[var(--border)]/50 border-dashed relative overflow-hidden group">
+                                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 bg-[var(--accent-cyan)] opacity-5 blur-[80px] rounded-full pointer-events-none" />
+
+                                <StaggerItem>
+                                    <div className="relative w-20 h-20 rounded-full bg-[var(--bg-tertiary)] flex items-center justify-center mb-6 shadow-xl border border-[var(--border)]">
+                                        <Film className="w-10 h-10 text-[var(--text-muted)] opacity-70" />
+                                    </div>
+                                </StaggerItem>
+
+                                <StaggerItem>
+                                    <h3 className="text-xl font-bold text-[var(--text-primary)] mb-2 tracking-tight">Няма намерени резултати</h3>
+                                </StaggerItem>
+
+                                <StaggerItem>
+                                    <p className="text-[var(--text-secondary)] mb-8 max-w-sm text-sm">
+                                        Опитай да промениш филтрите на търсенето, за да намериш това което търсиш.
+                                    </p>
+                                </StaggerItem>
+
+                                <StaggerItem>
+                                    <div className="mt-4">
+                                        <button onClick={clearFilters} className="btn-outline border-[var(--border)] text-white hover:border-[var(--accent-gold)] hover:text-[var(--accent-gold)] transition-colors px-6 py-2.5 rounded-xl text-sm uppercase tracking-widest cursor-pointer">
+                                            Изчисти филтрите
+                                        </button>
+                                    </div>
+                                </StaggerItem>
+                            </StaggerContainer>
                         ) : (
                             <StaggerContainer className="grid grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-4 sm:gap-6">
                                 {filtered.map((prod) => (
