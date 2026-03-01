@@ -141,7 +141,7 @@ export default function LoginPage() {
         whileTap={{ scale: 0.9 }}
         onClick={toggleTheme}
         className="fixed top-6 right-6 z-50 p-3 rounded-full border border-[var(--border)] bg-[var(--bg-secondary)]/40 backdrop-blur-md shadow-premium-sm text-[var(--accent-gold-light)]"
-        title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+        title={theme === 'dark' ? 'Превключи към Светла тема' : 'Превключи към Тъмна тема'}
       >
         {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5 text-[#5865F2]" />}
       </motion.button>
@@ -174,7 +174,7 @@ export default function LoginPage() {
               initial="hidden"
               animate="visible"
             >
-              <motion.div variants={itemV} className="mb-7 inline-flex w-fit items-center gap-2 rounded-full border border-[var(--accent-gold)]/35 bg-[var(--accent-gold)]/12 px-3 py-1 text-xs uppercase tracking-[0.2em] text-[var(--accent-gold-light)]">
+              <motion.div variants={itemV} className="mb-5 inline-flex w-fit items-center gap-2 rounded-full border border-[var(--accent-gold)]/35 bg-[var(--accent-gold)]/12 px-3 py-1 text-xs uppercase tracking-[0.2em] text-[var(--accent-gold-light)]">
                 <Sparkles className="w-3.5 h-3.5" />
                 {settings.landing_badge_text || 'Премиум стрийминг'}
               </motion.div>
@@ -197,7 +197,7 @@ export default function LoginPage() {
                 </div>
               </motion.div>
 
-              <motion.p variants={itemV} className="text-[var(--text-secondary)] mb-16 max-w-xl leading-relaxed">
+              <motion.p variants={itemV} className="text-[var(--text-primary)]/90 text-lg mb-10 max-w-xl leading-relaxed">
                 {settings.landing_description || 'Влез с Discord и получи персонализиран достъп до съдържанието.'}
               </motion.p>
 
@@ -256,7 +256,7 @@ export default function LoginPage() {
                 </motion.button>
               </motion.div>
 
-              <motion.p variants={itemV} className="text-xs text-[var(--text-muted)] mt-16 opacity-70">
+              <motion.p variants={itemV} className="text-xs text-[var(--text-muted)] mt-auto pt-8 opacity-80">
                 {settings.landing_disclaimer || 'Достъпът до съдържанието зависи от активния план.'}
               </motion.p>
             </motion.section>
