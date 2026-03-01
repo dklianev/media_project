@@ -13,25 +13,75 @@ const DEFAULT_FAQS = [
         items: [
             { q: 'Как да се абонирам?', a: 'Изберете план от страницата "Абонаменти", генерирайте основание и преведете сумата по посочения IBAN. Достъпът се отключва ръчно от администратор, обикновено до няколко часа.' },
             { q: 'Има ли автоматично подновяване?', a: 'В момента абонаментите не се подновяват автоматично. Когато периодът ви изтече, можете да закупите нов план ръчно.' },
-            { q: 'Бъркам си основанието — какво да правя?', a: 'Пишете на администраторите в Discord сървъра ни със снимка на превода и правилното ви име.' },
+            { q: 'Бъркам си основанието — какво да правя?', a: 'Изпратете запитване чрез формата по-долу и опишете правилното име, сумата и датата на превода, за да проверим плащането.' },
         ]
     },
     {
         category: 'Съдържание и платформи',
         items: [
             { q: 'Кога излизат нови епизоди?', a: 'Нови епизоди обикновено се качват веднъж седмично. Можете да следите секцията "Очаквай скоро" за точни дати.' },
-            { q: 'Къде са дискусиите?', a: 'Вече можете да коментирате директно под всеки епизод, както и да обсъждате с общността в свързания Discord сървър.' },
+            { q: 'Къде са дискусиите?', a: 'Можете да коментирате директно под всеки епизод. Ако имате въпрос към екипа, използвайте формата за запитване по-долу.' },
         ]
     },
 ];
 
+function normalizeFaqAnswer(question, answer) {
+    const normalizedQuestion = String(question || '').toLowerCase();
+    const normalizedAnswer = String(answer || '').trim();
+
+    if (!/discord/i.test(normalizedAnswer)) {
+        return normalizedAnswer;
+    }
+
+    if (/основани/.test(normalizedQuestion)) {
+        return 'Изпратете запитване чрез формата по-долу и опишете правилното име, сумата и датата на превода, за да проверим плащането.';
+    }
+
+    if (/дискуси/.test(normalizedQuestion)) {
+        return 'Можете да коментирате директно под всеки епизод. Ако имате въпрос към екипа, използвайте формата за запитване по-долу.';
+    }
+
+    return 'За съдействие по този въпрос използвайте формата за запитване по-долу и опишете случая възможно най-подробно.';
+}
+
+function normalizeFaqDescription(description) {
+    const normalizedDescription = String(description || '').trim();
+
+    if (!/discord/i.test(normalizedDescription)) {
+        return normalizedDescription;
+    }
+
+    return 'Имаш въпроси относно плащания, достъп или съдържание? Тук сме събрали най-полезната информация, а ако не намираш отговор, използвай формата за запитване по-долу.';
+}
+
+function normalizeFaqSections(sections) {
+    if (!Array.isArray(sections)) {
+        return DEFAULT_FAQS;
+    }
+
+    const normalized = sections
+        .filter(section => section && Array.isArray(section.items))
+        .map(section => ({
+            ...section,
+            items: section.items
+                .filter(item => item && item.q && item.a)
+                .map(item => ({
+                    ...item,
+                    a: normalizeFaqAnswer(item.q, item.a),
+                })),
+        }))
+        .filter(section => section.items.length > 0);
+
+    return normalized.length > 0 ? normalized : DEFAULT_FAQS;
+}
+
 export default function FAQPage() {
     const [ui, setUi] = useState({
         faq_title: 'Често задавани въпроси',
-        faq_description: 'Имаш въпроси относно плащания, достъп или съдържание? Тук сме събрали най-полезната информация за теб.',
+        faq_description: 'Имаш въпроси относно плащания, достъп или съдържание? Тук сме събрали най-полезната информация, а ако не намираш отговор, използвай формата за запитване по-долу.',
     });
 
-    const [faqList, setFaqList] = useState(DEFAULT_FAQS);
+    const [faqList, setFaqList] = useState(() => normalizeFaqSections(DEFAULT_FAQS));
     const { user } = useAuth();
     const { showToast } = useToastContext();
     const [ticket, setTicket] = useState({ subject: '', message: '' });
@@ -60,13 +110,13 @@ export default function FAQPage() {
             if (active && settings) {
                 setUi(prev => ({
                     faq_title: settings.faq_title || prev.faq_title,
-                    faq_description: settings.faq_description || prev.faq_description,
+                    faq_description: normalizeFaqDescription(settings.faq_description) || prev.faq_description,
                 }));
                 if (settings.faq_items) {
                     try {
                         const parsed = JSON.parse(settings.faq_items);
                         if (Array.isArray(parsed) && parsed.length > 0) {
-                            setFaqList(parsed);
+                            setFaqList(normalizeFaqSections(parsed));
                         }
                     } catch (err) {
                         console.error('Failed to parse dynamic FAQ items:', err);
@@ -87,7 +137,7 @@ export default function FAQPage() {
                         <HelpCircle className="w-8 h-8" />
                     </div>
                     <h1 className="text-3xl md:text-4xl font-bold mb-4">{ui.faq_title}</h1>
-                    <p className="text-[var(--text-secondary)] max-w-xl mx-auto">
+                    <p className="text-center text-[var(--text-secondary)] max-w-2xl mx-auto">
                         {ui.faq_description}
                     </p>
                 </div>
