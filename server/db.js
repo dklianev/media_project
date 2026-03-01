@@ -304,11 +304,11 @@ if (!hasColumn('subscription_plans', 'is_popular')) {
 }
 
 if (!hasColumn('subscription_plans', 'updated_at')) {
-  db.exec(`ALTER TABLE subscription_plans ADD COLUMN updated_at TEXT DEFAULT (datetime('now'))`);
+  db.exec(`ALTER TABLE subscription_plans ADD COLUMN updated_at TEXT`);
 }
 
 if (!hasColumn('promo_codes', 'updated_at')) {
-  db.exec(`ALTER TABLE promo_codes ADD COLUMN updated_at TEXT DEFAULT (datetime('now'))`);
+  db.exec(`ALTER TABLE promo_codes ADD COLUMN updated_at TEXT`);
 }
 
 if (!hasColumn('productions', 'genres')) {
