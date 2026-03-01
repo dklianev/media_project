@@ -123,7 +123,7 @@ export default function ProfilePage() {
                   <Sparkles className="w-3.5 h-3.5" />
                   {s.profile_badge_text || 'Публичен профил'}
                 </div>
-                <h2 className="text-3xl md:text-4xl font-bold mt-1 text-white">
+                <h2 className="text-3xl md:text-4xl font-bold mt-1 text-[var(--text-primary)]">
                   {user?.character_name || 'Без публично име'}
                 </h2>
                 <div className="flex items-center gap-2 mt-2 justify-center md:justify-start text-sm text-[var(--text-secondary)]">
@@ -172,9 +172,9 @@ export default function ProfilePage() {
               </div>
               <div>
                 <p className="text-xs uppercase tracking-[0.1em] text-[var(--text-muted)] mb-0.5 font-bold">{s.profile_stat_time || 'Гледано време'}</p>
-                <div className="text-xl font-bold tracking-tight text-white drop-shadow-sm">
-                  <span className="font-sans text-[var(--accent-gold-light)]">{Math.floor((stats.total_watch_seconds || 0) / 3600)}</span><span className="text-sm text-[var(--text-secondary)] ml-0.5 lowercase font-normal">ч</span>{' '}
-                  <span className="font-sans text-[var(--accent-gold-light)] ml-1">{Math.floor(((stats.total_watch_seconds || 0) % 3600) / 60)}</span><span className="text-sm text-[var(--text-secondary)] ml-0.5 lowercase font-normal">м</span>
+                <div className="text-xl font-bold tracking-tight text-[var(--text-primary)] drop-shadow-sm">
+                  <span className="font-sans text-[var(--accent-gold)]">{Math.floor((stats.total_watch_seconds || 0) / 3600)}</span><span className="text-sm text-[var(--text-secondary)] ml-0.5 lowercase font-normal">ч</span>{' '}
+                  <span className="font-sans text-[var(--accent-gold)] ml-1">{Math.floor(((stats.total_watch_seconds || 0) % 3600) / 60)}</span><span className="text-sm text-[var(--text-secondary)] ml-0.5 lowercase font-normal">м</span>
                 </div>
               </div>
             </motion.div>
@@ -201,7 +201,7 @@ export default function ProfilePage() {
               </div>
               <div>
                 <p className="text-xs uppercase tracking-[0.1em] text-[var(--text-muted)] mb-0.5 font-bold">{s.profile_member_since_label || 'Член от'}</p>
-                <h3 className="text-lg font-bold tracking-tight text-white drop-shadow-sm">{formatDate(user?.created_at)}</h3>
+                <h3 className="text-lg font-bold tracking-tight text-[var(--text-primary)] drop-shadow-sm">{formatDate(user?.created_at)}</h3>
               </div>
             </motion.div>
           </section>
@@ -212,11 +212,11 @@ export default function ProfilePage() {
       {stats?.recently_watched?.length > 0 && (
         <ScrollReveal variant="fadeUp" delay={0.25} className="mt-2">
           <div className="flex items-center justify-between mb-4 px-1">
-            <h2 className="text-xl font-semibold flex items-center gap-2 text-white">
+            <h2 className="text-xl font-semibold flex items-center gap-2 text-[var(--text-primary)]">
               <PlayCircle className="w-5 h-5 text-[var(--accent-cyan)]" />
               {s.profile_stat_recent || 'Последно гледани'}
             </h2>
-            <Link to="/productions" className="text-sm font-medium text-[var(--text-muted)] hover:text-white transition-colors">
+            <Link to="/productions" className="text-sm font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors">
               Виж всички &rarr;
             </Link>
           </div>
@@ -247,7 +247,7 @@ export default function ProfilePage() {
                 </div>
 
                 <div className="p-3 pt-1 min-w-0">
-                  <p className="text-[13px] font-semibold text-white truncate group-hover:text-[var(--accent-cyan)] transition-colors">
+                  <p className="text-[13px] font-semibold text-[var(--text-primary)] truncate group-hover:text-[var(--accent-cyan)] transition-colors">
                     {item.production_title}
                   </p>
                   <p className="text-[11px] text-[var(--text-secondary)] truncate mt-0.5">
@@ -266,7 +266,7 @@ export default function ProfilePage() {
           <div className="flex items-center justify-between mb-8 border-b border-[var(--border)]/50 pb-4">
             <div className="flex items-center gap-3">
               <ListVideo className="w-6 h-6 text-[var(--accent-gold)]" />
-              <h2 className="text-2xl font-semibold text-white">Моят Списък за гледане</h2>
+              <h2 className="text-2xl font-semibold text-[var(--text-primary)]">Моят Списък за гледане</h2>
             </div>
             <div className="px-3 py-1 rounded-full bg-[var(--bg-secondary)] border border-[var(--border)] text-xs font-semibold text-[var(--text-secondary)]">
               {watchlist.length} {watchlist.length === 1 ? 'Заглавие' : 'Заглавия'}
@@ -301,7 +301,7 @@ export default function ProfilePage() {
               </StaggerItem>
 
               <StaggerItem>
-                <h3 className="text-xl font-bold text-white mb-2 tracking-tight">Списъкът ти е празен</h3>
+                <h3 className="text-xl font-bold text-[var(--text-primary)] mb-2 tracking-tight">Списъкът ти е празен</h3>
               </StaggerItem>
 
               <StaggerItem>
