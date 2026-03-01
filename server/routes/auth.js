@@ -362,7 +362,7 @@ router.get('/me', requireAuth, (req, res) => {
 router.post('/refresh', (req, res) => {
   const refreshToken = getRefreshTokenFromCookies(req);
   if (!refreshToken) {
-    return res.status(400).json({ error: 'Липсва валидна сесия' });
+    return res.status(204).end();
   }
 
   const decoded = decodeRefreshToken(refreshToken);

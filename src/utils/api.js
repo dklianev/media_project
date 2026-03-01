@@ -21,11 +21,20 @@ export function clearTokens() {
   accessToken = null;
 }
 
-export async function refreshAccessToken() {
+export async function refreshAccessToken(options = {}) {
+  const { allowMissingSession = false } = options;
   const res = await fetch(`${API_BASE}/auth/refresh`, {
     method: 'POST',
     credentials: 'include',
   });
+
+  if (res.status === 204) {
+    clearTokens();
+    if (allowMissingSession) {
+      return null;
+    }
+    throw new Error('No active session');
+  }
 
   if (!res.ok) {
     clearTokens();
@@ -45,8 +54,8 @@ export async function refreshAccessToken() {
 export async function tryRestoreSession() {
   if (getTokens().access_token) return true;
   try {
-    await refreshAccessToken();
-    return true;
+    const token = await refreshAccessToken({ allowMissingSession: true });
+    return Boolean(token);
   } catch {
     return false;
   }
