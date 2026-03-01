@@ -17,19 +17,46 @@ import {
 } from 'lucide-react';
 import PageBackground from '../../components/PageBackground';
 
-const sidebarLinks = [
-  { to: '/admin', icon: LayoutDashboard, label: 'Табло', exact: true },
-  { to: '/admin/payments', icon: CreditCard, label: 'Плащания' },
-  { to: '/admin/users', icon: Users, label: 'Потребители' },
-  { to: '/admin/comments', icon: MessageSquare, label: 'Коментари' },
-  { to: '/admin/productions', icon: Film, label: 'Продукции' },
-  { to: '/admin/episodes', icon: Tv, label: 'Епизоди' },
-  { to: '/admin/plans', icon: Tags, label: 'Планове' },
-  { to: '/admin/promo-codes', icon: Ticket, label: 'Промо кодове' },
-  { to: '/admin/audit', icon: History, label: 'Одит лог' },
-  { to: '/admin/support', icon: Headphones, label: 'Запитвания' },
-  { to: '/admin/settings', icon: Settings, label: 'Настройки' },
+const linkGroups = [
+  {
+    title: 'Основно',
+    links: [
+      { to: '/admin', icon: LayoutDashboard, label: 'Табло', exact: true },
+    ]
+  },
+  {
+    title: 'Каталог',
+    links: [
+      { to: '/admin/productions', icon: Film, label: 'Продукции' },
+      { to: '/admin/episodes', icon: Tv, label: 'Епизоди' },
+    ]
+  },
+  {
+    title: 'Общност',
+    links: [
+      { to: '/admin/users', icon: Users, label: 'Потребители' },
+      { to: '/admin/comments', icon: MessageSquare, label: 'Коментари' },
+      { to: '/admin/support', icon: Headphones, label: 'Запитвания' },
+    ]
+  },
+  {
+    title: 'Монетизация',
+    links: [
+      { to: '/admin/plans', icon: Tags, label: 'Планове' },
+      { to: '/admin/promo-codes', icon: Ticket, label: 'Промо кодове' },
+      { to: '/admin/payments', icon: CreditCard, label: 'Плащания' },
+    ]
+  },
+  {
+    title: 'Система',
+    links: [
+      { to: '/admin/audit', icon: History, label: 'Одит лог' },
+      { to: '/admin/settings', icon: Settings, label: 'Настройки' },
+    ]
+  }
 ];
+
+const allLinks = linkGroups.flatMap(g => g.links);
 
 const ease = [0.16, 1, 0.3, 1];
 
@@ -68,51 +95,61 @@ export default function AdminLayout() {
             <p className="text-xs text-[var(--text-muted)] mt-1">Управление на съдържание и абонаменти</p>
           </div>
 
-          <nav className="hidden xl:flex flex-col gap-1.5">
-            {sidebarLinks.map((link, index) => {
-              const Icon = link.icon;
-              const active = isActive(link);
-              return (
-                <motion.div
-                  key={link.to}
-                  initial={{ opacity: 0, x: -12 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: 0.05 + index * 0.03, duration: 0.3, ease }}
-                >
-                  <Link
-                    to={link.to}
-                    className={`no-underline flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm font-semibold transition-all ${active
-                      ? 'border border-[var(--border-light)] bg-[linear-gradient(135deg,rgba(212,175,55,0.16),rgba(75,197,255,0.1))] text-[var(--text-primary)] shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]'
-                      : 'text-[var(--text-secondary)] border border-transparent hover:text-[var(--text-primary)] hover:bg-white/5 hover:translate-x-1'
-                      }`}
-                  >
-                    <Icon className="w-4 h-4" />
-                    {link.label}
-                  </Link>
-                </motion.div>
-              );
-            })}
+          <nav className="hidden xl:flex flex-col gap-5 mt-4">
+            {linkGroups.map((group, groupIdx) => (
+              <div key={group.title}>
+                <p className="text-[10px] uppercase tracking-widest text-[var(--text-muted)] mt-1 mb-2 px-3 font-semibold">{group.title}</p>
+                <div className="flex flex-col gap-1.5">
+                  {group.links.map((link, index) => {
+                    const Icon = link.icon;
+                    const active = isActive(link);
+                    return (
+                      <motion.div
+                        key={link.to}
+                        initial={{ opacity: 0, x: -12 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: 0.05 + index * 0.03, duration: 0.3, ease }}
+                      >
+                        <Link
+                          to={link.to}
+                          className={`no-underline flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-medium transition-all ${active
+                            ? 'border border-[var(--border-light)] bg-[linear-gradient(135deg,var(--accent-gold-light)_0%,var(--accent-gold)_100%)]/10 text-[var(--accent-gold-light)] shadow-sm'
+                            : 'text-[var(--text-secondary)] border border-transparent hover:text-[var(--text-primary)] hover:bg-white/5 hover:translate-x-1'
+                            }`}
+                        >
+                          <Icon className={`w-4 h-4 ${active ? 'text-[var(--accent-gold-light)]' : ''}`} />
+                          {link.label}
+                        </Link>
+                      </motion.div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
           </nav>
 
-          <nav className="xl:hidden mt-2 flex gap-2 overflow-x-auto pb-1">
-            {sidebarLinks.map((link) => {
-              const Icon = link.icon;
-              const active = isActive(link);
-              return (
-                <Link
-                  key={link.to}
-                  to={link.to}
-                  className={`no-underline inline-flex items-center gap-2 rounded-full px-3 py-2 text-xs font-semibold whitespace-nowrap ${active
-                    ? 'bg-[var(--accent-gold)]/18 text-[var(--accent-gold-light)] border border-[var(--accent-gold)]/38'
-                    : 'text-[var(--text-secondary)] border border-[var(--border)]'
-                    }`}
-                >
-                  <Icon className="w-3.5 h-3.5" />
-                  {link.label}
-                </Link>
-              );
-            })}
-          </nav>
+          <div className="xl:hidden mt-3 relative">
+            <div className="absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-[var(--bg-secondary)] to-transparent pointer-events-none z-10 rounded-r-2xl" />
+            <nav className="flex gap-2 overflow-x-auto pb-2 custom-scrollbar snap-x snap-mandatory pr-6">
+              {allLinks.map((link) => {
+                const Icon = link.icon;
+                const active = isActive(link);
+                return (
+                  <Link
+                    key={link.to}
+                    to={link.to}
+                    className={`snap-start no-underline inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-[13px] font-medium whitespace-nowrap transition-colors ${active
+                      ? 'bg-[var(--accent-gold)]/10 text-[var(--accent-gold-light)] border border-[var(--accent-gold)]/30'
+                      : 'bg-[var(--bg-tertiary)] text-[var(--text-secondary)] border border-[var(--border)] hover:text-[var(--text-primary)]'
+                      }`}
+                  >
+                    <Icon className={`w-3.5 h-3.5 ${active ? 'text-[var(--accent-gold)]' : 'text-[var(--text-muted)]'}`} />
+                    {link.label}
+                  </Link>
+                );
+              })}
+            </nav>
+          </div>
         </motion.aside>
 
         <main className="min-w-0">
