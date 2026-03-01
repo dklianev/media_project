@@ -98,6 +98,24 @@ function createPlan(overrides = {}) {
   return db.prepare('SELECT * FROM subscription_plans WHERE id = ?').get(result.lastInsertRowid);
 }
 
+function createPromoCode(overrides = {}) {
+  const result = db.prepare(`
+    INSERT INTO promo_codes (
+      code, discount_percent, is_active, uses_count, max_uses, expires_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(
+    overrides.code || `PROMO${userCounter}`,
+    overrides.discount_percent ?? 10,
+    overrides.is_active ?? 1,
+    overrides.uses_count ?? 0,
+    overrides.max_uses ?? null,
+    overrides.expires_at ?? null
+  );
+
+  return db.prepare('SELECT * FROM promo_codes WHERE id = ?').get(result.lastInsertRowid);
+}
+
 function parseDbTimestamp(value) {
   const raw = String(value || '').trim();
   if (!raw) return null;
@@ -172,6 +190,21 @@ async function apiRequest(path, { method = 'GET', token, body } = {}) {
   } catch {}
 
   return { response, data };
+}
+
+async function apiTextRequest(path, { method = 'GET', token, body } = {}) {
+  const headers = {};
+  if (token) headers.Authorization = `Bearer ${token}`;
+  if (body !== undefined) headers['Content-Type'] = 'application/json';
+
+  const response = await fetch(`${baseUrl}${path}`, {
+    method,
+    headers,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+
+  const text = await response.text();
+  return { response, text };
 }
 
 function resetDatabase() {
@@ -1100,4 +1133,138 @@ test('admin може да променя active статуса на епизод
   assert.equal(audit.action, 'episode.status_update');
   assert.equal(audit.entity_type, 'episode');
   assert.equal(Number(audit.entity_id), Number(episode.id));
+});
+
+test('admin може да променя active статуса на план без schema грешка', async () => {
+  const admin = createUser({ role: 'admin', character_name: 'Plan Status Admin' });
+  const adminToken = createAccessToken(admin);
+  const plan = createPlan({ name: 'Status Plan', is_active: 1 });
+
+  const disabled = await apiRequest(`/api/plans/admin/${plan.id}/status`, {
+    method: 'PUT',
+    token: adminToken,
+    body: { is_active: false },
+  });
+  assert.equal(disabled.response.status, 200);
+  assert.equal(disabled.data?.is_active, 0);
+
+  const stored = db.prepare('SELECT is_active, updated_at FROM subscription_plans WHERE id = ?').get(plan.id);
+  assert.equal(stored.is_active, 0);
+  assert.equal(typeof stored.updated_at, 'string');
+});
+
+test('admin може да променя active статуса на промо код без schema грешка', async () => {
+  const admin = createUser({ role: 'admin', character_name: 'Promo Status Admin' });
+  const adminToken = createAccessToken(admin);
+  const promo = createPromoCode({ code: 'STATUS24', is_active: 1 });
+
+  const disabled = await apiRequest(`/api/admin/promo-codes/${promo.id}/status`, {
+    method: 'PUT',
+    token: adminToken,
+    body: { is_active: false },
+  });
+  assert.equal(disabled.response.status, 200);
+  assert.equal(disabled.data?.is_active, 0);
+
+  const stored = db.prepare('SELECT is_active, updated_at FROM promo_codes WHERE id = ?').get(promo.id);
+  assert.equal(stored.is_active, 0);
+  assert.equal(typeof stored.updated_at, 'string');
+});
+
+test('stale pending promo reservations се освобождават след 24 часа', async () => {
+  const user = createUser({ character_name: 'Promo TTL User' });
+  const userToken = createAccessToken(user);
+  const plan = createPlan({ name: 'Promo TTL Plan', price: 99 });
+  const promo = createPromoCode({ code: 'TTL24', discount_percent: 15, max_uses: 1 });
+  const staleCreatedAt = new Date(Date.now() - 25 * 60 * 60 * 1000)
+    .toISOString()
+    .slice(0, 19)
+    .replace('T', ' ');
+
+  const stalePayment = db.prepare(`
+    INSERT INTO payment_references (
+      user_id, plan_id, reference_code, original_price, discount_percent, final_price,
+      promo_code_id, status, created_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?)
+  `).run(
+    user.id,
+    plan.id,
+    'SUB-TTL-OLD',
+    99,
+    15,
+    84.15,
+    promo.id,
+    staleCreatedAt
+  );
+
+  const validation = await apiRequest('/api/promo/validate', {
+    method: 'POST',
+    token: userToken,
+    body: { code: promo.code },
+  });
+  assert.equal(validation.response.status, 200);
+  assert.equal(validation.data?.valid, true);
+  assert.equal(validation.data?.discount_percent, 15);
+
+  const payment = db.prepare('SELECT status, cancelled_reason FROM payment_references WHERE id = ?')
+    .get(stalePayment.lastInsertRowid);
+  assert.equal(payment.status, 'cancelled');
+  assert.match(payment.cancelled_reason, /24 часа/);
+});
+
+test('reactions не допускат достъп до непубликуван епизод', async () => {
+  const viewer = createUser({ character_name: 'Reaction Viewer' });
+  const viewerToken = createAccessToken(viewer);
+  const production = createProduction({
+    title: 'Scheduled Reactions Production',
+    slug: 'scheduled-reactions-production',
+    access_group: 'free',
+    is_active: 1,
+  });
+  const episode = createEpisode({
+    production_id: production.id,
+    title: 'Scheduled Reaction Episode',
+    access_group: 'free',
+    is_active: 1,
+  });
+  db.prepare('UPDATE episodes SET published_at = ? WHERE id = ?').run('2099-01-01 12:00:00', episode.id);
+
+  const reaction = await apiRequest(`/api/episodes/${episode.id}/react`, {
+    method: 'POST',
+    token: viewerToken,
+    body: { reaction_type: 'like' },
+  });
+  assert.equal(reaction.response.status, 404);
+
+  const count = db.prepare('SELECT COUNT(*) as count FROM reactions WHERE episode_id = ?').get(episode.id).count;
+  assert.equal(count, 0);
+});
+
+test('support status update връща 404 за липсващ ticket', async () => {
+  const admin = createUser({ role: 'admin', character_name: 'Support Admin' });
+  const adminToken = createAccessToken(admin);
+
+  const response = await apiRequest('/api/support/admin/999/status', {
+    method: 'PUT',
+    token: adminToken,
+    body: { status: 'closed' },
+  });
+  assert.equal(response.response.status, 404);
+});
+
+test('CSV export не оставя spreadsheet formulas изпълними', async () => {
+  const admin = createUser({ role: 'admin', character_name: 'Export Admin' });
+  const adminToken = createAccessToken(admin);
+  createUser({
+    character_name: '=2+5',
+    discord_username: 'formula_user',
+  });
+
+  const exported = await apiTextRequest('/api/admin/export/users', {
+    method: 'GET',
+    token: adminToken,
+  });
+  assert.equal(exported.response.status, 200);
+  assert.match(exported.text, /'=2\+5/);
 });

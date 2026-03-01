@@ -235,7 +235,8 @@ router.put('/admin/:id', requireAdmin, (req, res) => {
   db.prepare(`
     UPDATE subscription_plans SET
       name = ?, description = ?, price = ?, tier_level = ?,
-      duration_days = ?, features = ?, sort_order = ?, is_active = ?, is_popular = ?
+      duration_days = ?, features = ?, sort_order = ?, is_active = ?, is_popular = ?,
+      updated_at = datetime('now')
     WHERE id = ?
   `).run(
     payload.name ?? existing.name,
@@ -309,8 +310,10 @@ router.put('/admin/:id/reorder', requireAdmin, (req, res) => {
   }
 
   const swap = db.transaction(() => {
-    db.prepare('UPDATE subscription_plans SET sort_order = ? WHERE id = ?').run(target.sort_order, current.id);
-    db.prepare('UPDATE subscription_plans SET sort_order = ? WHERE id = ?').run(current.sort_order, target.id);
+    db.prepare('UPDATE subscription_plans SET sort_order = ?, updated_at = datetime(\'now\') WHERE id = ?')
+      .run(target.sort_order, current.id);
+    db.prepare('UPDATE subscription_plans SET sort_order = ?, updated_at = datetime(\'now\') WHERE id = ?')
+      .run(current.sort_order, target.id);
   });
   swap();
 

@@ -7,7 +7,8 @@ const router = Router();
 
 function escapeCsv(value) {
   if (value === null || value === undefined) return '';
-  const str = String(value);
+  const raw = String(value);
+  const str = /^[=+\-@]/.test(raw.trimStart()) ? `'${raw}` : raw;
   if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes('\r')) {
     return `"${str.replace(/"/g, '""')}"`;
   }

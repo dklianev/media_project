@@ -40,7 +40,8 @@ db.exec(`
     features TEXT,
     is_active INTEGER DEFAULT 1,
     sort_order INTEGER DEFAULT 0,
-    created_at TEXT DEFAULT (datetime('now'))
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
   );
 
   CREATE TABLE IF NOT EXISTS promo_codes (
@@ -51,7 +52,8 @@ db.exec(`
     uses_count INTEGER DEFAULT 0,
     max_uses INTEGER,
     expires_at TEXT,
-    created_at TEXT DEFAULT (datetime('now'))
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
   );
 
   CREATE TABLE IF NOT EXISTS productions (
@@ -288,9 +290,27 @@ if (!hasColumn('subscription_plans', 'is_popular')) {
   db.exec(`ALTER TABLE subscription_plans ADD COLUMN is_popular INTEGER DEFAULT 0`);
 }
 
+if (!hasColumn('subscription_plans', 'updated_at')) {
+  db.exec(`ALTER TABLE subscription_plans ADD COLUMN updated_at TEXT DEFAULT (datetime('now'))`);
+}
+
+if (!hasColumn('promo_codes', 'updated_at')) {
+  db.exec(`ALTER TABLE promo_codes ADD COLUMN updated_at TEXT DEFAULT (datetime('now'))`);
+}
+
 if (!hasColumn('productions', 'genres')) {
   db.exec(`ALTER TABLE productions ADD COLUMN genres TEXT DEFAULT '[]'`);
 }
+
+db.exec(`
+  UPDATE subscription_plans
+  SET updated_at = COALESCE(updated_at, created_at, datetime('now'))
+`);
+
+db.exec(`
+  UPDATE promo_codes
+  SET updated_at = COALESCE(updated_at, created_at, datetime('now'))
+`);
 
 // Legacy rows created before access groups were configured correctly may end up
 // as "subscription" with tier 0, which breaks catalog filtering and labels.

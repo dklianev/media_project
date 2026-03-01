@@ -17,6 +17,8 @@ const PAYMENT_SORT_MAP = {
   plan_name: 'sp.name',
 };
 const DATE_ONLY_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+const PENDING_PAYMENT_TTL_HOURS = 24;
+const PENDING_PAYMENT_EXPIRE_REASON = `Автоматично анулирано след ${PENDING_PAYMENT_TTL_HOURS} часа без потвърждение`;
 
 const subscribeLimiter = rateLimit({
   windowMs: 60_000,
@@ -42,6 +44,25 @@ function generateReferenceCode(planName) {
   return `SUB-${prefix}-${random}`;
 }
 
+function getPendingPaymentCutoffDbTimestamp(now = new Date()) {
+  return new Date(now.getTime() - PENDING_PAYMENT_TTL_HOURS * 60 * 60 * 1000)
+    .toISOString()
+    .slice(0, 19)
+    .replace('T', ' ');
+}
+
+function cleanupExpiredPendingPayments() {
+  const cutoff = getPendingPaymentCutoffDbTimestamp();
+  db.prepare(`
+    UPDATE payment_references
+    SET status = 'cancelled',
+        cancelled_at = COALESCE(cancelled_at, datetime('now')),
+        cancelled_reason = COALESCE(NULLIF(cancelled_reason, ''), ?)
+    WHERE status = 'pending'
+      AND replace(replace(created_at, 'T', ' '), 'Z', '') <= ?
+  `).run(PENDING_PAYMENT_EXPIRE_REASON, cutoff);
+}
+
 function getValidatedPromo(code) {
   if (!code) {
     return { error: 'Моля въведете промо код', status: 400 };
@@ -60,12 +81,14 @@ function getValidatedPromo(code) {
   }
 
   if (promo.max_uses) {
+    const cutoff = getPendingPaymentCutoffDbTimestamp();
     const pendingReservations = db.prepare(`
       SELECT COUNT(*) as count
       FROM payment_references
       WHERE promo_code_id = ?
         AND status = 'pending'
-    `).get(promo.id)?.count || 0;
+        AND replace(replace(created_at, 'T', ' '), 'Z', '') > ?
+    `).get(promo.id, cutoff)?.count || 0;
 
     if (promo.uses_count + pendingReservations >= promo.max_uses) {
       return { error: 'Промо кодът е изчерпан', status: 400 };
@@ -89,6 +112,11 @@ function addDaysIsoDate(dateOnly, days) {
   parsed.setUTCDate(parsed.getUTCDate() + days);
   return parsed.toISOString().slice(0, 10);
 }
+
+router.use((req, res, next) => {
+  cleanupExpiredPendingPayments();
+  next();
+});
 
 function listPayments(req, res) {
   const { page, pageSize, offset } = parsePagination(req.query, { defaultPageSize: 20, maxPageSize: 100 });

@@ -204,7 +204,7 @@ router.put('/:id', requireAdmin, (req, res) => {
     db.prepare(`
       UPDATE promo_codes SET
         code = ?, discount_percent = ?, max_uses = ?,
-        expires_at = ?, is_active = ?
+        expires_at = ?, is_active = ?, updated_at = datetime('now')
       WHERE id = ?
     `).run(
       updates.code ?? existing.code,

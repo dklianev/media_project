@@ -2,9 +2,9 @@ import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import db from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
+import { getCurrentSofiaDbTimestamp } from '../utils/sofiaTime.js';
 import {
-  normalizeEpisodeGroup, normalizeProductionGroup, resolveProductionGroup,
-  hasGroupAccess, resolveEffectiveGroup, isUserAdmin,
+  normalizeEpisodeGroup, resolveProductionGroup, hasGroupAccess,
 } from '../utils/access.js';
 
 const router = Router();
@@ -20,6 +20,12 @@ const reactionLimiter = rateLimit({
 const VALID_REACTIONS = ['like', 'love', 'haha', 'wow', 'sad', 'angry'];
 
 function validateEpisodeAccess(episodeId, user) {
+  const isAdmin = user.role === 'admin' || user.role === 'superadmin';
+  const currentTimestamp = getCurrentSofiaDbTimestamp();
+  const visibleFilter = isAdmin
+    ? ''
+    : 'AND (e.published_at IS NULL OR e.published_at <= ?)';
+
   const episode = db.prepare(`
     SELECT e.id,
            e.access_group as episode_access_group,
@@ -30,14 +36,14 @@ function validateEpisodeAccess(episodeId, user) {
     WHERE e.id = ?
       AND e.is_active = 1
       AND p.is_active = 1
-  `).get(episodeId);
+      ${visibleFilter}
+  `).get(...(isAdmin ? [episodeId] : [episodeId, currentTimestamp]));
 
   if (!episode) {
     return { ok: false, status: 404, error: 'Епизодът не е намерен' };
   }
 
   const userTier = user.tier_level || 0;
-  const isAdmin = user.role === 'admin' || user.role === 'superadmin';
   const productionGroup = resolveProductionGroup(episode.production_access_group, episode.required_tier);
   const episodeGroup = normalizeEpisodeGroup(episode.episode_access_group);
   const effectiveGroup = episodeGroup === 'inherit' ? productionGroup : episodeGroup;

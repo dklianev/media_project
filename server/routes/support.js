@@ -99,6 +99,11 @@ router.put('/admin/:id/status', requireAdmin, (req, res) => {
     }
 
     try {
+        const ticket = db.prepare('SELECT id, status FROM support_tickets WHERE id = ?').get(req.params.id);
+        if (!ticket) {
+            return res.status(404).json({ error: 'Запитването не е намерено' });
+        }
+
         const stmt = db.prepare('UPDATE support_tickets SET status = ? WHERE id = ?');
         stmt.run(status, req.params.id);
 
@@ -106,7 +111,10 @@ router.put('/admin/:id/status', requireAdmin, (req, res) => {
             action: 'support_ticket.update',
             entity_type: 'support_ticket',
             entity_id: req.params.id,
-            metadata: { new_status: status }
+            metadata: {
+                previous_status: ticket.status,
+                new_status: status,
+            }
         });
 
         res.json({ success: true });
