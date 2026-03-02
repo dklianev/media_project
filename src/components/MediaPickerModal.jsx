@@ -60,7 +60,7 @@ export default function MediaPickerModal({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 10, scale: 0.99 }}
             transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-            className="mx-auto flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-[24px] border border-[var(--border-light)] bg-[var(--bg-primary)] shadow-[0_24px_80px_rgba(0,0,0,0.45)]"
+            className="mx-auto flex max-h-[92vh] w-full max-w-[calc(100%-1rem)] sm:max-w-6xl flex-col overflow-hidden rounded-[24px] border border-[var(--border-light)] bg-[var(--bg-primary)] shadow-[0_24px_80px_rgba(0,0,0,0.45)]"
           >
             <div className="flex items-start justify-between gap-4 border-b border-white/8 px-5 py-4 sm:px-6">
               <div>

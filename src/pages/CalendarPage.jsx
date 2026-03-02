@@ -30,7 +30,7 @@ export default function CalendarPage() {
                     calendar_empty: settings.calendar_empty || prev.calendar_empty,
                 }));
             }
-        }).catch(() => { });
+        }).catch((err) => { console.error('Calendar settings load failed:', err); });
         api.get('/episodes/calendar')
             .then(data => {
                 if (active) {

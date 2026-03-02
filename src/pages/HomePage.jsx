@@ -45,8 +45,8 @@ export default function HomePage() {
         const [prods, latest, history, wlIds, publicSettings] = await Promise.all([
           api.get('/productions'),
           api.get('/episodes/latest?limit=12'),
-          api.get('/watch-history?limit=8').catch(() => []),
-          api.get('/watchlist').catch(() => []),
+          api.get('/watch-history?limit=8').catch((err) => { console.error('Watch history:', err); return []; }),
+          api.get('/watchlist').catch((err) => { console.error('Watchlist:', err); return []; }),
           getPublicSettings(),
         ]);
         if (!active) return;

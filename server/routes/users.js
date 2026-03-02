@@ -1,10 +1,20 @@
 import { Router } from 'express';
+import rateLimit from 'express-rate-limit';
 import db from '../db.js';
 import { requireAdmin, requireSuperAdmin } from '../middleware/auth.js';
 import { buildPageResult, parsePagination, parseSort, toInt } from '../utils/pagination.js';
 import { logAdminAction } from '../utils/audit.js';
 
 const router = Router();
+
+const adminMutationLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 30,
+  keyGenerator: (req) => `admin-mutation-${req.user?.id || 'anon'}`,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Твърде много административни заявки. Опитай отново след малко.' },
+});
 const USER_ROLES = ['user', 'admin', 'superadmin', 'banned'];
 const USER_SORT_MAP = {
   created_at: 'u.created_at',
@@ -89,7 +99,7 @@ router.get('/', requireAdmin, (req, res) => {
   );
 });
 
-router.put('/:id/subscription', requireAdmin, (req, res) => {
+router.put('/:id/subscription', requireAdmin, adminMutationLimiter, (req, res) => {
   const { plan_id, expires_at } = req.body;
 
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
@@ -167,7 +177,7 @@ router.put('/:id/subscription', requireAdmin, (req, res) => {
   res.json(updated);
 });
 
-router.put('/:id/role', requireSuperAdmin, (req, res) => {
+router.put('/:id/role', requireSuperAdmin, adminMutationLimiter, (req, res) => {
   const { role } = req.body;
 
   if (!['user', 'admin', 'superadmin'].includes(role)) {

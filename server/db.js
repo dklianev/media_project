@@ -410,6 +410,10 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_notifications_user_unread ON notifications(user_id, is_read, created_at DESC);
   CREATE INDEX IF NOT EXISTS idx_media_assets_created ON media_assets(created_at DESC, id DESC);
   CREATE INDEX IF NOT EXISTS idx_media_assets_created_by ON media_assets(created_by, created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_users_discord_id ON users(discord_id);
+  CREATE INDEX IF NOT EXISTS idx_productions_slug ON productions(slug);
+  CREATE INDEX IF NOT EXISTS idx_promo_codes_code ON promo_codes(code, is_active);
+  CREATE INDEX IF NOT EXISTS idx_support_tickets_user ON support_tickets(user_id, created_at DESC);
   `);
 
 db.exec(`

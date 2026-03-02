@@ -205,6 +205,9 @@ export default function App() {
     <ErrorBoundary>
       <ToastProvider>
         <UploadActivityProvider>
+          <a href="#main-content" className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[9999] focus:px-4 focus:py-2 focus:bg-[var(--accent-gold)] focus:text-black focus:rounded-lg focus:text-sm focus:font-semibold">
+            Към основното съдържание
+          </a>
           {!hideChrome && user && (
             <div ref={chromeRef}>
               <AnnouncementBanner />
@@ -213,7 +216,7 @@ export default function App() {
           )}
           {!hideChrome && user && <ScrollToTop />}
 
-          <main className="flex-1 film-grain">
+          <main id="main-content" className="flex-1 film-grain">
             <Suspense fallback={<PageLoader />}>
               <AnimatePresence mode="wait">
                 <Routes location={location} key={location.pathname}>

@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, lazy, Suspense } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MessageSquare, Send, Trash2, User, Smile } from 'lucide-react';
-import EmojiPicker, { EmojiStyle, Theme } from 'emoji-picker-react';
+
+const LazyEmojiPicker = lazy(() => import('emoji-picker-react'));
 import { api } from '../utils/api';
 import { useAuth } from '../context/AuthContext';
 import { useToastContext } from '../context/ToastContext';
@@ -33,7 +34,7 @@ export default function CommentsSection({ episodeId }) {
                     comments_empty: settings.comments_empty || prev.comments_empty,
                 }));
             }
-        }).catch(() => { });
+        }).catch((err) => { console.error('Comments settings load failed:', err); });
         api.get(`/comments/episode/${episodeId}`)
             .then(data => {
                 if (active) {
@@ -146,14 +147,16 @@ export default function CommentsSection({ episodeId }) {
                                 exit={{ opacity: 0, scale: 0.95 }}
                                 className="absolute left-0 bottom-full mb-2 z-50"
                             >
-                                <EmojiPicker
-                                    theme={Theme.DARK}
-                                    emojiStyle={EmojiStyle.NATIVE}
-                                    onEmojiClick={(emojiData) => {
-                                        setNewComment(prev => prev + emojiData.emoji);
-                                    }}
-                                    lazyLoadEmojis={true}
-                                />
+                                <Suspense fallback={<div className="p-4 text-sm text-[var(--text-muted)]">Зареждане...</div>}>
+                                    <LazyEmojiPicker
+                                        theme="dark"
+                                        emojiStyle="native"
+                                        onEmojiClick={(emojiData) => {
+                                            setNewComment(prev => prev + emojiData.emoji);
+                                        }}
+                                        lazyLoadEmojis={true}
+                                    />
+                                </Suspense>
                             </motion.div>
                         )}
                     </AnimatePresence>
@@ -177,7 +180,7 @@ export default function CommentsSection({ episodeId }) {
                                             src={comment.discord_avatar}
                                             alt="avatar"
                                             className="w-full h-full object-cover"
-                                            onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'block'; }}
+                                            onError={(e) => { e.target.style.display = 'none'; if (e.target.nextSibling) e.target.nextSibling.style.display = 'block'; }}
                                         />
                                     ) : null}
                                     <User className="w-5 h-5 text-[var(--text-muted)]" style={{ display: comment.discord_avatar ? 'none' : 'block' }} />

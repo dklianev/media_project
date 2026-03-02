@@ -46,8 +46,8 @@ const AUTH_RATE_LIMIT_MAX = Number(process.env.AUTH_RATE_LIMIT_MAX || 40);
 const JSON_LIMIT = process.env.JSON_LIMIT || '1mb';
 const MAX_FILE_SIZE_MB = Number(process.env.UPLOAD_MAX_FILE_SIZE_MB || 10);
 const TRUST_PROXY_ENV = String(process.env.TRUST_PROXY ?? '1').trim().toLowerCase();
-const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me';
 const IS_PROD = process.env.NODE_ENV === 'production';
+const JWT_SECRET = process.env.JWT_SECRET || (IS_PROD ? undefined : 'dev-secret-change-me');
 const EXTRA_CSP_IMG_SRC = String(process.env.CSP_IMG_SRC_EXTRA || '')
   .split(',')
   .map((value) => value.trim())
@@ -197,6 +197,11 @@ export function createApp() {
       error: 'Платформата е в режим на поддръжка. Моля, опитайте по-късно.',
       maintenance: true,
     });
+  });
+
+  // ─── Health check ───
+  app.get('/api/health', (req, res) => {
+    res.json({ status: 'ok', uptime: Math.floor(process.uptime()) });
   });
 
   // ─── API Routes ───

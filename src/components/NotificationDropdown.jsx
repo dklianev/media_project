@@ -32,7 +32,7 @@ export default function NotificationDropdown() {
                     notifications_view: settings.notifications_view || prev.notifications_view,
                 }));
             }
-        }).catch(() => { });
+        }).catch((err) => { console.error('Notification settings load failed:', err); });
         return () => { active = false; };
     }, []);
 

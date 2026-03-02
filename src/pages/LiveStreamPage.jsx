@@ -89,10 +89,10 @@ export default function LiveStreamPage() {
     useEffect(() => {
         if (!isLive || platform !== 'twitch' || !normalizedChannel) return;
         if (!twitchParentQuery) {
-            console.warn('[Twitch Embed] Missing valid parent hostname. Configure a valid domain.');
+            if (import.meta.env.DEV) console.warn('[Twitch Embed] Missing valid parent hostname. Configure a valid domain.');
             return;
         }
-        console.info('[Twitch Embed] parent values:', twitchParents.join(', '));
+        if (import.meta.env.DEV) console.info('[Twitch Embed] parent values:', twitchParents.join(', '));
     }, [isLive, normalizedChannel, platform, twitchParentQuery, twitchParents]);
 
     if (loading) {

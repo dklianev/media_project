@@ -53,7 +53,7 @@ export default function AnnouncementBanner() {
           if (sessionStorage.getItem(key) === '1') return;
           setBanner({ text, type, dismissKey: key });
         })
-        .catch(() => {});
+        .catch((err) => { console.error('Announcement settings load failed:', err); });
     };
 
     loadBanner();

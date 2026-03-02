@@ -223,25 +223,19 @@ router.put('/admin/:id/status', requireAdmin, (req, res) => {
   }
 
   const moderationReason = String(req.body?.reason || '').trim() || null;
-  const deletedAt = nextStatus === 'deleted' ? "datetime('now')" : 'NULL';
-  const deletedBy = nextStatus === 'deleted' ? '?' : 'NULL';
+  const isDeleted = nextStatus === 'deleted';
 
-  const query = `
+  db.prepare(`
       UPDATE comments
       SET status = ?,
           moderation_reason = ?,
           moderated_at = datetime('now'),
           moderated_by = ?,
-          deleted_at = ${deletedAt},
-          deleted_by = ${deletedBy},
+          deleted_at = CASE WHEN ? THEN datetime('now') ELSE NULL END,
+          deleted_by = CASE WHEN ? THEN ? ELSE NULL END,
           updated_at = datetime('now')
       WHERE id = ?
-    `;
-  const queryParams = nextStatus === 'deleted'
-    ? [nextStatus, moderationReason, req.user.id, req.user.id, req.params.id]
-    : [nextStatus, moderationReason, req.user.id, req.params.id];
-
-  db.prepare(query).run(...queryParams);
+    `).run(nextStatus, moderationReason, req.user.id, isDeleted ? 1 : 0, isDeleted ? 1 : 0, isDeleted ? req.user.id : null, req.params.id);
 
   const updated = getCommentById(req.params.id);
   logAdminAction(req, {

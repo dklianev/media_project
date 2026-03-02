@@ -248,7 +248,7 @@ export default function Navbar() {
             }))
           );
         })
-        .catch(() => { });
+        .catch((err) => { console.error('Navbar settings load failed:', err); });
     };
 
     loadSettings();
@@ -296,7 +296,7 @@ export default function Navbar() {
               {ui.siteLogo ? (
                 <motion.img
                   src={ui.siteLogo}
-                  alt=""
+                  alt={ui.siteName || 'Лого на платформата'}
                   className="w-10 h-10 rounded-xl object-cover shadow-lg shadow-[var(--accent-gold)]/25"
                   whileHover={{ scale: 1.08 }}
                   transition={{ type: 'spring', stiffness: 400, damping: 15 }}

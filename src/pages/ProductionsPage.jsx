@@ -38,7 +38,7 @@ export default function ProductionsPage() {
         let active = true;
         Promise.all([
             api.get('/productions'),
-            api.get('/watchlist').catch(() => []),
+            api.get('/watchlist').catch((err) => { console.error('Watchlist load failed:', err); return []; }),
             getPublicSettings(),
             getAccessLabels(),
         ])

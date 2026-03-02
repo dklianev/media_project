@@ -227,45 +227,55 @@ router.post('/subscribe', requireAuth, subscribeLimiter, (req, res) => {
   `).get(planId);
   if (!plan) return res.status(404).json({ error: 'Планът не е намерен' });
 
-  let discountPercent = 0;
-  let promoCodeId = null;
+  // Wrap promo validation + insert in a transaction to prevent race conditions
+  const createSubscription = db.transaction(() => {
+    let discountPercent = 0;
+    let promoCodeId = null;
 
-  if (promoCodeRaw) {
-    const validation = getValidatedPromo(promoCodeRaw);
-    if (validation.error) {
-      return res.status(validation.status).json({ error: validation.error });
-    }
-    discountPercent = validation.promo.discount_percent;
-    promoCodeId = validation.promo.id;
-  }
-
-  const originalPrice = Number(plan.price || 0);
-  const finalPrice = Math.round(originalPrice * (1 - discountPercent / 100) * 100) / 100;
-
-  const insertRef = db.prepare(`
-    INSERT INTO payment_references
-      (user_id, plan_id, reference_code, original_price, discount_percent, final_price, promo_code_id)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `);
-
-  let referenceCode;
-  let inserted = false;
-  for (let attempt = 0; attempt < 15; attempt++) {
-    referenceCode = generateReferenceCode(plan.name);
-    try {
-      insertRef.run(req.user.id, plan.id, referenceCode, originalPrice, discountPercent, finalPrice, promoCodeId);
-      inserted = true;
-      break;
-    } catch (err) {
-      if (err.code === 'SQLITE_CONSTRAINT_UNIQUE' || err.message?.includes('UNIQUE')) {
-        continue;
+    if (promoCodeRaw) {
+      const validation = getValidatedPromo(promoCodeRaw);
+      if (validation.error) {
+        return { error: validation.error, status: validation.status };
       }
-      throw err;
+      discountPercent = validation.promo.discount_percent;
+      promoCodeId = validation.promo.id;
     }
-  }
 
-  if (!inserted) {
-    return res.status(500).json({ error: 'Не можахме да генерираме уникален код. Опитай отново.' });
+    const originalPrice = Number(plan.price || 0);
+    const finalPrice = Math.round(originalPrice * (1 - discountPercent / 100) * 100) / 100;
+
+    const insertRef = db.prepare(`
+      INSERT INTO payment_references
+        (user_id, plan_id, reference_code, original_price, discount_percent, final_price, promo_code_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    let referenceCode;
+    let inserted = false;
+    for (let attempt = 0; attempt < 15; attempt++) {
+      referenceCode = generateReferenceCode(plan.name);
+      try {
+        insertRef.run(req.user.id, plan.id, referenceCode, originalPrice, discountPercent, finalPrice, promoCodeId);
+        inserted = true;
+        break;
+      } catch (err) {
+        if (err.code === 'SQLITE_CONSTRAINT_UNIQUE' || err.message?.includes('UNIQUE')) {
+          continue;
+        }
+        throw err;
+      }
+    }
+
+    if (!inserted) {
+      return { error: 'Не можахме да генерираме уникален код. Опитай отново.', status: 500 };
+    }
+
+    return { referenceCode, originalPrice, discountPercent, finalPrice };
+  });
+
+  const txResult = createSubscription();
+  if (txResult.error) {
+    return res.status(txResult.status).json({ error: txResult.error });
   }
 
   const iban = db.prepare("SELECT value FROM site_settings WHERE key = 'iban'").get()?.value || '';
@@ -273,11 +283,11 @@ router.post('/subscribe', requireAuth, subscribeLimiter, (req, res) => {
     db.prepare("SELECT value FROM site_settings WHERE key = 'payment_info'").get()?.value || '';
 
   res.status(201).json({
-    reference_code: referenceCode,
+    reference_code: txResult.referenceCode,
     plan_name: plan.name,
-    original_price: originalPrice,
-    discount_percent: discountPercent,
-    final_price: finalPrice,
+    original_price: txResult.originalPrice,
+    discount_percent: txResult.discountPercent,
+    final_price: txResult.finalPrice,
     iban,
     payment_info: paymentInfo,
   });
@@ -297,27 +307,39 @@ router.get('/my-payments', requireAuth, (req, res) => {
 
 router.put('/my-payments/:id/cancel', requireAuth, (req, res) => {
   const { reason } = req.body || {};
-  const payment = db.prepare(`
-    SELECT id, status, user_id
-    FROM payment_references
-    WHERE id = ?
-  `).get(req.params.id);
 
-  if (!payment || payment.user_id !== req.user.id) {
-    return res.status(404).json({ error: 'Плащането не е намерено' });
+  const cancelPayment = db.transaction(() => {
+    const payment = db.prepare(`
+      SELECT id, status, user_id
+      FROM payment_references
+      WHERE id = ?
+    `).get(req.params.id);
+
+    if (!payment || payment.user_id !== req.user.id) {
+      return { error: 'Плащането не е намерено', status: 404 };
+    }
+    if (payment.status !== 'pending') {
+      return { error: 'Могат да се анулират само чакащи плащания', status: 400 };
+    }
+
+    const result = db.prepare(`
+      UPDATE payment_references
+      SET status = 'cancelled',
+          cancelled_at = datetime('now'),
+          cancelled_reason = ?
+      WHERE id = ? AND status = 'pending'
+    `).run(reason ? String(reason).slice(0, 300) : null, payment.id);
+
+    if (result.changes === 0) {
+      return { error: 'Плащането вече е обработено', status: 409 };
+    }
+    return { success: true };
+  });
+
+  const result = cancelPayment();
+  if (result.error) {
+    return res.status(result.status).json({ error: result.error });
   }
-  if (payment.status !== 'pending') {
-    return res.status(400).json({ error: 'Могат да се анулират само чакащи плащания' });
-  }
-
-  db.prepare(`
-    UPDATE payment_references
-    SET status = 'cancelled',
-        cancelled_at = datetime('now'),
-        cancelled_reason = ?
-    WHERE id = ?
-  `).run(reason ? String(reason).slice(0, 300) : null, payment.id);
-
   res.json({ success: true, message: 'Плащането е анулирано' });
 });
 

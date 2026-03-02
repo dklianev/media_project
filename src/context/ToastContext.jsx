@@ -56,7 +56,7 @@ export function ToastProvider({ children }) {
     return (
         <ToastContext.Provider value={{ showToast }}>
             {children}
-            <div className="fixed right-4 bottom-4 z-[9999] flex flex-col gap-2 max-w-sm">
+            <div className="fixed right-4 bottom-4 z-[9999] flex flex-col gap-2 max-w-sm" role="region" aria-live="polite" aria-label="Уведомления">
                 <AnimatePresence mode="popLayout">
                     {toasts.map((t) => (
                         <Toast key={t.id} toast={t} onDismiss={() => dismiss(t.id)} />

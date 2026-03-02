@@ -67,7 +67,7 @@ export default function ProfilePage() {
   const [stats, setStats] = useState(null);
 
   useEffect(() => {
-    getPublicSettings().then((data) => setS(data || {})).catch(() => { });
+    getPublicSettings().then((data) => setS(data || {})).catch((err) => { console.error('Profile settings load failed:', err); });
 
     api.get('/watchlist/items')
       .then((items) => {
@@ -75,7 +75,10 @@ export default function ProfilePage() {
         setWatchlistIds(new Set(normalizedItems.map((item) => item.id)));
         setWatchlist(normalizedItems);
       })
-      .catch(console.error)
+      .catch((err) => {
+        console.error('Watchlist load error:', err);
+        showToast('Грешка при зареждане на любими.', 'error');
+      })
       .finally(() => setLoadingWatchlist(false));
 
     api.get('/users/me/stats')
@@ -83,7 +86,10 @@ export default function ProfilePage() {
         setStats(data);
         setRecentlyWatched(Array.isArray(data?.recently_watched) ? data.recently_watched : []);
       })
-      .catch(console.error)
+      .catch((err) => {
+        console.error('Stats load error:', err);
+        showToast('Грешка при зареждане на статистиката.', 'error');
+      })
       .finally(() => setLoadingSummary(false));
   }, []);
 

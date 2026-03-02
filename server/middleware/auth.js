@@ -2,8 +2,11 @@ import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import db from '../db.js';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me';
-const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'dev-refresh-secret';
+const JWT_SECRET = process.env.JWT_SECRET || (process.env.NODE_ENV === 'production' ? undefined : 'dev-secret-change-me');
+const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || (process.env.NODE_ENV === 'production' ? undefined : 'dev-refresh-secret');
+if (!JWT_SECRET || !JWT_REFRESH_SECRET) {
+  throw new Error('JWT_SECRET and JWT_REFRESH_SECRET must be set in environment variables');
+}
 const ACCESS_TOKEN_EXPIRY = process.env.ACCESS_TOKEN_EXPIRY || '1h';
 const REFRESH_TOKEN_EXPIRY = process.env.REFRESH_TOKEN_EXPIRY || '30d';
 
@@ -75,15 +78,11 @@ export function removeRefreshToken(token, userId = null) {
   const tokenHash = hashRefreshToken(token);
 
   if (userId !== null && userId !== undefined) {
-    db.prepare('DELETE FROM refresh_tokens WHERE user_id = ? AND token IN (?, ?)').run(
-      userId,
-      tokenHash,
-      String(token)
-    );
+    db.prepare('DELETE FROM refresh_tokens WHERE user_id = ? AND token = ?').run(userId, tokenHash);
     return;
   }
 
-  db.prepare('DELETE FROM refresh_tokens WHERE token IN (?, ?)').run(tokenHash, String(token));
+  db.prepare('DELETE FROM refresh_tokens WHERE token = ?').run(tokenHash);
 }
 
 export function revokeAllRefreshTokens(userId) {
@@ -115,7 +114,10 @@ export function requireAuth(req, res, next) {
     }
 
     if (user.subscription_expires_at) {
-      const expiresAt = new Date(user.subscription_expires_at);
+      // Normalize: DB may store as 'YYYY-MM-DD HH:MM:SS' (no Z) — treat as UTC
+      const raw = String(user.subscription_expires_at).trim();
+      const isoStr = raw.includes('T') || raw.includes('Z') ? raw : raw.replace(' ', 'T') + 'Z';
+      const expiresAt = new Date(isoStr);
       if (!Number.isNaN(expiresAt.getTime()) && expiresAt <= new Date()) {
         db.prepare(`
           UPDATE users

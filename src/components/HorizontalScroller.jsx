@@ -36,13 +36,19 @@ export default function HorizontalScroller({ title, seeAllLink, children }) {
   };
 
   const handleKeyDown = (event) => {
+    const el = scrollRef.current;
     if (event.key === 'ArrowLeft') {
       event.preventDefault();
       scroll('left');
-    }
-    if (event.key === 'ArrowRight') {
+    } else if (event.key === 'ArrowRight') {
       event.preventDefault();
       scroll('right');
+    } else if (event.key === 'Home') {
+      event.preventDefault();
+      el?.scrollTo({ left: 0, behavior: 'smooth' });
+    } else if (event.key === 'End') {
+      event.preventDefault();
+      el?.scrollTo({ left: el.scrollWidth, behavior: 'smooth' });
     }
   };
 

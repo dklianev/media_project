@@ -15,7 +15,7 @@ export default function CharacterNamePage() {
   const [s, setS] = useState({});
 
   useEffect(() => {
-    getPublicSettings().then((data) => setS(data || {})).catch(() => {});
+    getPublicSettings().then((data) => setS(data || {})).catch((err) => { console.error('Settings load failed:', err); });
   }, []);
 
   useEffect(() => {

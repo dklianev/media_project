@@ -88,7 +88,23 @@ export async function api(endpoint, options = {}) {
     config.body = JSON.stringify(config.body);
   }
 
-  let res = await fetch(url, config);
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30000);
+  config.signal = config.signal || controller.signal;
+
+  let res;
+  try {
+    res = await fetch(url, config);
+  } catch (err) {
+    clearTimeout(timeoutId);
+    if (err.name === 'AbortError') {
+      const timeoutErr = new Error('Заявката отне твърде дълго. Опитай отново.');
+      timeoutErr.status = 408;
+      throw timeoutErr;
+    }
+    throw err;
+  }
+  clearTimeout(timeoutId);
 
   // Auto-refresh on 401
   const canAttemptRefresh = Boolean(tokens.access_token);

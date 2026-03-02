@@ -12,8 +12,8 @@ import {
 } from '../middleware/auth.js';
 
 const router = Router();
-const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me';
-const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'dev-refresh-secret';
+const JWT_SECRET = process.env.JWT_SECRET || (process.env.NODE_ENV === 'production' ? undefined : 'dev-secret-change-me');
+const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || (process.env.NODE_ENV === 'production' ? undefined : 'dev-refresh-secret');
 const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:5173';
 const OAUTH_STATE_COOKIE = 'oauth_state';
 const OAUTH_STATE_TTL_MS = Number(process.env.OAUTH_STATE_TTL_MS || 10 * 60 * 1000);
@@ -379,23 +379,6 @@ router.post('/refresh', (req, res) => {
     FROM refresh_tokens
     WHERE user_id = ? AND jti = ?
   `).get(decoded.id, decoded.jti);
-
-  if (!stored) {
-    stored = db.prepare(`
-      SELECT *
-      FROM refresh_tokens
-      WHERE user_id = ? AND token = ?
-    `).get(decoded.id, tokenHash);
-
-    if (stored && !stored.jti) {
-      db.prepare(`
-        UPDATE refresh_tokens
-        SET jti = ?, last_used_at = datetime('now')
-        WHERE id = ?
-      `).run(decoded.jti, stored.id);
-      stored = { ...stored, jti: decoded.jti };
-    }
-  }
 
   if (!stored) {
     clearRefreshCookie(res);

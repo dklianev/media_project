@@ -44,7 +44,7 @@ button:hover,
   --accent-foreground: #ffffff;
   --text-primary: #edf2ff;
   --text-secondary: #a8b2cc;
-  --text-muted: #647193;
+  --text-muted: #7a8bb2;
   --border: #263252;
   --border-light: #3a4b75;
   --success: #22c55e;
@@ -208,13 +208,11 @@ a {
   background:
     linear-gradient(160deg, rgba(255, 255, 255, 0.06), transparent 42%),
     linear-gradient(10deg, rgba(75, 197, 255, 0.03), transparent 60%),
-    var(--glass);
+    rgba(8, 12, 24, 0.92);
   box-shadow:
     0 16px 34px rgba(4, 7, 16, 0.5),
     inset 0 1px 0 rgba(255, 255, 255, 0.07),
     inset 0 -1px 0 rgba(255, 255, 255, 0.02);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
   transition:
     border-color 0.35s cubic-bezier(0.34, 1.56, 0.64, 1),
     box-shadow 0.4s cubic-bezier(0.16, 1, 0.3, 1);
@@ -817,13 +815,7 @@ a {
   border-radius: 20px;
   background:
     linear-gradient(150deg, rgba(255, 255, 255, 0.05), transparent 45%),
-    rgba(8, 12, 24, 0.88);
-  box-shadow:
-    0 16px 40px rgba(4, 7, 16, 0.5),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.2);
-  backdrop-filter: blur(20px) saturate(1.4);
-  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+    rgba(8, 12, 24, 0.93);
   transition:
     border-color 0.4s cubic-bezier(0.16, 1, 0.3, 1),
     box-shadow 0.4s cubic-bezier(0.16, 1, 0.3, 1),

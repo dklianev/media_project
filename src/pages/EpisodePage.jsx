@@ -43,7 +43,7 @@ function useWatchProgress(episodeId, hasAccess, progressRef, durationRef) {
       if (normalizedProgress === lastSentRef.current) return;
 
       lastSentRef.current = normalizedProgress;
-      api.put(`/watch-history/${episodeId}`, { progress_seconds: normalizedProgress }).catch(() => { });
+      api.put(`/watch-history/${episodeId}`, { progress_seconds: normalizedProgress }).catch((err) => { console.error('Watch progress save failed:', err); });
     };
 
     const intervalId = setInterval(persistProgress, 15000);
@@ -71,7 +71,7 @@ export default function EpisodePage() {
   useEffect(() => {
     api.get('/settings/public')
       .then(data => setSettings(data))
-      .catch(() => { });
+      .catch((err) => { console.error('Episode settings load failed:', err); });
   }, []);
 
   useEffect(() => {

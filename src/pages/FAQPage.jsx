@@ -123,7 +123,7 @@ export default function FAQPage() {
                     }
                 }
             }
-        }).catch(() => { });
+        }).catch((err) => { console.error('FAQ settings load failed:', err); });
         return () => { active = false; };
     }, []);
 

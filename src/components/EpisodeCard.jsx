@@ -19,7 +19,7 @@ export default function EpisodeCard({ episode, showProgress = false, showProduct
                     whileHover={{ y: -6 }}
                     whileTap={{ scale: 0.97 }}
                     transition={{ type: 'spring', stiffness: 260, damping: 20 }}
-                    className="glass-card flex flex-col h-full relative rounded-2xl border border-[var(--border)] shadow-premium-sm transition-all duration-300 hover:border-[var(--accent-gold)]/40 hover:shadow-[0_12px_40px_rgba(212,175,55,0.15),0_0_0_1px_rgba(212,175,55,0.08)] hover:z-50"
+                    className="glass-card flex flex-col h-full relative rounded-2xl border border-[var(--border)] shadow-premium-sm transition-all duration-300 hover:border-[var(--accent-gold)]/40 hover:shadow-[0_12px_40px_rgba(212,175,55,0.15),0_0_0_1px_rgba(212,175,55,0.08)] hover:z-[60]"
                 >
                     <div className="aspect-video relative overflow-hidden rounded-t-[15px]">
                         {thumbnail ? (
