@@ -972,7 +972,7 @@ export default function VideoPlayer({
         }
       }}
     >
-      <div className="pointer-events-none absolute inset-0">
+      <div className={`${isMobile ? 'pointer-events-auto' : 'pointer-events-none'} absolute inset-0`}>
         <div ref={containerRef} className="h-full w-full" />
       </div>
 
