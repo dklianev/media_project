@@ -158,7 +158,7 @@ export default function ProfilePage() {
                   whileHover={{ scale: 1.05 }}
                   transition={{ type: 'spring', stiffness: 300, damping: 20 }}
                 >
-                  <div className="absolute -inset-[3px] rounded-[36px] bg-[conic-gradient(from_0deg,var(--accent-gold),var(--accent-cyan),var(--accent-gold))] opacity-70 animate-[spin-slow_8s_linear_infinite]" />
+                  <div className="absolute -inset-[6px] rounded-[40px] bg-[conic-gradient(from_0deg,var(--accent-gold),var(--accent-cyan),var(--accent-gold))] opacity-90" />
                   <div className="absolute -inset-[3px] rounded-[36px] bg-[var(--accent-gold)] blur-md opacity-30 mix-blend-screen animate-[glow-pulse_3s_ease-in-out_infinite]" />
                   <img
                     src={user.discord_avatar}
