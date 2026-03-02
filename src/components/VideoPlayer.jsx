@@ -89,6 +89,9 @@ export default function VideoPlayer({
   const isFullscreen = fullscreenMode !== 'none';
   const shouldShowControls = controlsVisible || !isPlaying || hasEnded || showSpeedMenu || showInfoPanel;
   const currentVolume = isMuted ? 0 : volume;
+  const isMobile = typeof window !== 'undefined'
+    ? Boolean(window.matchMedia?.('(pointer: coarse)')?.matches)
+    : false;
 
   const getDocumentFullscreenElement = () => (
     document.fullscreenElement ||
@@ -285,9 +288,9 @@ export default function VideoPlayer({
       playerRef.current = new window.YT.Player(containerRef.current, {
         videoId: videoId,
         playerVars: {
-          controls: 0,
-          disablekb: 1,
-          fs: 0,
+          controls: isMobile ? 1 : 0,
+          disablekb: isMobile ? 0 : 1,
+          fs: isMobile ? 1 : 0,
           rel: 0,
           modestbranding: 1,
           playsinline: 1,
@@ -973,6 +976,7 @@ export default function VideoPlayer({
         <div ref={containerRef} className="h-full w-full" />
       </div>
 
+      {!isMobile && (
       <div
         className="absolute inset-0 z-10 flex cursor-pointer touch-manipulation items-center justify-center overflow-hidden"
         onPointerDown={handleOverlayPointerDown}
@@ -1051,6 +1055,32 @@ export default function VideoPlayer({
           )}
         </AnimatePresence>
       </div>
+      )}
+
+      {isMobile && (previousEpisode || nextEpisode) && (
+        <div className="absolute inset-x-0 top-0 z-10 flex items-center justify-between p-2 bg-gradient-to-b from-black/55 to-transparent pointer-events-auto">
+          {previousEpisode ? (
+            <button
+              onClick={(e) => navigateToEpisode(previousEpisode, e)}
+              className="flex items-center gap-1.5 rounded-full bg-black/55 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur-sm"
+              aria-label="Предишен епизод"
+            >
+              <SkipBack className="h-4 w-4 fill-current" />
+              Предишен
+            </button>
+          ) : <div />}
+          {nextEpisode && (
+            <button
+              onClick={(e) => navigateToEpisode(nextEpisode, e)}
+              className="flex items-center gap-1.5 rounded-full bg-black/55 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur-sm"
+              aria-label="Следващ епизод"
+            >
+              Следващ
+              <SkipForward className="h-4 w-4 fill-current" />
+            </button>
+          )}
+        </div>
+      )}
 
       <AnimatePresence>
         {hasEnded && (
@@ -1094,6 +1124,7 @@ export default function VideoPlayer({
         )}
       </AnimatePresence>
 
+      {!isMobile && (
       <div
         className={`absolute bottom-0 inset-x-0 z-30 bg-gradient-to-t from-black/90 px-4 pb-3 pt-16 transition-opacity duration-300 ${shouldShowControls ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
         style={isFullscreen ? {
@@ -1302,6 +1333,7 @@ export default function VideoPlayer({
           </div>
         </div>
       </div>
+      )}
     </motion.div>
   );
 }
