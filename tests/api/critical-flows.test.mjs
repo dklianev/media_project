@@ -809,6 +809,37 @@ test('profile stats endpoint е достъпен за потребителя и 
   assert.equal(data?.recently_watched?.[0]?.duration_seconds, 1800);
 });
 
+test('watchlist items endpoint връща готов production payload за профила', async () => {
+  const user = createUser({ tier_level: 1, character_name: 'Watchlist User' });
+  const token = createAccessToken(user);
+  const production = createProduction({
+    title: 'Watchlist Production',
+    slug: 'watchlist-production',
+    access_group: 'free',
+    required_tier: 0,
+    is_active: 1,
+  });
+
+  db.prepare(`
+    INSERT INTO watchlist (user_id, production_id, created_at)
+    VALUES (?, ?, datetime('now'))
+  `).run(user.id, production.id);
+
+  const { response, data } = await apiRequest('/api/watchlist/items', {
+    method: 'GET',
+    token,
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(Array.isArray(data), true);
+  assert.equal(data.length, 1);
+  assert.equal(data[0]?.id, production.id);
+  assert.equal(data[0]?.title, 'Watchlist Production');
+  assert.equal(data[0]?.slug, 'watchlist-production');
+  assert.equal(data[0]?.access_group, 'free');
+  assert.equal(data[0]?.has_access, true);
+});
+
 test('non-admin users prefix не expose-ва admin user routes', async () => {
   const admin = createUser({ role: 'admin', character_name: 'Scoped Admin' });
   const target = createUser({ character_name: 'Scoped Target' });

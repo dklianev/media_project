@@ -13,6 +13,47 @@ import PageBackground from '../components/PageBackground';
 import ProductionCard from '../components/ProductionCard';
 import { useToastContext } from '../context/ToastContext';
 
+function ProfileStatSkeleton() {
+  return (
+    <section className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      {Array.from({ length: 3 }).map((_, index) => (
+        <div key={index} className="glass-card p-5 flex items-center gap-4 min-h-[92px]">
+          <div className="w-12 h-12 rounded-2xl bg-[var(--bg-tertiary)] animate-pulse shrink-0" />
+          <div className="flex-1 space-y-2">
+            <div className="h-3 w-24 rounded-full bg-[var(--bg-tertiary)] animate-pulse" />
+            <div className="h-6 w-16 rounded-full bg-[var(--bg-tertiary)] animate-pulse" />
+          </div>
+        </div>
+      ))}
+    </section>
+  );
+}
+
+function RecentlyWatchedSkeleton() {
+  return (
+    <>
+      <div className="flex items-center justify-between mb-4 px-1">
+        <div className="h-6 w-44 rounded-full bg-[var(--bg-tertiary)] animate-pulse" />
+        <div className="h-4 w-20 rounded-full bg-[var(--bg-tertiary)] animate-pulse" />
+      </div>
+      <div className="flex gap-4 overflow-x-auto pb-4 custom-scrollbar">
+        {Array.from({ length: 4 }).map((_, index) => (
+          <div
+            key={index}
+            className="shrink-0 w-[240px] rounded-2xl bg-[var(--bg-secondary)] border border-[var(--border)] overflow-hidden shadow-lg"
+          >
+            <div className="aspect-video bg-[var(--bg-tertiary)] animate-pulse" />
+            <div className="p-3 pt-3 space-y-2">
+              <div className="h-4 w-4/5 rounded-full bg-[var(--bg-tertiary)] animate-pulse" />
+              <div className="h-3 w-3/5 rounded-full bg-[var(--bg-tertiary)] animate-pulse" />
+            </div>
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
 export default function ProfilePage() {
   const location = useLocation();
   const { user } = useAuth();
@@ -22,31 +63,32 @@ export default function ProfilePage() {
   const [watchlistIds, setWatchlistIds] = useState(new Set());
   const [recentlyWatched, setRecentlyWatched] = useState([]);
   const [loadingWatchlist, setLoadingWatchlist] = useState(true);
+  const [loadingSummary, setLoadingSummary] = useState(true);
   const [stats, setStats] = useState(null);
 
   useEffect(() => {
     getPublicSettings().then((data) => setS(data || {})).catch(() => { });
 
-    Promise.all([
-      api.get('/productions'),
-      api.get('/watchlist'),
-      api.get('/watch-history?limit=12').catch(() => []),
-    ]).then(([prods, wlIds, history]) => {
-      if (Array.isArray(prods) && Array.isArray(wlIds)) {
-        setWatchlistIds(new Set(wlIds));
-        const filtered = prods.filter(p => wlIds.includes(p.id));
-        setWatchlist(filtered);
-      }
-      setRecentlyWatched(Array.isArray(history) ? history : []);
-    }).catch(console.error).finally(() => setLoadingWatchlist(false));
+    api.get('/watchlist/items')
+      .then((items) => {
+        const normalizedItems = Array.isArray(items) ? items : [];
+        setWatchlistIds(new Set(normalizedItems.map((item) => item.id)));
+        setWatchlist(normalizedItems);
+      })
+      .catch(console.error)
+      .finally(() => setLoadingWatchlist(false));
 
     api.get('/users/me/stats')
-      .then(data => setStats(data))
-      .catch(console.error);
+      .then((data) => {
+        setStats(data);
+        setRecentlyWatched(Array.isArray(data?.recently_watched) ? data.recently_watched : []);
+      })
+      .catch(console.error)
+      .finally(() => setLoadingSummary(false));
   }, []);
 
   useEffect(() => {
-    if (!location.hash) return;
+    if (!location.hash || loadingSummary || loadingWatchlist) return;
 
     const targetId = location.hash.replace('#', '');
     const scrollToTarget = () => {
@@ -57,7 +99,7 @@ export default function ProfilePage() {
 
     const timeoutId = window.setTimeout(scrollToTarget, 80);
     return () => window.clearTimeout(timeoutId);
-  }, [location.hash, stats]);
+  }, [location.hash, loadingSummary, loadingWatchlist]);
 
   const toggleWatchlist = async (productionId) => {
     const isIn = watchlistIds.has(productionId);
@@ -185,107 +227,117 @@ export default function ProfilePage() {
       </ScrollReveal>
 
       {/* --- 2. DASHBOARD STATS ROW --- */}
-      {stats && (
+      <div className="min-h-[124px]">
         <ScrollReveal variant="fadeUp" delay={0.2}>
-          <section className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <motion.div
-              whileHover={{ y: -5, scale: 1.02 }}
-              className="glass-card p-5 flex items-center gap-4 hover:border-[var(--accent-gold)]/40 hover:shadow-[0_8px_30px_rgba(212,175,55,0.15)] transition-all cursor-default"
-            >
-              <div className="w-12 h-12 rounded-2xl bg-[var(--accent-gold)]/10 flex items-center justify-center shrink-0">
-                <Clock className="w-6 h-6 text-[var(--accent-gold)]" />
-              </div>
-              <div>
-                <p className="text-xs uppercase tracking-[0.1em] text-[var(--text-muted)] mb-0.5 font-bold">{s.profile_stat_time || 'Гледано време'}</p>
-                <div className="text-xl font-bold tracking-tight text-[var(--text-primary)] drop-shadow-sm">
-                  <span className="font-sans text-[var(--accent-gold)]">{Math.floor((stats.total_watch_seconds || 0) / 3600)}</span><span className="text-sm text-[var(--text-secondary)] ml-0.5 lowercase font-normal">ч</span>{' '}
-                  <span className="font-sans text-[var(--accent-gold)] ml-1">{Math.floor(((stats.total_watch_seconds || 0) % 3600) / 60)}</span><span className="text-sm text-[var(--text-secondary)] ml-0.5 lowercase font-normal">м</span>
+          {loadingSummary ? (
+            <ProfileStatSkeleton />
+          ) : (
+            <section className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <motion.div
+                whileHover={{ y: -5, scale: 1.02 }}
+                className="glass-card p-5 flex items-center gap-4 hover:border-[var(--accent-gold)]/40 hover:shadow-[0_8px_30px_rgba(212,175,55,0.15)] transition-all cursor-default"
+              >
+                <div className="w-12 h-12 rounded-2xl bg-[var(--accent-gold)]/10 flex items-center justify-center shrink-0">
+                  <Clock className="w-6 h-6 text-[var(--accent-gold)]" />
                 </div>
-              </div>
-            </motion.div>
+                <div>
+                  <p className="text-xs uppercase tracking-[0.1em] text-[var(--text-muted)] mb-0.5 font-bold">{s.profile_stat_time || 'Гледано време'}</p>
+                  <div className="text-xl font-bold tracking-tight text-[var(--text-primary)] drop-shadow-sm">
+                    <span className="font-sans text-[var(--accent-gold)]">{Math.floor((stats?.total_watch_seconds || 0) / 3600)}</span><span className="text-sm text-[var(--text-secondary)] ml-0.5 lowercase font-normal">ч</span>{' '}
+                    <span className="font-sans text-[var(--accent-gold)] ml-1">{Math.floor(((stats?.total_watch_seconds || 0) % 3600) / 60)}</span><span className="text-sm text-[var(--text-secondary)] ml-0.5 lowercase font-normal">м</span>
+                  </div>
+                </div>
+              </motion.div>
 
-            <motion.div
-              whileHover={{ y: -5, scale: 1.02 }}
-              className="glass-card p-5 flex items-center gap-4 hover:border-[var(--accent-cyan)]/40 hover:shadow-[0_8px_30px_rgba(75,197,255,0.15)] transition-all cursor-default"
-            >
-              <div className="w-12 h-12 rounded-2xl bg-[var(--accent-cyan)]/10 flex items-center justify-center shrink-0">
-                <PlayCircle className="w-6 h-6 text-[var(--accent-cyan)]" />
-              </div>
-              <div>
-                <p className="text-xs uppercase tracking-[0.1em] text-[var(--text-muted)] mb-0.5 font-bold">{s.profile_stat_episodes || 'Започнати епизоди'}</p>
-                <h3 className="text-xl font-bold font-sans tracking-tight text-[var(--accent-cyan)] drop-shadow-sm">{stats.episodes_started || 0}</h3>
-              </div>
-            </motion.div>
+              <motion.div
+                whileHover={{ y: -5, scale: 1.02 }}
+                className="glass-card p-5 flex items-center gap-4 hover:border-[var(--accent-cyan)]/40 hover:shadow-[0_8px_30px_rgba(75,197,255,0.15)] transition-all cursor-default"
+              >
+                <div className="w-12 h-12 rounded-2xl bg-[var(--accent-cyan)]/10 flex items-center justify-center shrink-0">
+                  <PlayCircle className="w-6 h-6 text-[var(--accent-cyan)]" />
+                </div>
+                <div>
+                  <p className="text-xs uppercase tracking-[0.1em] text-[var(--text-muted)] mb-0.5 font-bold">{s.profile_stat_episodes || 'Започнати епизоди'}</p>
+                  <h3 className="text-xl font-bold font-sans tracking-tight text-[var(--accent-cyan)] drop-shadow-sm">{stats?.episodes_started || 0}</h3>
+                </div>
+              </motion.div>
 
-            <motion.div
-              whileHover={{ y: -5, scale: 1.02 }}
-              className="glass-card p-5 flex items-center gap-4 hover:border-[var(--success)]/40 hover:shadow-[0_8px_30px_rgba(34,197,94,0.15)] transition-all cursor-default"
-            >
-              <div className="w-12 h-12 rounded-2xl bg-[var(--success)]/10 flex items-center justify-center shrink-0">
-                <Calendar className="w-6 h-6 text-[var(--success)]" />
-              </div>
-              <div>
-                <p className="text-xs uppercase tracking-[0.1em] text-[var(--text-muted)] mb-0.5 font-bold">{s.profile_member_since_label || 'Член от'}</p>
-                <h3 className="text-lg font-bold tracking-tight text-[var(--text-primary)] drop-shadow-sm">{formatDate(user?.created_at)}</h3>
-              </div>
-            </motion.div>
-          </section>
+              <motion.div
+                whileHover={{ y: -5, scale: 1.02 }}
+                className="glass-card p-5 flex items-center gap-4 hover:border-[var(--success)]/40 hover:shadow-[0_8px_30px_rgba(34,197,94,0.15)] transition-all cursor-default"
+              >
+                <div className="w-12 h-12 rounded-2xl bg-[var(--success)]/10 flex items-center justify-center shrink-0">
+                  <Calendar className="w-6 h-6 text-[var(--success)]" />
+                </div>
+                <div>
+                  <p className="text-xs uppercase tracking-[0.1em] text-[var(--text-muted)] mb-0.5 font-bold">{s.profile_member_since_label || 'Член от'}</p>
+                  <h3 className="text-lg font-bold tracking-tight text-[var(--text-primary)] drop-shadow-sm">{formatDate(user?.created_at)}</h3>
+                </div>
+              </motion.div>
+            </section>
+          )}
         </ScrollReveal>
-      )}
+      </div>
 
       {/* --- 3. RECENTLY WATCHED HORIZONTAL ROW --- */}
       <div
         id="recently-watched"
         style={{ scrollMarginTop: 'calc(var(--app-chrome-offset, 0px) + 24px)' }}
       >
-        {recentlyWatched.length > 0 && (
+        {(loadingSummary || recentlyWatched.length > 0) && (
           <ScrollReveal variant="fadeUp" delay={0.25} className="mt-2">
-          <div className="flex items-center justify-between mb-4 px-1">
-            <h2 className="text-xl font-semibold flex items-center gap-2 text-[var(--text-primary)]">
-              <PlayCircle className="w-5 h-5 text-[var(--accent-cyan)]" />
-              {s.profile_stat_recent || 'Последно гледани'}
-            </h2>
-            <Link to="/productions" className="text-sm font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors">
-              Виж всички &rarr;
-            </Link>
-          </div>
-
-          <div className="flex gap-4 overflow-x-auto pb-4 custom-scrollbar snap-x snap-mandatory">
-            {recentlyWatched.map(item => (
-              <Link
-                key={item.episode_id}
-                to={`/episodes/${item.episode_id}`}
-                className="snap-start shrink-0 w-[240px] flex flex-col gap-3 rounded-2xl bg-[var(--bg-secondary)] border border-[var(--border)] overflow-hidden hover:border-[var(--accent-cyan)] transition-colors no-underline group shadow-lg"
-              >
-                <div className="w-full aspect-video bg-[var(--bg-tertiary)] relative">
-                  {item.thumbnail_url ? (
-                    <img src={item.thumbnail_url} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-[10px] text-[var(--text-muted)]">Няма Изглед</div>
-                  )}
-                  {/* Fine Progress Bar */}
-                  <div className="absolute inset-x-0 bottom-0 h-1 bg-black/60 backdrop-blur-sm z-10 transition-all">
-                    <div
-                      className="h-full bg-[var(--accent-cyan)] shadow-[0_0_10px_var(--accent-cyan)] transition-all duration-300"
-                      style={{ width: `${Math.max(0.5, Math.min(100, (item.progress_seconds / Math.max(1, item.duration_seconds || 1)) * 100))}%` }}
-                    />
-                  </div>
-                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none z-20">
-                    <PlayCircle className="w-10 h-10 text-white fill-[var(--accent-cyan)]/80 drop-shadow-lg" />
-                  </div>
+            {loadingSummary ? (
+              <RecentlyWatchedSkeleton />
+            ) : (
+              <>
+                <div className="flex items-center justify-between mb-4 px-1">
+                  <h2 className="text-xl font-semibold flex items-center gap-2 text-[var(--text-primary)]">
+                    <PlayCircle className="w-5 h-5 text-[var(--accent-cyan)]" />
+                    {s.profile_stat_recent || 'Последно гледани'}
+                  </h2>
+                  <Link to="/productions" className="text-sm font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors">
+                    Виж всички &rarr;
+                  </Link>
                 </div>
 
-                <div className="p-3 pt-1 min-w-0">
-                  <p className="text-[13px] font-semibold text-[var(--text-primary)] truncate group-hover:text-[var(--accent-cyan)] transition-colors">
-                    {item.production_title}
-                  </p>
-                  <p className="text-[11px] text-[var(--text-secondary)] truncate mt-0.5">
-                    {item.episode_title}
-                  </p>
+                <div className="flex gap-4 overflow-x-auto pb-4 custom-scrollbar snap-x snap-mandatory">
+                  {recentlyWatched.map(item => (
+                    <Link
+                      key={item.episode_id}
+                      to={`/episodes/${item.episode_id}`}
+                      className="snap-start shrink-0 w-[240px] flex flex-col gap-3 rounded-2xl bg-[var(--bg-secondary)] border border-[var(--border)] overflow-hidden hover:border-[var(--accent-cyan)] transition-colors no-underline group shadow-lg"
+                    >
+                      <div className="w-full aspect-video bg-[var(--bg-tertiary)] relative">
+                        {item.thumbnail_url ? (
+                          <img src={item.thumbnail_url} alt="" loading="lazy" decoding="async" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-[10px] text-[var(--text-muted)]">Няма Изглед</div>
+                        )}
+                        {/* Fine Progress Bar */}
+                        <div className="absolute inset-x-0 bottom-0 h-1 bg-black/60 backdrop-blur-sm z-10 transition-all">
+                          <div
+                            className="h-full bg-[var(--accent-cyan)] shadow-[0_0_10px_var(--accent-cyan)] transition-all duration-300"
+                            style={{ width: `${Math.max(0.5, Math.min(100, (item.progress_seconds / Math.max(1, item.duration_seconds || 1)) * 100))}%` }}
+                          />
+                        </div>
+                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none z-20">
+                          <PlayCircle className="w-10 h-10 text-white fill-[var(--accent-cyan)]/80 drop-shadow-lg" />
+                        </div>
+                      </div>
+
+                      <div className="p-3 pt-1 min-w-0">
+                        <p className="text-[13px] font-semibold text-[var(--text-primary)] truncate group-hover:text-[var(--accent-cyan)] transition-colors">
+                          {item.production_title}
+                        </p>
+                        <p className="text-[11px] text-[var(--text-secondary)] truncate mt-0.5">
+                          {item.episode_title}
+                        </p>
+                      </div>
+                    </Link>
+                  ))}
                 </div>
-              </Link>
-            ))}
-          </div>
+              </>
+            )}
           </ScrollReveal>
         )}
       </div>

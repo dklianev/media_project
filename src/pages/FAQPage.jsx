@@ -132,17 +132,19 @@ export default function FAQPage() {
             <PageBackground />
 
             <ScrollReveal variant="fadeUp">
-                <div className="text-center mb-12">
+                <div className="mb-12">
+                    <div className="mx-auto flex max-w-[32rem] flex-col items-center text-center">
                     <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-[var(--accent-gold)]/10 text-[var(--accent-gold)] mb-4">
                         <HelpCircle className="w-8 h-8" />
                     </div>
                     <h1 className="text-3xl md:text-4xl font-bold mb-4">{ui.faq_title}</h1>
                     <p
-                        className="mx-auto max-w-[34rem] text-center leading-relaxed text-[var(--text-secondary)]"
+                        className="w-full text-center leading-relaxed text-[var(--text-secondary)]"
                         style={{ textWrap: 'balance' }}
                     >
                         {ui.faq_description}
                     </p>
+                    </div>
                 </div>
             </ScrollReveal>
 

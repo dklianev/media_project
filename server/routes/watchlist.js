@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import db from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
+import { hasGroupAccess, isUserAdmin, resolveProductionGroup } from '../utils/access.js';
 
 const router = Router();
 
@@ -15,6 +16,50 @@ router.get('/', requireAuth, (req, res) => {
   `).all(req.user.id);
 
   res.json(rows.map((r) => r.production_id));
+});
+
+// GET /api/watchlist/items — Get user's watchlist production payloads
+router.get('/items', requireAuth, (req, res) => {
+  const rows = db.prepare(`
+    SELECT
+      p.id,
+      p.title,
+      p.slug,
+      p.description,
+      p.thumbnail_url,
+      p.cover_image_url,
+      p.required_tier,
+      p.access_group,
+      p.sort_order,
+      p.created_at,
+      p.genres,
+      w.created_at as watchlisted_at
+    FROM watchlist w
+    JOIN productions p ON p.id = w.production_id AND p.is_active = 1
+    WHERE w.user_id = ?
+    ORDER BY w.created_at DESC
+  `).all(req.user.id);
+
+  const userTier = req.user.tier_level || 0;
+  const admin = isUserAdmin(req.user);
+
+  res.json(rows.map((row) => {
+    let genres = [];
+    try {
+      genres = JSON.parse(row.genres || '[]');
+    } catch {
+      genres = [];
+    }
+
+    const group = resolveProductionGroup(row.access_group, row.required_tier);
+
+    return {
+      ...row,
+      genres,
+      access_group: group,
+      has_access: hasGroupAccess(group, userTier, admin, row.required_tier || 0),
+    };
+  }));
 });
 
 // POST /api/watchlist/:productionId — Add to watchlist
