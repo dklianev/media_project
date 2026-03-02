@@ -1463,6 +1463,94 @@ test('episode create приема URL-и от media library вместо нов 
   assert.equal(stored.side_images, JSON.stringify([mediaUrl]));
 });
 
+test('media library може да преименува и изтрие неизползван asset', async () => {
+  const admin = createUser({ role: 'admin', character_name: 'Media Rename Admin' });
+  const adminToken = createAccessToken(admin);
+  const formData = new FormData();
+  formData.append('files', createTinyPngBlob(), 'rename-me.png');
+
+  const uploaded = await apiFormRequest('/api/admin/media', {
+    method: 'POST',
+    token: adminToken,
+    formData,
+  });
+  assert.equal(uploaded.response.status, 201);
+
+  const assetId = uploaded.data?.items?.[0]?.id;
+  assert.ok(assetId);
+
+  const renamed = await apiRequest(`/api/admin/media/${assetId}`, {
+    method: 'PUT',
+    token: adminToken,
+    body: { original_name: 'hero-cover.webp' },
+  });
+  assert.equal(renamed.response.status, 200);
+  assert.equal(renamed.data?.original_name, 'hero-cover.webp');
+  assert.equal(
+    db.prepare('SELECT original_name FROM media_assets WHERE id = ?').get(assetId)?.original_name,
+    'hero-cover.webp'
+  );
+
+  const deleted = await apiRequest(`/api/admin/media/${assetId}`, {
+    method: 'DELETE',
+    token: adminToken,
+  });
+  assert.equal(deleted.response.status, 200);
+  assert.equal(deleted.data?.success, true);
+  assert.equal(
+    db.prepare('SELECT COUNT(*) as count FROM media_assets WHERE id = ?').get(assetId).count,
+    0
+  );
+});
+
+test('media library отказва delete когато asset-ът се използва', async () => {
+  const admin = createUser({ role: 'admin', character_name: 'Media Delete Guard Admin' });
+  const adminToken = createAccessToken(admin);
+  const formData = new FormData();
+  formData.append('files', createTinyPngBlob(), 'used-poster.png');
+
+  const uploaded = await apiFormRequest('/api/admin/media', {
+    method: 'POST',
+    token: adminToken,
+    formData,
+  });
+  assert.equal(uploaded.response.status, 201);
+
+  const assetId = uploaded.data?.items?.[0]?.id;
+  const mediaUrl = uploaded.data?.items?.[0]?.url;
+  assert.ok(assetId);
+  assert.ok(mediaUrl);
+
+  createProduction({
+    title: 'Used Media Production',
+    slug: 'used-media-production',
+    thumbnail_url: mediaUrl,
+    access_group: 'free',
+    is_active: 1,
+  });
+
+  const list = await apiRequest('/api/admin/media?page=1&page_size=24', {
+    method: 'GET',
+    token: adminToken,
+  });
+  assert.equal(list.response.status, 200);
+  const listedAsset = list.data?.items?.find((item) => Number(item.id) === Number(assetId));
+  assert.equal(listedAsset?.usage_count, 1);
+  assert.equal(listedAsset?.in_use, true);
+
+  const deleted = await apiRequest(`/api/admin/media/${assetId}`, {
+    method: 'DELETE',
+    token: adminToken,
+  });
+  assert.equal(deleted.response.status, 409);
+  assert.equal(deleted.data?.usage_count, 1);
+  assert.equal(deleted.data?.usages?.[0]?.type, 'production.thumbnail');
+  assert.equal(
+    db.prepare('SELECT COUNT(*) as count FROM media_assets WHERE id = ?').get(assetId).count,
+    1
+  );
+});
+
 test('support, notifications и audit happy path работят за реален ticket lifecycle', async () => {
   const admin = createUser({ role: 'admin', character_name: 'Support Admin' });
   const user = createUser({ character_name: 'Support User' });

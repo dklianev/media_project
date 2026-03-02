@@ -4,7 +4,13 @@ import { requireAdmin } from '../middleware/auth.js';
 import { optimizeUploadedImages, requireUploadLock, upload } from '../middleware/upload.js';
 import { buildPageResult, parsePagination, parseSort } from '../utils/pagination.js';
 import { logAdminAction } from '../utils/audit.js';
-import { registerUploadedMedia } from '../utils/mediaLibrary.js';
+import {
+  deleteMediaAsset,
+  enrichMediaAssets,
+  getMediaAssetById,
+  registerUploadedMedia,
+  renameMediaAsset,
+} from '../utils/mediaLibrary.js';
 
 const router = Router();
 const MEDIA_SORT_MAP = {
@@ -45,7 +51,7 @@ router.get('/', requireAdmin, (req, res) => {
     LIMIT ? OFFSET ?
   `).all(...params, pageSize, offset);
 
-  res.json(buildPageResult(items, page, pageSize, total, {
+  res.json(buildPageResult(enrichMediaAssets(items), page, pageSize, total, {
     sort_by: sortBy,
     sort_dir: sortDir.toLowerCase(),
   }));
@@ -63,7 +69,9 @@ router.post(
         return res.status(400).json({ error: 'Не е качен файл' });
       }
 
-      const items = await registerUploadedMedia(req, req.files, { source: 'media.library' });
+      const items = enrichMediaAssets(
+        await registerUploadedMedia(req, req.files, { source: 'media.library' })
+      );
       logAdminAction(req, {
         action: 'media.upload',
         entity_type: 'media_asset',
@@ -79,5 +87,58 @@ router.post(
     }
   }
 );
+
+router.put('/:id', requireAdmin, (req, res) => {
+  const result = renameMediaAsset(req.params.id, req.body?.original_name);
+  if (result?.error) {
+    return res.status(result.status || 400).json({ error: result.error });
+  }
+
+  logAdminAction(req, {
+    action: 'media.rename',
+    entity_type: 'media_asset',
+    entity_id: req.params.id,
+    metadata: {
+      previous_name: result.previous_name,
+      next_name: result.item.original_name,
+      url: result.item.url,
+    },
+  });
+
+  return res.json(result.item);
+});
+
+router.delete('/:id', requireAdmin, async (req, res, next) => {
+  try {
+    const existing = getMediaAssetById(req.params.id);
+    if (!existing) {
+      return res.status(404).json({ error: 'Файлът не е намерен' });
+    }
+
+    const result = await deleteMediaAsset(req.params.id);
+    if (result?.error) {
+      return res.status(result.status || 400).json({
+        error: result.error,
+        usage_count: result.usage_count || 0,
+        usages: result.usages || [],
+      });
+    }
+
+    logAdminAction(req, {
+      action: 'media.delete',
+      entity_type: 'media_asset',
+      entity_id: req.params.id,
+      metadata: {
+        original_name: existing.original_name,
+        stored_name: existing.stored_name,
+        url: existing.url,
+      },
+    });
+
+    return res.json({ success: true });
+  } catch (err) {
+    return next(err);
+  }
+});
 
 export default router;
