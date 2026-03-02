@@ -3,9 +3,14 @@ import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import db from '../db.js';
 import { requireAuth, requireAdmin } from '../middleware/auth.js';
-import { optimizeUploadedImages, upload } from '../middleware/upload.js';
+import { optimizeUploadedImages, requireUploadLock, upload } from '../middleware/upload.js';
 import { buildPageResult, parsePagination, parseSort, toInt } from '../utils/pagination.js';
 import { logAdminAction } from '../utils/audit.js';
+import {
+  normalizeManagedMediaUrl,
+  parseManagedMediaUrlList,
+  registerUploadedMedia,
+} from '../utils/mediaLibrary.js';
 import {
   getCurrentSofiaDbTimestamp,
   getShiftedSofiaDbTimestamp,
@@ -520,13 +525,15 @@ router.get('/admin/all', requireAdmin, (req, res) => {
 router.post(
   '/admin',
   requireAdmin,
+  requireUploadLock,
   upload.fields([
     { name: 'thumbnail', maxCount: 1 },
     { name: 'ad_banner', maxCount: 1 },
     { name: 'side_images', maxCount: 5 },
   ]),
   optimizeUploadedImages,
-  (req, res) => {
+  async (req, res, next) => {
+    try {
     const {
       production_id,
       title,
@@ -538,6 +545,9 @@ router.post(
       access_group,
       is_active,
       published_at,
+      thumbnail_url,
+      ad_banner_url,
+      side_images_urls,
     } = req.body;
 
     const prod = db.prepare('SELECT id, title FROM productions WHERE id = ?').get(production_id);
@@ -549,15 +559,33 @@ router.post(
       return res.status(400).json({ error: 'Невалиден YouTube видео идентификатор' });
     }
 
+    const selectedThumbnailUrl = thumbnail_url !== undefined && String(thumbnail_url).trim()
+      ? normalizeManagedMediaUrl(thumbnail_url)
+      : null;
+    const selectedBannerUrl = ad_banner_url !== undefined && String(ad_banner_url).trim()
+      ? normalizeManagedMediaUrl(ad_banner_url)
+      : null;
+    const selectedSideImages = parseManagedMediaUrlList(side_images_urls, { maxItems: 5 });
+
+    if (thumbnail_url !== undefined && String(thumbnail_url).trim() && !selectedThumbnailUrl) {
+      return res.status(400).json({ error: 'Невалиден URL за кадър' });
+    }
+    if (ad_banner_url !== undefined && String(ad_banner_url).trim() && !selectedBannerUrl) {
+      return res.status(400).json({ error: 'Невалиден URL за голямо изображение' });
+    }
+    if (selectedSideImages.error) {
+      return res.status(400).json({ error: selectedSideImages.error });
+    }
+
     const thumbnailUrl = req.files?.thumbnail?.[0]
       ? `/uploads/${req.files.thumbnail[0].filename}`
-      : null;
+      : selectedThumbnailUrl;
     const adBannerUrl = req.files?.ad_banner?.[0]
       ? `/uploads/${req.files.ad_banner[0].filename}`
-      : null;
+      : selectedBannerUrl;
     const sideImages = req.files?.side_images
       ? JSON.stringify(req.files.side_images.map((file) => `/uploads/${file.filename}`))
-      : '[]';
+      : JSON.stringify(selectedSideImages.urls);
 
     const group = normalizeEpisodeGroup(access_group);
     const hasPublishedAt = published_at !== undefined && String(published_at).trim() !== '';
@@ -590,6 +618,7 @@ router.post(
     );
 
     const episode = db.prepare('SELECT * FROM episodes WHERE id = ?').get(result.lastInsertRowid);
+    await registerUploadedMedia(req, req.files, { source: 'episode.create' });
 
     // Notify only when the episode is already visible, not when it is scheduled for later.
     if (shouldNotifyEpisodeNow(episode)) {
@@ -620,19 +649,24 @@ router.post(
       },
     });
     res.status(201).json({ ...episode, access_group: normalizeEpisodeGroup(episode.access_group) });
+    } catch (err) {
+      next(err);
+    }
   }
 );
 
 router.put(
   '/admin/:id',
   requireAdmin,
+  requireUploadLock,
   upload.fields([
     { name: 'thumbnail', maxCount: 1 },
     { name: 'ad_banner', maxCount: 1 },
     { name: 'side_images', maxCount: 5 },
   ]),
   optimizeUploadedImages,
-  (req, res) => {
+  async (req, res, next) => {
+    try {
     const existing = db.prepare('SELECT * FROM episodes WHERE id = ?').get(req.params.id);
     if (!existing) {
       return res.status(404).json({ error: 'Епизодът не е намерен' });
@@ -649,6 +683,9 @@ router.put(
       access_group,
       is_active,
       published_at,
+      thumbnail_url,
+      ad_banner_url,
+      side_images_urls,
     } = req.body;
 
     const nextProductionId = production_id !== undefined
@@ -662,15 +699,41 @@ router.put(
       return res.status(404).json({ error: 'Продукцията не е намерена' });
     }
 
+    const hasThumbnailUrl = Object.prototype.hasOwnProperty.call(req.body || {}, 'thumbnail_url');
+    const hasBannerUrl = Object.prototype.hasOwnProperty.call(req.body || {}, 'ad_banner_url');
+    const selectedThumbnailUrl = hasThumbnailUrl && String(thumbnail_url).trim()
+      ? normalizeManagedMediaUrl(thumbnail_url)
+      : null;
+    const selectedBannerUrl = hasBannerUrl && String(ad_banner_url).trim()
+      ? normalizeManagedMediaUrl(ad_banner_url)
+      : null;
+    const selectedSideImages = parseManagedMediaUrlList(side_images_urls, { maxItems: 5 });
+
+    if (hasThumbnailUrl && String(thumbnail_url).trim() && !selectedThumbnailUrl) {
+      return res.status(400).json({ error: 'Невалиден URL за кадър' });
+    }
+    if (hasBannerUrl && String(ad_banner_url).trim() && !selectedBannerUrl) {
+      return res.status(400).json({ error: 'Невалиден URL за голямо изображение' });
+    }
+    if (selectedSideImages.error) {
+      return res.status(400).json({ error: selectedSideImages.error });
+    }
+
     const thumbnailUrl = req.files?.thumbnail?.[0]
       ? `/uploads/${req.files.thumbnail[0].filename}`
-      : existing.thumbnail_url;
+      : hasThumbnailUrl
+        ? selectedThumbnailUrl
+        : existing.thumbnail_url;
     const adBannerUrl = req.files?.ad_banner?.[0]
       ? `/uploads/${req.files.ad_banner[0].filename}`
-      : existing.ad_banner_url;
+      : hasBannerUrl
+        ? selectedBannerUrl
+        : existing.ad_banner_url;
     const sideImages = req.files?.side_images
       ? JSON.stringify(req.files.side_images.map((file) => `/uploads/${file.filename}`))
-      : existing.side_images;
+      : selectedSideImages.provided
+        ? JSON.stringify(selectedSideImages.urls)
+        : existing.side_images;
 
     if (!isValidYouTubeId(youtube_video_id ?? existing.youtube_video_id)) {
       return res.status(400).json({ error: 'Невалиден YouTube видео идентификатор' });
@@ -724,6 +787,7 @@ router.put(
     );
 
     const updated = db.prepare('SELECT * FROM episodes WHERE id = ?').get(req.params.id);
+    await registerUploadedMedia(req, req.files, { source: 'episode.update' });
     logAdminAction(req, {
       action: 'episode.update',
       entity_type: 'episode',
@@ -746,6 +810,9 @@ router.put(
       },
     });
     res.json({ ...updated, access_group: normalizeEpisodeGroup(updated.access_group) });
+    } catch (err) {
+      next(err);
+    }
   }
 );
 

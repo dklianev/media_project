@@ -32,9 +32,11 @@ import exportRoutes from './routes/export.js';
 import commentsRoutes from './routes/comments.js';
 import notificationsRoutes from './routes/notifications.js';
 import supportRoutes from './routes/support.js';
-import { optimizeUploadedImages, upload } from './middleware/upload.js';
+import mediaRoutes from './routes/media.js';
+import { optimizeUploadedImages, requireUploadLock, upload } from './middleware/upload.js';
 import { requireAdmin } from './middleware/auth.js';
 import { logAdminAction } from './utils/audit.js';
+import { registerUploadedMedia } from './utils/mediaLibrary.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const API_RATE_LIMIT_WINDOW_MS = Number(process.env.API_RATE_LIMIT_WINDOW_MS || 15 * 60 * 1000);
@@ -216,6 +218,7 @@ export function createApp() {
   app.use('/api/admin/audit', auditRoutes);
   app.use('/api/admin/dashboard', dashboardRoutes);
   app.use('/api/admin/export', exportRoutes);
+  app.use('/api/admin/media', mediaRoutes);
   app.use('/api/watchlist', watchlistRoutes);
   app.use('/api/watch-history', watchHistoryRoutes);
   app.use('/api/comments', commentsRoutes);
@@ -223,23 +226,35 @@ export function createApp() {
   app.use('/api/support', supportRoutes);
 
   // Generic upload endpoint for admin
-  app.post('/api/admin/upload', requireAdmin, upload.single('file'), optimizeUploadedImages, (req, res) => {
-    if (!req.file) {
-      return res.status(400).json({ error: 'Не е качен файл' });
+  app.post(
+    '/api/admin/upload',
+    requireAdmin,
+    requireUploadLock,
+    upload.single('file'),
+    optimizeUploadedImages,
+    async (req, res, next) => {
+      try {
+        if (!req.file) {
+          return res.status(400).json({ error: 'Не е качен файл' });
+        }
+        const url = `/uploads/${req.file.filename}`;
+        await registerUploadedMedia(req, [req.file], { source: 'admin.upload' });
+        logAdminAction(req, {
+          action: 'upload.create',
+          entity_type: 'upload',
+          entity_id: req.file.filename,
+          metadata: {
+            url,
+            size: req.file.size,
+            mimetype: req.file.mimetype,
+          },
+        });
+        return res.json({ url });
+      } catch (err) {
+        return next(err);
+      }
     }
-    const url = `/uploads/${req.file.filename}`;
-    logAdminAction(req, {
-      action: 'upload.create',
-      entity_type: 'upload',
-      entity_id: req.file.filename,
-      metadata: {
-        url,
-        size: req.file.size,
-        mimetype: req.file.mimetype,
-      },
-    });
-    return res.json({ url });
-  });
+  );
 
   // ─── Serve frontend in production ───
 

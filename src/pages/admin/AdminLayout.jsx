@@ -5,6 +5,7 @@ import {
   CreditCard,
   Film,
   History,
+  Images,
   LayoutDashboard,
   MessageSquare,
   Settings,
@@ -29,6 +30,7 @@ const linkGroups = [
     links: [
       { to: '/admin/productions', icon: Film, label: 'Продукции' },
       { to: '/admin/episodes', icon: Tv, label: 'Епизоди' },
+      { to: '/admin/media', icon: Images, label: 'Media Library' },
     ]
   },
   {

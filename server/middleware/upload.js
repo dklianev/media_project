@@ -8,6 +8,7 @@ import sharp from 'sharp';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const uploadsDir = resolve(__dirname, '..', '..', 'public', 'uploads');
 const MAX_FILE_SIZE = Number(process.env.UPLOAD_MAX_FILE_SIZE_MB || 10) * 1024 * 1024;
+const activeUploadLocks = new Set();
 const IMAGE_OPTIMIZATION_ENABLED = String(process.env.IMAGE_OPTIMIZATION_ENABLED ?? 'true')
   .trim()
   .toLowerCase() !== 'false';
@@ -37,7 +38,41 @@ const fileFilter = (req, file, cb) => {
   }
 };
 
-function getUploadedFiles(req) {
+function getUploadLockKey(req) {
+  if (req?.user?.id) return `user:${req.user.id}`;
+  const ip = String(req?.ip || req?.socket?.remoteAddress || '').trim();
+  return ip ? `ip:${ip}` : '';
+}
+
+export function requireUploadLock(req, res, next) {
+  const lockKey = getUploadLockKey(req);
+  if (!lockKey) {
+    return next();
+  }
+
+  if (activeUploadLocks.has(lockKey)) {
+    return res.status(429).json({
+      error: 'В момента вече се обработва друго изображение. Изчакай текущото качване да приключи.',
+    });
+  }
+
+  activeUploadLocks.add(lockKey);
+
+  let released = false;
+  const releaseLock = () => {
+    if (released) return;
+    released = true;
+    activeUploadLocks.delete(lockKey);
+    res.off('finish', releaseLock);
+    res.off('close', releaseLock);
+  };
+
+  res.on('finish', releaseLock);
+  res.on('close', releaseLock);
+  next();
+}
+
+export function getUploadedFiles(req) {
   const files = [];
 
   if (req.file) files.push(req.file);

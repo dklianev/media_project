@@ -7,6 +7,7 @@ import {
   Eye,
   EyeOff,
   Filter,
+  ImagePlus,
   Pencil,
   Save,
   Search,
@@ -16,7 +17,9 @@ import {
 import { api } from '../../utils/api';
 import AdminPagination from '../../components/AdminPagination';
 import ConfirmActionModal from '../../components/ConfirmActionModal';
+import MediaPickerModal from '../../components/MediaPickerModal';
 import { useToastContext } from '../../context/ToastContext';
+import { useUploadActivity } from '../../context/UploadActivityContext';
 import {
   formatSofiaLocalDateTime,
   isFutureSofiaLocalDateTime,
@@ -54,10 +57,17 @@ export default function ManageEpisodes() {
   const [totalViews, setTotalViews] = useState(0);
   const [workingId, setWorkingId] = useState(null);
   const [deleteId, setDeleteId] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [mediaTarget, setMediaTarget] = useState(null);
+  const [selectedSideImages, setSelectedSideImages] = useState([]);
+  const [thumbnailUploadPreview, setThumbnailUploadPreview] = useState('');
+  const [adBannerUploadPreview, setAdBannerUploadPreview] = useState('');
+  const [sideImageUploadPreviews, setSideImageUploadPreviews] = useState([]);
   const thumbnailRef = useRef();
   const adBannerRef = useRef();
   const sideImagesRef = useRef();
   const fetchSeq = useRef(0);
+  const { isUploading, runWithUploadLock } = useUploadActivity();
 
   const [form, setForm] = useState({
     production_id: '',
@@ -71,63 +81,50 @@ export default function ManageEpisodes() {
     duration_seconds: '',
     is_active: true,
     published_at: '',
+    thumbnail_url: '',
+    ad_banner_url: '',
   });
 
-  const [initialFormState, setInitialFormState] = useState(JSON.stringify(form));
-  const useImagePreview = (ref) => {
-    const [preview, setPreview] = useState(null);
-    useEffect(() => {
-      const input = ref.current;
-      if (!input) return;
-      const handleOpen = () => {
-        if (input.files && input.files[0]) {
-          const url = URL.createObjectURL(input.files[0]);
-          setPreview(url);
-        } else {
-          setPreview(null);
-        }
-      };
-      input.addEventListener('change', handleOpen);
-      return () => {
-        input.removeEventListener('change', handleOpen);
-        if (preview) URL.revokeObjectURL(preview);
-      };
-    }, [ref, preview]);
-    return { preview, setPreview };
-  };
-
-  const useMultiImagePreview = (ref) => {
-    const [previews, setPreviews] = useState([]);
-    useEffect(() => {
-      const input = ref.current;
-      if (!input) return;
-      const handleOpen = () => {
-        if (input.files && input.files.length > 0) {
-          const newPreviews = Array.from(input.files).map(file => URL.createObjectURL(file));
-          setPreviews(newPreviews);
-        } else {
-          setPreviews([]);
-        }
-      };
-      input.addEventListener('change', handleOpen);
-      return () => {
-        input.removeEventListener('change', handleOpen);
-        previews.forEach(p => URL.revokeObjectURL(p));
-      };
-    }, [ref, previews]);
-    return { previews, setPreviews };
-  };
-
-  const thumbnailPreviewState = useImagePreview(thumbnailRef);
-  const adBannerPreviewState = useImagePreview(adBannerRef);
-  const sideImagesPreviewState = useMultiImagePreview(sideImagesRef);
+  const [initialFormState, setInitialFormState] = useState(JSON.stringify({
+    ...form,
+    side_images_urls: [],
+  }));
   const hasPendingUploads = Boolean(
     thumbnailRef.current?.files?.length
     || adBannerRef.current?.files?.length
     || sideImagesRef.current?.files?.length
   );
-  const isDirty = JSON.stringify(form) !== initialFormState || hasPendingUploads;
+  const isDirty = JSON.stringify({
+    ...form,
+    side_images_urls: selectedSideImages,
+  }) !== initialFormState || hasPendingUploads;
   useUnsavedChanges(isDirty);
+
+  useEffect(() => () => {
+    if (thumbnailUploadPreview) URL.revokeObjectURL(thumbnailUploadPreview);
+    if (adBannerUploadPreview) URL.revokeObjectURL(adBannerUploadPreview);
+    sideImageUploadPreviews.forEach((preview) => URL.revokeObjectURL(preview));
+  }, [thumbnailUploadPreview, adBannerUploadPreview, sideImageUploadPreviews]);
+
+  const resetSinglePreview = (setter, currentValue) => {
+    if (currentValue) URL.revokeObjectURL(currentValue);
+    setter('');
+  };
+
+  const replaceSinglePreview = (setter, currentValue, file) => {
+    if (currentValue) URL.revokeObjectURL(currentValue);
+    setter(file ? URL.createObjectURL(file) : '');
+  };
+
+  const replaceMultiPreview = (files) => {
+    sideImageUploadPreviews.forEach((preview) => URL.revokeObjectURL(preview));
+    setSideImageUploadPreviews(files.map((file) => URL.createObjectURL(file)));
+  };
+
+  const thumbnailPreviewSrc = thumbnailUploadPreview || form.thumbnail_url || null;
+  const adBannerPreviewSrc = adBannerUploadPreview || form.ad_banner_url || null;
+  const sideImagePreviewSources = sideImageUploadPreviews.length > 0 ? sideImageUploadPreviews : selectedSideImages;
+  const isActionLocked = saving || workingId !== null || isUploading;
 
   const fetchProductions = async () => {
     try {
@@ -190,16 +187,22 @@ export default function ManageEpisodes() {
       duration_seconds: '',
       is_active: true,
       published_at: '',
+      thumbnail_url: '',
+      ad_banner_url: '',
     };
     setForm(initialState);
-    setInitialFormState(JSON.stringify(initialState));
+    setInitialFormState(JSON.stringify({
+      ...initialState,
+      side_images_urls: [],
+    }));
     setEditing(null);
+    setSelectedSideImages([]);
     [thumbnailRef, adBannerRef, sideImagesRef].forEach((ref) => {
       if (ref.current) ref.current.value = '';
     });
-    thumbnailPreviewState.setPreview(null);
-    adBannerPreviewState.setPreview(null);
-    sideImagesPreviewState.setPreviews([]);
+    resetSinglePreview(setThumbnailUploadPreview, thumbnailUploadPreview);
+    resetSinglePreview(setAdBannerUploadPreview, adBannerUploadPreview);
+    replaceMultiPreview([]);
   };
 
   const startEdit = (episode) => {
@@ -216,22 +219,28 @@ export default function ManageEpisodes() {
       duration_seconds: episode.duration_seconds ? String(episode.duration_seconds) : '',
       is_active: !!episode.is_active,
       published_at: toSofiaLocalDateTimeInputValue(episode.published_at),
+      thumbnail_url: episode.thumbnail_url || '',
+      ad_banner_url: episode.ad_banner_url || '',
     };
-    setForm(newState);
-    setInitialFormState(JSON.stringify(newState));
-
-    [thumbnailRef, adBannerRef, sideImagesRef].forEach((ref) => {
-      if (ref.current) ref.current.value = '';
-    });
-    thumbnailPreviewState.setPreview(episode.thumbnail_url || null);
-    adBannerPreviewState.setPreview(episode.ad_banner_url || null);
-
     let sidePreviews = [];
     try {
       const parsed = JSON.parse(episode.side_images || '[]');
       if (Array.isArray(parsed)) sidePreviews = parsed;
     } catch (e) { }
-    sideImagesPreviewState.setPreviews(sidePreviews);
+
+    setForm(newState);
+    setInitialFormState(JSON.stringify({
+      ...newState,
+      side_images_urls: sidePreviews,
+    }));
+
+    [thumbnailRef, adBannerRef, sideImagesRef].forEach((ref) => {
+      if (ref.current) ref.current.value = '';
+    });
+    resetSinglePreview(setThumbnailUploadPreview, thumbnailUploadPreview);
+    resetSinglePreview(setAdBannerUploadPreview, adBannerUploadPreview);
+    replaceMultiPreview([]);
+    setSelectedSideImages(sidePreviews);
   };
 
   const handleSave = async () => {
@@ -254,6 +263,9 @@ export default function ManageEpisodes() {
     fd.append('access_group', form.access_group);
     fd.append('episode_number', form.episode_number);
     fd.append('is_active', String(form.is_active));
+    fd.append('thumbnail_url', form.thumbnail_url || '');
+    fd.append('ad_banner_url', form.ad_banner_url || '');
+    fd.append('side_images_urls', JSON.stringify(selectedSideImages));
     if (form.duration_seconds) fd.append('duration_seconds', form.duration_seconds);
     if (form.published_at) fd.append('published_at', form.published_at);
 
@@ -263,18 +275,19 @@ export default function ManageEpisodes() {
       Array.from(sideImagesRef.current.files).forEach((file) => fd.append('side_images', file));
     }
 
+    setSaving(true);
     try {
-      if (editing) {
-        await api.upload(`/episodes/admin/${editing}`, fd, 'PUT');
-        showToast('Епизодът е обновен');
-      } else {
-        await api.upload('/episodes/admin', fd);
-        showToast('Епизодът е създаден');
-      }
+      await runWithUploadLock(
+        () => (editing ? api.upload(`/episodes/admin/${editing}`, fd, 'PUT') : api.upload('/episodes/admin', fd)),
+        'Обработваме изображенията за епизода...'
+      );
+      showToast(editing ? 'Епизодът е обновен' : 'Епизодът е създаден');
       resetForm();
       fetchEpisodes();
     } catch (err) {
       showToast(err.message, 'error');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -400,36 +413,142 @@ export default function ManageEpisodes() {
           <div>
             <label className="text-xs text-[var(--text-muted)] block mb-1 flex items-center justify-between">
               Кадър
-              {thumbnailPreviewState.preview && <span className="text-[10px] text-[var(--accent-primary)]">Preview</span>}
+              {thumbnailPreviewSrc && <span className="text-[10px] text-[var(--accent-primary)]">Preview</span>}
             </label>
-            <div className="flex items-center gap-3">
-              {thumbnailPreviewState.preview && (
-                <img src={thumbnailPreviewState.preview} alt="Thumbnail preview" className="w-16 h-10 object-cover rounded shadow-sm" />
-              )}
-              <input type="file" ref={thumbnailRef} accept="image/*" className="input-dark text-sm flex-1" />
+            <div className="space-y-2">
+              <div className="flex items-center gap-3">
+                {thumbnailPreviewSrc && (
+                  <img src={thumbnailPreviewSrc} alt="Thumbnail preview" className="w-16 h-10 object-cover rounded shadow-sm" />
+                )}
+                <input
+                  type="file"
+                  ref={thumbnailRef}
+                  accept="image/*"
+                  disabled={isActionLocked}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0] || null;
+                    replaceSinglePreview(setThumbnailUploadPreview, thumbnailUploadPreview, file);
+                    if (file) {
+                      setForm((current) => ({ ...current, thumbnail_url: '' }));
+                    }
+                  }}
+                  className="input-dark text-sm flex-1"
+                />
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button type="button" onClick={() => setMediaTarget('thumbnail')} disabled={isActionLocked} className="btn-outline inline-flex items-center gap-2 !px-3 !py-2 text-xs disabled:opacity-50">
+                  <ImagePlus className="w-3.5 h-3.5" />
+                  От библиотеката
+                </button>
+                {thumbnailPreviewSrc && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (thumbnailRef.current) thumbnailRef.current.value = '';
+                      resetSinglePreview(setThumbnailUploadPreview, thumbnailUploadPreview);
+                      setForm((current) => ({ ...current, thumbnail_url: '' }));
+                    }}
+                    disabled={isActionLocked}
+                    className="btn-outline !px-3 !py-2 text-xs disabled:opacity-50"
+                  >
+                    Изчисти
+                  </button>
+                )}
+              </div>
             </div>
           </div>
           <div>
             <label className="text-xs text-[var(--text-muted)] block mb-1 flex items-center justify-between">
               Голямо изображение (по желание)
-              {adBannerPreviewState.preview && <span className="text-[10px] text-[var(--accent-primary)]">Preview</span>}
+              {adBannerPreviewSrc && <span className="text-[10px] text-[var(--accent-primary)]">Preview</span>}
             </label>
-            <div className="flex items-center gap-3">
-              {adBannerPreviewState.preview && (
-                <img src={adBannerPreviewState.preview} alt="Ad banner preview" className="w-16 h-10 object-cover rounded shadow-sm" />
-              )}
-              <input type="file" ref={adBannerRef} accept="image/*" className="input-dark text-sm flex-1" />
+            <div className="space-y-2">
+              <div className="flex items-center gap-3">
+                {adBannerPreviewSrc && (
+                  <img src={adBannerPreviewSrc} alt="Ad banner preview" className="w-16 h-10 object-cover rounded shadow-sm" />
+                )}
+                <input
+                  type="file"
+                  ref={adBannerRef}
+                  accept="image/*"
+                  disabled={isActionLocked}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0] || null;
+                    replaceSinglePreview(setAdBannerUploadPreview, adBannerUploadPreview, file);
+                    if (file) {
+                      setForm((current) => ({ ...current, ad_banner_url: '' }));
+                    }
+                  }}
+                  className="input-dark text-sm flex-1"
+                />
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button type="button" onClick={() => setMediaTarget('banner')} disabled={isActionLocked} className="btn-outline inline-flex items-center gap-2 !px-3 !py-2 text-xs disabled:opacity-50">
+                  <ImagePlus className="w-3.5 h-3.5" />
+                  От библиотеката
+                </button>
+                {adBannerPreviewSrc && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (adBannerRef.current) adBannerRef.current.value = '';
+                      resetSinglePreview(setAdBannerUploadPreview, adBannerUploadPreview);
+                      setForm((current) => ({ ...current, ad_banner_url: '' }));
+                    }}
+                    disabled={isActionLocked}
+                    className="btn-outline !px-3 !py-2 text-xs disabled:opacity-50"
+                  >
+                    Изчисти
+                  </button>
+                )}
+              </div>
             </div>
           </div>
           <div>
             <label className="text-xs text-[var(--text-muted)] block mb-1 flex items-center justify-between">
               Снимки до видеото (по желание, до 5)
-              {sideImagesPreviewState.previews.length > 0 && <span className="text-[10px] text-[var(--accent-primary)]">{sideImagesPreviewState.previews.length} Previews</span>}
+              {sideImagePreviewSources.length > 0 && <span className="text-[10px] text-[var(--accent-primary)]">{sideImagePreviewSources.length} Previews</span>}
             </label>
-            <input type="file" ref={sideImagesRef} accept="image/*" multiple className="input-dark text-sm mb-2" />
-            {sideImagesPreviewState.previews.length > 0 && (
+            <div className="space-y-2">
+              <input
+                type="file"
+                ref={sideImagesRef}
+                accept="image/*"
+                multiple
+                disabled={isActionLocked}
+                onChange={(e) => {
+                  const files = Array.from(e.target.files || []);
+                  replaceMultiPreview(files);
+                  if (files.length > 0) {
+                    setSelectedSideImages([]);
+                  }
+                }}
+                className="input-dark text-sm"
+              />
+              <div className="flex flex-wrap gap-2">
+                <button type="button" onClick={() => setMediaTarget('side')} disabled={isActionLocked} className="btn-outline inline-flex items-center gap-2 !px-3 !py-2 text-xs disabled:opacity-50">
+                  <ImagePlus className="w-3.5 h-3.5" />
+                  Избери до 5 от библиотеката
+                </button>
+                {sideImagePreviewSources.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (sideImagesRef.current) sideImagesRef.current.value = '';
+                      replaceMultiPreview([]);
+                      setSelectedSideImages([]);
+                    }}
+                    disabled={isActionLocked}
+                    className="btn-outline !px-3 !py-2 text-xs disabled:opacity-50"
+                  >
+                    Изчисти
+                  </button>
+                )}
+              </div>
+            </div>
+            {sideImagePreviewSources.length > 0 && (
               <div className="flex gap-2 mt-1 flex-wrap">
-                {sideImagesPreviewState.previews.map((src, i) => (
+                {sideImagePreviewSources.map((src, i) => (
                   <img key={i} src={src} alt={`Side preview ${i + 1}`} className="w-10 h-10 object-cover rounded shadow-sm" />
                 ))}
               </div>
@@ -477,10 +596,10 @@ export default function ManageEpisodes() {
           </div>
         </div>
         <div className="flex gap-2 mt-4">
-          <motion.button whileHover={{ scale: 1.03, y: -1 }} whileTap={{ scale: 0.97 }} transition={{ type: 'spring', stiffness: 400, damping: 25 }} onClick={handleSave} className="btn-gold flex items-center gap-2">
-            <Save className="w-4 h-4" /> {editing ? 'Запази' : 'Създай'}
+          <motion.button whileHover={{ scale: 1.03, y: -1 }} whileTap={{ scale: 0.97 }} transition={{ type: 'spring', stiffness: 400, damping: 25 }} onClick={handleSave} disabled={isActionLocked} className="btn-gold flex items-center gap-2 disabled:opacity-50">
+            <Save className="w-4 h-4" /> {saving ? 'Запазване...' : editing ? 'Запази' : 'Създай'}
           </motion.button>
-          {editing && <motion.button whileHover={{ scale: 1.03, y: -1 }} whileTap={{ scale: 0.97 }} transition={{ type: 'spring', stiffness: 400, damping: 25 }} onClick={resetForm} className="btn-outline flex items-center gap-2"><X className="w-4 h-4" /> Откажи</motion.button>}
+          {editing && <motion.button whileHover={{ scale: 1.03, y: -1 }} whileTap={{ scale: 0.97 }} transition={{ type: 'spring', stiffness: 400, damping: 25 }} onClick={resetForm} disabled={isActionLocked} className="btn-outline flex items-center gap-2 disabled:opacity-50"><X className="w-4 h-4" /> Откажи</motion.button>}
         </div>
       </motion.div>
 
@@ -638,6 +757,7 @@ export default function ManageEpisodes() {
                       showToast(err.message, 'error');
                     }
                   }}
+                  disabled={isActionLocked}
                   className={`admin-icon-btn ${episode.is_active ? 'text-[var(--text-primary)]' : 'text-[var(--text-muted)]'}`}
                   title={episode.is_active ? 'Скрий' : 'Покажи'}
                 >
@@ -648,7 +768,7 @@ export default function ManageEpisodes() {
                   whileTap={{ scale: 0.92 }}
                   transition={{ type: 'spring', stiffness: 400, damping: 25 }}
                   onClick={() => reorderEpisode(episode.id, 'up')}
-                  disabled={workingId === episode.id}
+                  disabled={isActionLocked}
                   className="admin-icon-btn disabled:opacity-50"
                   title="Нагоре"
                 >
@@ -659,7 +779,7 @@ export default function ManageEpisodes() {
                   whileTap={{ scale: 0.92 }}
                   transition={{ type: 'spring', stiffness: 400, damping: 25 }}
                   onClick={() => reorderEpisode(episode.id, 'down')}
-                  disabled={workingId === episode.id}
+                  disabled={isActionLocked}
                   className="admin-icon-btn disabled:opacity-50"
                   title="Надолу"
                 >
@@ -670,7 +790,8 @@ export default function ManageEpisodes() {
                   whileTap={{ scale: 0.92 }}
                   transition={{ type: 'spring', stiffness: 400, damping: 25 }}
                   onClick={() => startEdit(episode)}
-                  className="admin-icon-btn"
+                  disabled={isActionLocked}
+                  className="admin-icon-btn disabled:opacity-50"
                   aria-label="Редактирай епизод"
                 >
                   <Pencil className="w-4 h-4 text-[var(--text-secondary)]" />
@@ -680,7 +801,7 @@ export default function ManageEpisodes() {
                   whileTap={{ scale: 0.92 }}
                   transition={{ type: 'spring', stiffness: 400, damping: 25 }}
                   onClick={() => setDeleteId(episode.id)}
-                  disabled={workingId === episode.id}
+                  disabled={isActionLocked}
                   className="admin-icon-btn disabled:opacity-50"
                   aria-label="Изтрий епизод"
                 >
@@ -714,6 +835,38 @@ export default function ManageEpisodes() {
         loading={workingId === deleteId}
         onClose={() => setDeleteId(null)}
         onConfirm={handleDelete}
+      />
+
+      <MediaPickerModal
+        open={Boolean(mediaTarget)}
+        title={
+          mediaTarget === 'side'
+            ? 'Избери странични изображения'
+            : mediaTarget === 'banner'
+              ? 'Избери голямо изображение'
+              : 'Избери кадър за епизода'
+        }
+        selectionMode={mediaTarget === 'side' ? 'multiple' : 'single'}
+        value={mediaTarget === 'side' ? selectedSideImages : mediaTarget === 'banner' ? form.ad_banner_url : form.thumbnail_url}
+        maxItems={5}
+        onClose={() => setMediaTarget(null)}
+        onConfirm={(value) => {
+          if (mediaTarget === 'side') {
+            if (sideImagesRef.current) sideImagesRef.current.value = '';
+            replaceMultiPreview([]);
+            setSelectedSideImages(Array.isArray(value) ? value : []);
+            return;
+          }
+          if (mediaTarget === 'banner') {
+            if (adBannerRef.current) adBannerRef.current.value = '';
+            resetSinglePreview(setAdBannerUploadPreview, adBannerUploadPreview);
+            setForm((current) => ({ ...current, ad_banner_url: String(value || '') }));
+            return;
+          }
+          if (thumbnailRef.current) thumbnailRef.current.value = '';
+          resetSinglePreview(setThumbnailUploadPreview, thumbnailUploadPreview);
+          setForm((current) => ({ ...current, thumbnail_url: String(value || '') }));
+        }}
       />
 
 

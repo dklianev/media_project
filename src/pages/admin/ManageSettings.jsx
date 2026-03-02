@@ -1,9 +1,11 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { ArrowDown, ArrowUp, Film, Plus, Save, Trash2, Upload } from 'lucide-react';
+import { ArrowDown, ArrowUp, Film, ImagePlus, Plus, Save, Trash2, Upload } from 'lucide-react';
 import { api } from '../../utils/api';
 import { useToastContext } from '../../context/ToastContext';
+import { useUploadActivity } from '../../context/UploadActivityContext';
 import { invalidatePublicSettingsCache } from '../../utils/settings';
 import FaqEditor from '../../components/FaqEditor';
+import MediaPickerModal from '../../components/MediaPickerModal';
 import { parseHeroProductionIds, stringifyHeroProductionIds } from '../../utils/homeHeroSettings';
 
 const LANDING_FIELDS = [
@@ -147,7 +149,9 @@ export default function ManageSettings() {
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState('general');
   const [heroProductionToAdd, setHeroProductionToAdd] = useState('');
+  const [mediaTarget, setMediaTarget] = useState(null);
   const { showToast } = useToastContext();
+  const { isUploading, runWithUploadLock } = useUploadActivity();
   const heroImageRef = useRef();
   const logoRef = useRef();
   const faviconRef = useRef();
@@ -197,7 +201,10 @@ export default function ManageSettings() {
     fd.append('image', file);
 
     try {
-      const result = await api.upload('/settings/hero-image', fd);
+      const result = await runWithUploadLock(
+        () => api.upload('/settings/hero-image', fd),
+        'Обработваме hero изображението...'
+      );
       setSettings((prev) => ({ ...prev, hero_image: result.url }));
       invalidatePublicSettingsCache(true);
       showToast('Hero изображението е качено');
@@ -212,7 +219,10 @@ export default function ManageSettings() {
     const fd = new FormData();
     fd.append('image', file);
     try {
-      const result = await api.upload(endpoint, fd);
+      const result = await runWithUploadLock(
+        () => api.upload(endpoint, fd),
+        `Обработваме ${label.toLowerCase()}...`
+      );
       setSettings((prev) => ({ ...prev, [settingKey]: result.url }));
       invalidatePublicSettingsCache(true);
       showToast(`${label} е качено`);
@@ -223,6 +233,17 @@ export default function ManageSettings() {
 
   const updateField = (key, value) => {
     setSettings((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const applyLibraryImage = async (settingKey, value, label) => {
+    try {
+      await api.put('/settings', { [settingKey]: value });
+      setSettings((prev) => ({ ...prev, [settingKey]: value }));
+      invalidatePublicSettingsCache(true);
+      showToast(`${label} е обновено от media library.`);
+    } catch (err) {
+      showToast(err.message || `Неуспешно обновяване на ${label}.`, 'error');
+    }
   };
 
   const selectedHeroProductionIds = useMemo(
@@ -296,7 +317,7 @@ export default function ManageSettings() {
       {/* Header section with sticky Save button */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <h1 className="text-2xl font-bold">Настройки</h1>
-        <button onClick={handleSave} disabled={saving} className="btn-gold flex items-center justify-center gap-2 px-6 shadow-premium-md">
+        <button onClick={handleSave} disabled={saving || isUploading} className="btn-gold flex items-center justify-center gap-2 px-6 shadow-premium-md disabled:opacity-50">
           <Save className="w-5 h-5" />
           {saving ? 'Запазване...' : 'Запази промените'}
         </button>
@@ -358,9 +379,12 @@ export default function ManageSettings() {
                     <img src={settings.site_logo} alt="Текущо лого" className="w-16 h-16 object-cover rounded-lg mb-2" />
                   )}
                   <div className="flex gap-2">
-                    <input type="file" ref={logoRef} accept="image/*" className="input-dark text-sm flex-1" />
-                    <button onClick={() => handleImageUpload(logoRef, '/settings/site-logo', 'site_logo', 'Логото')} className="btn-outline flex items-center gap-2">
+                    <input type="file" ref={logoRef} accept="image/*" disabled={isUploading} className="input-dark text-sm flex-1" />
+                    <button onClick={() => handleImageUpload(logoRef, '/settings/site-logo', 'site_logo', 'Логото')} disabled={isUploading} className="btn-outline flex items-center gap-2 disabled:opacity-50">
                       <Upload className="w-4 h-4" /> Качи
+                    </button>
+                    <button onClick={() => setMediaTarget('site_logo')} disabled={isUploading} className="btn-outline flex items-center gap-2 disabled:opacity-50">
+                      <ImagePlus className="w-4 h-4" /> Library
                     </button>
                   </div>
                 </div>
@@ -370,9 +394,12 @@ export default function ManageSettings() {
                     <img src={settings.site_favicon} alt="Текущ favicon" className="w-8 h-8 object-cover rounded mb-2" />
                   )}
                   <div className="flex gap-2">
-                    <input type="file" ref={faviconRef} accept="image/*" className="input-dark text-sm flex-1" />
-                    <button onClick={() => handleImageUpload(faviconRef, '/settings/site-favicon', 'site_favicon', 'Favicon')} className="btn-outline flex items-center gap-2">
+                    <input type="file" ref={faviconRef} accept="image/*" disabled={isUploading} className="input-dark text-sm flex-1" />
+                    <button onClick={() => handleImageUpload(faviconRef, '/settings/site-favicon', 'site_favicon', 'Favicon')} disabled={isUploading} className="btn-outline flex items-center gap-2 disabled:opacity-50">
                       <Upload className="w-4 h-4" /> Качи
+                    </button>
+                    <button onClick={() => setMediaTarget('site_favicon')} disabled={isUploading} className="btn-outline flex items-center gap-2 disabled:opacity-50">
+                      <ImagePlus className="w-4 h-4" /> Library
                     </button>
                   </div>
                 </div>
@@ -458,9 +485,12 @@ export default function ManageSettings() {
                     <img src={settings.hero_image} alt="Текущо hero изображение" className="w-full max-w-[300px] h-40 object-cover rounded-lg mb-2" />
                   )}
                   <div className="flex gap-2">
-                    <input type="file" ref={heroImageRef} accept="image/*" className="input-dark text-sm flex-1 max-w-sm" />
-                    <button onClick={handleHeroUpload} className="btn-outline flex items-center gap-2">
+                    <input type="file" ref={heroImageRef} accept="image/*" disabled={isUploading} className="input-dark text-sm flex-1 max-w-sm" />
+                    <button onClick={handleHeroUpload} disabled={isUploading} className="btn-outline flex items-center gap-2 disabled:opacity-50">
                       <Upload className="w-4 h-4" /> Качи
+                    </button>
+                    <button onClick={() => setMediaTarget('hero_image')} disabled={isUploading} className="btn-outline flex items-center gap-2 disabled:opacity-50">
+                      <ImagePlus className="w-4 h-4" /> Library
                     </button>
                   </div>
                 </div>
@@ -707,6 +737,30 @@ export default function ManageSettings() {
         )}
 
       </div>
+
+      <MediaPickerModal
+        open={Boolean(mediaTarget)}
+        title={
+          mediaTarget === 'site_logo'
+            ? 'Избери лого'
+            : mediaTarget === 'site_favicon'
+              ? 'Избери favicon'
+              : 'Избери hero изображение'
+        }
+        value={settings[mediaTarget || ''] || ''}
+        onClose={() => setMediaTarget(null)}
+        onConfirm={(url) => {
+          const target = mediaTarget;
+          setMediaTarget(null);
+          if (!target) return;
+          const labels = {
+            hero_image: 'Hero изображението',
+            site_logo: 'Логото',
+            site_favicon: 'Favicon',
+          };
+          applyLibraryImage(target, url, labels[target] || 'Изображението');
+        }}
+      />
     </div>
   );
 }

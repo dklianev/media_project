@@ -1,8 +1,9 @@
 import { Router } from 'express';
 import db from '../db.js';
 import { requireAdmin } from '../middleware/auth.js';
-import { optimizeUploadedImages, upload } from '../middleware/upload.js';
+import { optimizeUploadedImages, requireUploadLock, upload } from '../middleware/upload.js';
 import { logAdminAction } from '../utils/audit.js';
+import { registerUploadedMedia } from '../utils/mediaLibrary.js';
 
 const router = Router();
 const PUBLIC_KEYS = [
@@ -186,61 +187,76 @@ router.put('/', requireAdmin, (req, res) => {
   res.json({ success: true, rejected_keys: rejected });
 });
 
-router.post('/hero-image', requireAdmin, upload.single('image'), optimizeUploadedImages, (req, res) => {
-  if (!req.file) {
-    return res.status(400).json({ error: 'Не е качено изображение' });
+router.post('/hero-image', requireAdmin, requireUploadLock, upload.single('image'), optimizeUploadedImages, async (req, res, next) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'Не е качено изображение' });
+    }
+
+    const url = `/uploads/${req.file.filename}`;
+    db.prepare(`
+      INSERT INTO site_settings (key, value)
+      VALUES (?, ?)
+      ON CONFLICT(key) DO UPDATE SET value = ?
+    `).run('hero_image', url, url);
+    await registerUploadedMedia(req, [req.file], { source: 'settings.hero_image' });
+
+    logAdminAction(req, {
+      action: 'settings.hero_image.update',
+      entity_type: 'site_settings',
+      entity_id: 'hero_image',
+      metadata: {
+        url,
+      },
+    });
+    res.json({ url });
+  } catch (err) {
+    next(err);
   }
-
-  const url = `/uploads/${req.file.filename}`;
-  db.prepare(`
-    INSERT INTO site_settings (key, value)
-    VALUES (?, ?)
-    ON CONFLICT(key) DO UPDATE SET value = ?
-  `).run('hero_image', url, url);
-
-  logAdminAction(req, {
-    action: 'settings.hero_image.update',
-    entity_type: 'site_settings',
-    entity_id: 'hero_image',
-    metadata: {
-      url,
-    },
-  });
-  res.json({ url });
 });
 
-router.post('/site-logo', requireAdmin, upload.single('image'), optimizeUploadedImages, (req, res) => {
-  if (!req.file) {
-    return res.status(400).json({ error: 'Не е качено изображение' });
+router.post('/site-logo', requireAdmin, requireUploadLock, upload.single('image'), optimizeUploadedImages, async (req, res, next) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'Не е качено изображение' });
+    }
+    const url = `/uploads/${req.file.filename}`;
+    db.prepare(
+      'INSERT INTO site_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = ?'
+    ).run('site_logo', url, url);
+    await registerUploadedMedia(req, [req.file], { source: 'settings.site_logo' });
+    logAdminAction(req, {
+      action: 'settings.site_logo.update',
+      entity_type: 'site_settings',
+      entity_id: 'site_logo',
+      metadata: { url },
+    });
+    res.json({ url });
+  } catch (err) {
+    next(err);
   }
-  const url = `/uploads/${req.file.filename}`;
-  db.prepare(
-    'INSERT INTO site_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = ?'
-  ).run('site_logo', url, url);
-  logAdminAction(req, {
-    action: 'settings.site_logo.update',
-    entity_type: 'site_settings',
-    entity_id: 'site_logo',
-    metadata: { url },
-  });
-  res.json({ url });
 });
 
-router.post('/site-favicon', requireAdmin, upload.single('image'), optimizeUploadedImages, (req, res) => {
-  if (!req.file) {
-    return res.status(400).json({ error: 'Не е качено изображение' });
+router.post('/site-favicon', requireAdmin, requireUploadLock, upload.single('image'), optimizeUploadedImages, async (req, res, next) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'Не е качено изображение' });
+    }
+    const url = `/uploads/${req.file.filename}`;
+    db.prepare(
+      'INSERT INTO site_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = ?'
+    ).run('site_favicon', url, url);
+    await registerUploadedMedia(req, [req.file], { source: 'settings.site_favicon' });
+    logAdminAction(req, {
+      action: 'settings.site_favicon.update',
+      entity_type: 'site_settings',
+      entity_id: 'site_favicon',
+      metadata: { url },
+    });
+    res.json({ url });
+  } catch (err) {
+    next(err);
   }
-  const url = `/uploads/${req.file.filename}`;
-  db.prepare(
-    'INSERT INTO site_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = ?'
-  ).run('site_favicon', url, url);
-  logAdminAction(req, {
-    action: 'settings.site_favicon.update',
-    entity_type: 'site_settings',
-    entity_id: 'site_favicon',
-    metadata: { url },
-  });
-  res.json({ url });
 });
 
 export default router;

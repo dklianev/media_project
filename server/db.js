@@ -218,6 +218,21 @@ db.exec(`
     FOREIGN KEY (user_id) REFERENCES users(id)
   );
 
+  CREATE TABLE IF NOT EXISTS media_assets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    original_name TEXT NOT NULL,
+    stored_name TEXT NOT NULL,
+    url TEXT UNIQUE NOT NULL,
+    mime_type TEXT NOT NULL,
+    size_bytes INTEGER NOT NULL DEFAULT 0,
+    width INTEGER,
+    height INTEGER,
+    source TEXT,
+    created_by INTEGER,
+    created_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (created_by) REFERENCES users(id)
+  );
+
   CREATE TABLE IF NOT EXISTS support_tickets (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL,
@@ -393,6 +408,8 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_comments_status_created ON comments(status, created_at DESC);
   CREATE INDEX IF NOT EXISTS idx_comments_user_created ON comments(user_id, created_at DESC);
   CREATE INDEX IF NOT EXISTS idx_notifications_user_unread ON notifications(user_id, is_read, created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_media_assets_created ON media_assets(created_at DESC, id DESC);
+  CREATE INDEX IF NOT EXISTS idx_media_assets_created_by ON media_assets(created_by, created_at DESC);
   `);
 
 db.exec(`

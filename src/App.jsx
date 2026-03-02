@@ -3,6 +3,7 @@ import { Suspense, lazy, useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useAuth } from './context/AuthContext';
 import { ToastProvider } from './context/ToastContext';
+import { UploadActivityProvider } from './context/UploadActivityContext';
 import Navbar from './components/Navbar';
 import Footer from './components/Footer';
 import AnnouncementBanner from './components/AnnouncementBanner';
@@ -40,6 +41,7 @@ const ManagePayments = lazy(() => import('./pages/admin/ManagePayments'));
 const ManageSettings = lazy(() => import('./pages/admin/ManageSettings'));
 const ManageAuditLogs = lazy(() => import('./pages/admin/ManageAuditLogs'));
 const ManageSupport = lazy(() => import('./pages/admin/ManageSupport'));
+const ManageMediaLibrary = lazy(() => import('./pages/admin/ManageMediaLibrary'));
 
 import { Crown } from 'lucide-react';
 
@@ -202,18 +204,19 @@ export default function App() {
   return (
     <ErrorBoundary>
       <ToastProvider>
-        {!hideChrome && user && (
-          <div ref={chromeRef}>
-            <AnnouncementBanner />
-            <Navbar />
-          </div>
-        )}
-        {!hideChrome && user && <ScrollToTop />}
+        <UploadActivityProvider>
+          {!hideChrome && user && (
+            <div ref={chromeRef}>
+              <AnnouncementBanner />
+              <Navbar />
+            </div>
+          )}
+          {!hideChrome && user && <ScrollToTop />}
 
-        <main className="flex-1 film-grain">
-          <Suspense fallback={<PageLoader />}>
-            <AnimatePresence mode="wait">
-              <Routes location={location} key={location.pathname}>
+          <main className="flex-1 film-grain">
+            <Suspense fallback={<PageLoader />}>
+              <AnimatePresence mode="wait">
+                <Routes location={location} key={location.pathname}>
                 {/* Public */}
                 <Route path="/login" element={<AnimatedPage><LoginPage /></AnimatedPage>} />
                 <Route path="/auth/callback" element={<AuthCallback />} />
@@ -241,6 +244,7 @@ export default function App() {
                   <Route path="episodes" element={<ManageEpisodes />} />
                   <Route path="promo-codes" element={<ManagePromoCodes />} />
                   <Route path="payments" element={<ManagePayments />} />
+                  <Route path="media" element={<ManageMediaLibrary />} />
                   <Route path="settings" element={<ManageSettings />} />
                   <Route path="audit" element={<ManageAuditLogs />} />
                   <Route path="support" element={<ManageSupport />} />
@@ -248,11 +252,12 @@ export default function App() {
 
                 {/* Fallback */}
                 <Route path="*" element={<AnimatedPage><NotFoundPage /></AnimatedPage>} />
-              </Routes>
-            </AnimatePresence>
-          </Suspense>
-        </main>
-        {!hideChrome && user && <Footer />}
+                </Routes>
+              </AnimatePresence>
+            </Suspense>
+          </main>
+          {!hideChrome && user && <Footer />}
+        </UploadActivityProvider>
       </ToastProvider>
     </ErrorBoundary>
   );

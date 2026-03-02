@@ -11,6 +11,7 @@ const JWT_SECRET = 'test-jwt-secret';
 const JWT_REFRESH_SECRET = 'test-refresh-secret';
 const EMBED_TOKEN_SECRET = 'test-embed-secret';
 const REFRESH_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const TINY_PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aF9sAAAAASUVORK5CYII=';
 
 let server;
 let baseUrl;
@@ -208,6 +209,28 @@ async function apiTextRequest(path, { method = 'GET', token, body, headers: extr
   return { response, text };
 }
 
+async function apiFormRequest(path, { method = 'POST', token, formData, headers: extraHeaders } = {}) {
+  const headers = { ...(extraHeaders || {}) };
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  const response = await fetch(`${baseUrl}${path}`, {
+    method,
+    headers,
+    body: formData,
+  });
+
+  let data = null;
+  try {
+    data = await response.json();
+  } catch {}
+
+  return { response, data };
+}
+
+function createTinyPngBlob() {
+  return new Blob([Buffer.from(TINY_PNG_BASE64, 'base64')], { type: 'image/png' });
+}
+
 function extractCookieValue(setCookieHeader, name) {
   const match = String(setCookieHeader || '').match(new RegExp(`${name}=([^;]+)`));
   return match ? decodeURIComponent(match[1]) : '';
@@ -216,7 +239,10 @@ function extractCookieValue(setCookieHeader, name) {
 function resetDatabase() {
   const tables = [
     'admin_audit_logs',
+    'media_assets',
     'notifications',
+    'support_ticket_messages',
+    'support_tickets',
     'reactions',
     'comments',
     'watch_history',
@@ -1364,6 +1390,202 @@ test('reactions не допускат достъп до непубликуван
   assert.equal(count, 0);
 });
 
+test('media library качва изображение и го регистрира за повторна употреба', async () => {
+  const admin = createUser({ role: 'admin', character_name: 'Media Admin' });
+  const formData = new FormData();
+  formData.append('files', createTinyPngBlob(), 'poster.png');
+
+  const uploaded = await apiFormRequest('/api/admin/media', {
+    method: 'POST',
+    token: createAccessToken(admin),
+    formData,
+  });
+
+  assert.equal(uploaded.response.status, 201);
+  assert.equal(uploaded.data?.items?.length, 1);
+  assert.equal(uploaded.data?.items?.[0]?.original_name, 'poster.png');
+  assert.match(uploaded.data?.items?.[0]?.url || '', /^\/uploads\/.+\.webp$/);
+
+  const stored = db.prepare('SELECT source, created_by, mime_type FROM media_assets WHERE id = ?')
+    .get(uploaded.data.items[0].id);
+  assert.equal(stored.source, 'media.library');
+  assert.equal(stored.created_by, admin.id);
+  assert.equal(stored.mime_type, 'image/webp');
+});
+
+test('episode create приема URL-и от media library вместо нов upload', async () => {
+  const admin = createUser({ role: 'admin', character_name: 'Media Episode Admin' });
+  const production = createProduction({
+    title: 'Media-backed Production',
+    slug: 'media-backed-production',
+    access_group: 'free',
+    is_active: 1,
+  });
+
+  const uploadData = new FormData();
+  uploadData.append('files', createTinyPngBlob(), 'episode-art.png');
+  const uploaded = await apiFormRequest('/api/admin/media', {
+    method: 'POST',
+    token: createAccessToken(admin),
+    formData: uploadData,
+  });
+  const mediaUrl = uploaded.data?.items?.[0]?.url;
+  assert.ok(mediaUrl);
+
+  const formData = new FormData();
+  formData.append('production_id', String(production.id));
+  formData.append('title', 'Episode From Library');
+  formData.append('description', 'Uses library assets');
+  formData.append('youtube_video_id', 'dQw4w9WgXcQ');
+  formData.append('side_text', 'Side panel');
+  formData.append('ad_banner_link', 'https://example.com');
+  formData.append('access_group', 'free');
+  formData.append('episode_number', '3');
+  formData.append('is_active', 'true');
+  formData.append('thumbnail_url', mediaUrl);
+  formData.append('ad_banner_url', mediaUrl);
+  formData.append('side_images_urls', JSON.stringify([mediaUrl]));
+
+  const created = await apiFormRequest('/api/episodes/admin', {
+    method: 'POST',
+    token: createAccessToken(admin),
+    formData,
+  });
+
+  assert.equal(created.response.status, 201);
+  assert.equal(created.data?.thumbnail_url, mediaUrl);
+  assert.equal(created.data?.ad_banner_url, mediaUrl);
+
+  const stored = db.prepare('SELECT thumbnail_url, ad_banner_url, side_images FROM episodes WHERE id = ?')
+    .get(created.data.id);
+  assert.equal(stored.thumbnail_url, mediaUrl);
+  assert.equal(stored.ad_banner_url, mediaUrl);
+  assert.equal(stored.side_images, JSON.stringify([mediaUrl]));
+});
+
+test('support, notifications и audit happy path работят за реален ticket lifecycle', async () => {
+  const admin = createUser({ role: 'admin', character_name: 'Support Admin' });
+  const user = createUser({ character_name: 'Support User' });
+  const adminToken = createAccessToken(admin);
+  const userToken = createAccessToken(user);
+
+  const created = await apiRequest('/api/support', {
+    method: 'POST',
+    token: userToken,
+    body: {
+      subject: 'Проблем с достъпа',
+      message: 'Не виждам премиум епизода',
+    },
+  });
+  assert.equal(created.response.status, 201);
+  assert.equal(created.data?.success, true);
+  assert.ok(Number(created.data?.ticketId) > 0);
+
+  const ticketId = created.data.ticketId;
+
+  const adminList = await apiRequest('/api/support/admin?status=open', {
+    method: 'GET',
+    token: adminToken,
+  });
+  assert.equal(adminList.response.status, 200);
+  assert.equal(adminList.data?.length, 1);
+  assert.equal(Number(adminList.data?.[0]?.id), Number(ticketId));
+
+  const closed = await apiRequest(`/api/support/admin/${ticketId}/status`, {
+    method: 'PUT',
+    token: adminToken,
+    body: { status: 'closed' },
+  });
+  assert.equal(closed.response.status, 200);
+  assert.equal(closed.data?.success, true);
+  assert.equal(
+    db.prepare('SELECT status FROM support_tickets WHERE id = ?').get(ticketId)?.status,
+    'closed'
+  );
+
+  const userReplyText = 'Добавям още детайли по проблема';
+  const userReply = await apiRequest(`/api/support/${ticketId}/reply`, {
+    method: 'POST',
+    token: userToken,
+    body: { replyText: userReplyText },
+  });
+  assert.equal(userReply.response.status, 200);
+  assert.equal(userReply.data?.success, true);
+  assert.equal(
+    db.prepare('SELECT status FROM support_tickets WHERE id = ?').get(ticketId)?.status,
+    'open'
+  );
+
+  const adminReplyText = 'Проблемът е коригиран, опитай отново';
+  const adminReply = await apiRequest(`/api/support/${ticketId}/reply`, {
+    method: 'POST',
+    token: adminToken,
+    body: { replyText: adminReplyText },
+  });
+  assert.equal(adminReply.response.status, 200);
+  assert.equal(adminReply.data?.success, true);
+  assert.equal(
+    db.prepare('SELECT status FROM support_tickets WHERE id = ?').get(ticketId)?.status,
+    'closed'
+  );
+
+  const thread = await apiRequest(`/api/support/${ticketId}`, {
+    method: 'GET',
+    token: userToken,
+  });
+  assert.equal(thread.response.status, 200);
+  assert.equal(thread.data?.ticket?.subject, 'Проблем с достъпа');
+  assert.equal(thread.data?.messages?.length, 2);
+  assert.equal(thread.data?.messages?.[0]?.message, userReplyText);
+  assert.equal(thread.data?.messages?.[1]?.message, adminReplyText);
+
+  const notifications = await apiRequest('/api/notifications', {
+    method: 'GET',
+    token: userToken,
+  });
+  assert.equal(notifications.response.status, 200);
+  assert.equal(notifications.data?.length, 1);
+  assert.match(notifications.data?.[0]?.title || '', /Отговор на Вашето запитване/);
+  assert.equal(notifications.data?.[0]?.message, adminReplyText);
+
+  const notificationId = notifications.data[0].id;
+  const readOne = await apiRequest(`/api/notifications/${notificationId}/read`, {
+    method: 'PUT',
+    token: userToken,
+  });
+  assert.equal(readOne.response.status, 200);
+  assert.equal(readOne.data?.success, true);
+  assert.equal(
+    db.prepare('SELECT is_read FROM notifications WHERE id = ?').get(notificationId)?.is_read,
+    1
+  );
+
+  db.prepare(`
+    INSERT INTO notifications (user_id, title, message, link)
+    VALUES (?, ?, ?, ?)
+  `).run(user.id, 'Допълнително известие', 'Второ съобщение', '/support');
+
+  const readAll = await apiRequest('/api/notifications/read-all', {
+    method: 'PUT',
+    token: userToken,
+  });
+  assert.equal(readAll.response.status, 200);
+  assert.equal(readAll.data?.success, true);
+  assert.equal(
+    db.prepare('SELECT COUNT(*) as count FROM notifications WHERE user_id = ? AND is_read = 0').get(user.id).count,
+    0
+  );
+
+  const audit = await apiRequest('/api/admin/audit?action=support_ticket.reply', {
+    method: 'GET',
+    token: adminToken,
+  });
+  assert.equal(audit.response.status, 200);
+  assert.equal(audit.data?.items?.length, 1);
+  assert.equal(audit.data?.items?.[0]?.entity_type, 'support_ticket');
+  assert.equal(audit.data?.items?.[0]?.metadata?.reply, adminReplyText);
+});
+
 test('support status update връща 404 за липсващ ticket', async () => {
   const admin = createUser({ role: 'admin', character_name: 'Support Admin' });
   const adminToken = createAccessToken(admin);
@@ -1374,6 +1596,66 @@ test('support status update връща 404 за липсващ ticket', async ()
     body: { status: 'closed' },
   });
   assert.equal(response.response.status, 404);
+});
+
+test('dashboard endpoint агрегира потребители, епизоди, гледания и payment statuses', async () => {
+  const admin = createUser({ role: 'admin', character_name: 'Dashboard Admin' });
+  const adminToken = createAccessToken(admin);
+  const plan = createPlan({ name: 'Dashboard Plan', tier_level: 2, price: 99 });
+  const subscriber = createUser({
+    character_name: 'Dashboard Subscriber',
+    subscription_plan_id: plan.id,
+    subscription_expires_at: '2099-01-01T00:00:00.000Z',
+  });
+  createUser({ character_name: 'Dashboard Free User' });
+
+  const production = createProduction({
+    title: 'Dashboard Production',
+    slug: 'dashboard-production',
+    access_group: 'free',
+    is_active: 1,
+  });
+  createEpisode({
+    production_id: production.id,
+    title: 'Dashboard Episode 1',
+    access_group: 'free',
+    is_active: 1,
+    view_count: 45,
+  });
+  createEpisode({
+    production_id: production.id,
+    title: 'Dashboard Episode 2',
+    access_group: 'free',
+    is_active: 1,
+    view_count: 7,
+  });
+
+  db.prepare(`
+    INSERT INTO payment_references (
+      user_id, plan_id, reference_code, original_price, discount_percent, final_price, status
+    )
+    VALUES
+      (?, ?, 'SUB-DASH-PND', 99, 0, 99, 'pending'),
+      (?, ?, 'SUB-DASH-CNF', 99, 10, 89.1, 'confirmed'),
+      (?, ?, 'SUB-DASH-REJ', 99, 0, 99, 'rejected'),
+      (?, ?, 'SUB-DASH-CNL', 99, 0, 99, 'cancelled')
+  `).run(subscriber.id, plan.id, subscriber.id, plan.id, subscriber.id, plan.id, subscriber.id, plan.id);
+
+  const result = await apiRequest('/api/admin/dashboard', {
+    method: 'GET',
+    token: adminToken,
+  });
+  assert.equal(result.response.status, 200);
+  assert.equal(result.data?.total_users, 3);
+  assert.equal(result.data?.subscribed_users, 1);
+  assert.equal(result.data?.total_productions, 1);
+  assert.equal(result.data?.total_episodes, 2);
+  assert.equal(result.data?.total_views, 52);
+  assert.equal(result.data?.total_payments, 4);
+  assert.equal(result.data?.pending_payments, 1);
+  assert.equal(result.data?.confirmed_payments, 1);
+  assert.equal(result.data?.rejected_payments, 1);
+  assert.equal(result.data?.cancelled_payments, 1);
 });
 
 test('CSV export не оставя spreadsheet formulas изпълними', async () => {

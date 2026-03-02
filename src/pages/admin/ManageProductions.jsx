@@ -1,10 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { ArrowDown, ArrowUp, Pencil, Save, Search, Trash2, X, Eye, EyeOff } from 'lucide-react';
+import { ArrowDown, ArrowUp, ImagePlus, Pencil, Save, Search, Trash2, X, Eye, EyeOff } from 'lucide-react';
 import { api } from '../../utils/api';
 import AdminPagination from '../../components/AdminPagination';
 import ConfirmActionModal from '../../components/ConfirmActionModal';
+import MediaPickerModal from '../../components/MediaPickerModal';
 import { useToastContext } from '../../context/ToastContext';
+import { useUploadActivity } from '../../context/UploadActivityContext';
 import { getProductionAccessGroup } from '../../utils/accessGroups';
 import { useUnsavedChanges } from '../../hooks/useUnsavedChanges';
 
@@ -31,9 +33,14 @@ export default function ManageProductions() {
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
   const [deleteId, setDeleteId] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [mediaTarget, setMediaTarget] = useState(null);
+  const [thumbnailUploadPreview, setThumbnailUploadPreview] = useState('');
+  const [coverUploadPreview, setCoverUploadPreview] = useState('');
   const thumbnailRef = useRef();
   const coverRef = useRef();
   const fetchSeq = useRef(0);
+  const { isUploading, runWithUploadLock } = useUploadActivity();
   const [form, setForm] = useState({
     title: '',
     description: '',
@@ -42,39 +49,31 @@ export default function ManageProductions() {
     required_tier: '1',
     sort_order: '0',
     is_active: true,
+    thumbnail_url: '',
+    cover_image_url: '',
   });
 
   const [initialFormState, setInitialFormState] = useState(JSON.stringify(form));
-  const useImagePreview = (ref) => {
-    const [preview, setPreview] = useState(null);
-    useEffect(() => {
-      const input = ref.current;
-      if (!input) return;
-      const handleOpen = () => {
-        if (input.files && input.files[0]) {
-          const url = URL.createObjectURL(input.files[0]);
-          setPreview(url);
-        } else {
-          setPreview(null);
-        }
-      };
-      input.addEventListener('change', handleOpen);
-      return () => {
-        input.removeEventListener('change', handleOpen);
-        if (preview) URL.revokeObjectURL(preview);
-      };
-    }, [ref, preview]);
-    return { preview, setPreview };
-  };
-
-  const thumbnailPreviewState = useImagePreview(thumbnailRef);
-  const coverPreviewState = useImagePreview(coverRef);
   const hasPendingUploads = Boolean(
     thumbnailRef.current?.files?.length
     || coverRef.current?.files?.length
   );
   const isDirty = JSON.stringify(form) !== initialFormState || hasPendingUploads;
   useUnsavedChanges(isDirty);
+
+  useEffect(() => () => {
+    if (thumbnailUploadPreview) URL.revokeObjectURL(thumbnailUploadPreview);
+    if (coverUploadPreview) URL.revokeObjectURL(coverUploadPreview);
+  }, [thumbnailUploadPreview, coverUploadPreview]);
+
+  const updatePreviewUrl = (setter, currentValue, file) => {
+    if (currentValue) URL.revokeObjectURL(currentValue);
+    setter(file ? URL.createObjectURL(file) : '');
+  };
+
+  const thumbnailPreviewSrc = thumbnailUploadPreview || form.thumbnail_url || null;
+  const coverPreviewSrc = coverUploadPreview || form.cover_image_url || null;
+  const isActionLocked = saving || isUploading;
 
   const fetchData = () => {
     const seq = ++fetchSeq.current;
@@ -118,14 +117,16 @@ export default function ManageProductions() {
       required_tier: '1',
       sort_order: '0',
       is_active: true,
+      thumbnail_url: '',
+      cover_image_url: '',
     };
     setForm(initialState);
     setInitialFormState(JSON.stringify(initialState));
     setEditing(null);
     if (thumbnailRef.current) thumbnailRef.current.value = '';
     if (coverRef.current) coverRef.current.value = '';
-    thumbnailPreviewState.setPreview(null);
-    coverPreviewState.setPreview(null);
+    updatePreviewUrl(setThumbnailUploadPreview, thumbnailUploadPreview, null);
+    updatePreviewUrl(setCoverUploadPreview, coverUploadPreview, null);
   };
 
   const startEdit = (production) => {
@@ -145,14 +146,16 @@ export default function ManageProductions() {
       required_tier: String(production.required_tier || 1),
       sort_order: String(production.sort_order || 0),
       is_active: !!production.is_active,
+      thumbnail_url: production.thumbnail_url || '',
+      cover_image_url: production.cover_image_url || '',
     };
     setForm(newState);
     setInitialFormState(JSON.stringify(newState));
 
     if (thumbnailRef.current) thumbnailRef.current.value = '';
     if (coverRef.current) coverRef.current.value = '';
-    thumbnailPreviewState.setPreview(production.thumbnail_url || null);
-    coverPreviewState.setPreview(production.cover_image_url || null);
+    updatePreviewUrl(setThumbnailUploadPreview, thumbnailUploadPreview, null);
+    updatePreviewUrl(setCoverUploadPreview, coverUploadPreview, null);
   };
 
   const handleSave = async () => {
@@ -163,6 +166,8 @@ export default function ManageProductions() {
     fd.append('required_tier', form.access_group === 'subscription' ? form.required_tier : '0');
     fd.append('sort_order', form.sort_order);
     fd.append('is_active', String(form.is_active));
+    fd.append('thumbnail_url', form.thumbnail_url || '');
+    fd.append('cover_image_url', form.cover_image_url || '');
     fd.append(
       'genres',
       JSON.stringify(
@@ -175,18 +180,19 @@ export default function ManageProductions() {
     if (thumbnailRef.current?.files[0]) fd.append('thumbnail', thumbnailRef.current.files[0]);
     if (coverRef.current?.files[0]) fd.append('cover_image', coverRef.current.files[0]);
 
+    setSaving(true);
     try {
-      if (editing) {
-        await api.upload(`/productions/admin/${editing}`, fd, 'PUT');
-        showToast('Продукцията е обновена');
-      } else {
-        await api.upload('/productions/admin', fd);
-        showToast('Продукцията е създадена');
-      }
+      await runWithUploadLock(
+        () => (editing ? api.upload(`/productions/admin/${editing}`, fd, 'PUT') : api.upload('/productions/admin', fd)),
+        'Обработваме изображенията за продукцията...'
+      );
+      showToast(editing ? 'Продукцията е обновена' : 'Продукцията е създадена');
       resetForm();
       fetchData();
     } catch (err) {
       showToast(err.message, 'error');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -295,25 +301,105 @@ export default function ManageProductions() {
           <div>
             <label className="text-xs text-[var(--text-muted)] block mb-1 flex items-center justify-between">
               Корица в каталог
-              {thumbnailPreviewState.preview && <span className="text-[10px] text-[var(--accent-primary)]">Preview</span>}
+              {thumbnailPreviewSrc && <span className="text-[10px] text-[var(--accent-primary)]">Preview</span>}
             </label>
-            <div className="flex items-center gap-3">
-              {thumbnailPreviewState.preview && (
-                <img src={thumbnailPreviewState.preview} alt="Thumbnail preview" className="w-16 h-10 object-cover rounded shadow-sm" />
-              )}
-              <input type="file" ref={thumbnailRef} accept="image/*" className="input-dark text-sm flex-1" />
+            <div className="space-y-2">
+              <div className="flex items-center gap-3">
+                {thumbnailPreviewSrc && (
+                  <img src={thumbnailPreviewSrc} alt="Thumbnail preview" className="w-16 h-10 object-cover rounded shadow-sm" />
+                )}
+                <input
+                  type="file"
+                  ref={thumbnailRef}
+                  accept="image/*"
+                  disabled={isActionLocked}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0] || null;
+                    updatePreviewUrl(setThumbnailUploadPreview, thumbnailUploadPreview, file);
+                    if (file) {
+                      setForm((current) => ({ ...current, thumbnail_url: '' }));
+                    }
+                  }}
+                  className="input-dark text-sm flex-1"
+                />
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => setMediaTarget('thumbnail')}
+                  disabled={isActionLocked}
+                  className="btn-outline inline-flex items-center gap-2 !px-3 !py-2 text-xs disabled:opacity-50"
+                >
+                  <ImagePlus className="w-3.5 h-3.5" />
+                  От библиотеката
+                </button>
+                {thumbnailPreviewSrc && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (thumbnailRef.current) thumbnailRef.current.value = '';
+                      updatePreviewUrl(setThumbnailUploadPreview, thumbnailUploadPreview, null);
+                      setForm((current) => ({ ...current, thumbnail_url: '' }));
+                    }}
+                    disabled={isActionLocked}
+                    className="btn-outline !px-3 !py-2 text-xs disabled:opacity-50"
+                  >
+                    Изчисти
+                  </button>
+                )}
+              </div>
             </div>
           </div>
           <div>
             <label className="text-xs text-[var(--text-muted)] block mb-1 flex items-center justify-between">
               Голямо изображение
-              {coverPreviewState.preview && <span className="text-[10px] text-[var(--accent-primary)]">Preview</span>}
+              {coverPreviewSrc && <span className="text-[10px] text-[var(--accent-primary)]">Preview</span>}
             </label>
-            <div className="flex items-center gap-3">
-              {coverPreviewState.preview && (
-                <img src={coverPreviewState.preview} alt="Cover preview" className="w-16 h-10 object-cover rounded shadow-sm" />
-              )}
-              <input type="file" ref={coverRef} accept="image/*" className="input-dark text-sm flex-1" />
+            <div className="space-y-2">
+              <div className="flex items-center gap-3">
+                {coverPreviewSrc && (
+                  <img src={coverPreviewSrc} alt="Cover preview" className="w-16 h-10 object-cover rounded shadow-sm" />
+                )}
+                <input
+                  type="file"
+                  ref={coverRef}
+                  accept="image/*"
+                  disabled={isActionLocked}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0] || null;
+                    updatePreviewUrl(setCoverUploadPreview, coverUploadPreview, file);
+                    if (file) {
+                      setForm((current) => ({ ...current, cover_image_url: '' }));
+                    }
+                  }}
+                  className="input-dark text-sm flex-1"
+                />
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => setMediaTarget('cover')}
+                  disabled={isActionLocked}
+                  className="btn-outline inline-flex items-center gap-2 !px-3 !py-2 text-xs disabled:opacity-50"
+                >
+                  <ImagePlus className="w-3.5 h-3.5" />
+                  От библиотеката
+                </button>
+                {coverPreviewSrc && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (coverRef.current) coverRef.current.value = '';
+                      updatePreviewUrl(setCoverUploadPreview, coverUploadPreview, null);
+                      setForm((current) => ({ ...current, cover_image_url: '' }));
+                    }}
+                    disabled={isActionLocked}
+                    className="btn-outline !px-3 !py-2 text-xs disabled:opacity-50"
+                  >
+                    Изчисти
+                  </button>
+                )}
+              </div>
             </div>
           </div>
           <label className="flex items-center gap-2 text-sm">
@@ -324,20 +410,22 @@ export default function ManageProductions() {
         <div className="flex gap-2 mt-4">
           <motion.button
             onClick={handleSave}
+            disabled={isActionLocked}
             whileHover={{ scale: 1.02, y: -1 }}
             whileTap={{ scale: 0.97 }}
             transition={{ type: 'spring', stiffness: 400, damping: 25 }}
-            className="btn-gold flex items-center gap-2"
+            className="btn-gold flex items-center gap-2 disabled:opacity-50"
           >
-            <Save className="w-4 h-4" /> {editing ? 'Запази' : 'Създай'}
+            <Save className="w-4 h-4" /> {saving ? 'Запазване...' : editing ? 'Запази' : 'Създай'}
           </motion.button>
           {editing && (
             <motion.button
               onClick={resetForm}
+              disabled={isActionLocked}
               whileHover={{ scale: 1.02, y: -1 }}
               whileTap={{ scale: 0.97 }}
               transition={{ type: 'spring', stiffness: 400, damping: 25 }}
-              className="btn-outline flex items-center gap-2"
+              className="btn-outline flex items-center gap-2 disabled:opacity-50"
             >
               <X className="w-4 h-4" /> Откажи
             </motion.button>
@@ -442,21 +530,22 @@ export default function ManageProductions() {
                       showToast(err.message, 'error');
                     }
                   }}
+                  disabled={isActionLocked}
                   className={`admin-icon-btn ${production.is_active ? 'text-[var(--text-primary)]' : 'text-[var(--text-muted)]'}`}
                   title={production.is_active ? 'Скрий' : 'Покажи'}
                 >
                   {production.is_active ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
                 </motion.button>
-                <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} onClick={() => reorderProduction(production.id, 'up')} className="admin-icon-btn" title="Нагоре">
+                <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} onClick={() => reorderProduction(production.id, 'up')} disabled={isActionLocked} className="admin-icon-btn disabled:opacity-50" title="Нагоре">
                   <ArrowUp className="w-4 h-4" />
                 </motion.button>
-                <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} onClick={() => reorderProduction(production.id, 'down')} className="admin-icon-btn" title="Надолу">
+                <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} onClick={() => reorderProduction(production.id, 'down')} disabled={isActionLocked} className="admin-icon-btn disabled:opacity-50" title="Надолу">
                   <ArrowDown className="w-4 h-4" />
                 </motion.button>
-                <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} onClick={() => startEdit(production)} className="admin-icon-btn" title="Редактирай">
+                <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} onClick={() => startEdit(production)} disabled={isActionLocked} className="admin-icon-btn disabled:opacity-50" title="Редактирай">
                   <Pencil className="w-4 h-4" />
                 </motion.button>
-                <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} onClick={() => setDeleteId(production.id)} className="admin-icon-btn" aria-label="Изтрий продукция">
+                <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} onClick={() => setDeleteId(production.id)} disabled={isActionLocked} className="admin-icon-btn disabled:opacity-50" aria-label="Изтрий продукция">
                   <Trash2 className="w-4 h-4 text-[var(--danger)]" />
                 </motion.button>
               </div>
@@ -486,6 +575,24 @@ export default function ManageProductions() {
         tone="danger"
         onClose={() => setDeleteId(null)}
         onConfirm={handleDelete}
+      />
+
+      <MediaPickerModal
+        open={Boolean(mediaTarget)}
+        title={mediaTarget === 'cover' ? 'Избери голямо изображение' : 'Избери корица за каталог'}
+        value={mediaTarget === 'cover' ? form.cover_image_url : form.thumbnail_url}
+        onClose={() => setMediaTarget(null)}
+        onConfirm={(url) => {
+          if (mediaTarget === 'cover') {
+            if (coverRef.current) coverRef.current.value = '';
+            updatePreviewUrl(setCoverUploadPreview, coverUploadPreview, null);
+            setForm((current) => ({ ...current, cover_image_url: url }));
+            return;
+          }
+          if (thumbnailRef.current) thumbnailRef.current.value = '';
+          updatePreviewUrl(setThumbnailUploadPreview, thumbnailUploadPreview, null);
+          setForm((current) => ({ ...current, thumbnail_url: url }));
+        }}
       />
 
 
