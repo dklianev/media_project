@@ -263,7 +263,7 @@ export default function LoginPage() {
 
             {/* Right — Features Section */}
             <motion.section
-              className="glass-card p-6 sm:p-8 lg:p-9 relative overflow-hidden flex flex-col"
+              className="glass-card p-6 pt-8 sm:p-8 sm:pt-10 lg:p-9 lg:pt-12 relative overflow-hidden flex flex-col gap-7"
               variants={containerV}
               initial="hidden"
               animate="visible"
@@ -271,7 +271,7 @@ export default function LoginPage() {
               <div className="absolute -right-16 -top-10 h-40 w-40 rounded-full bg-[var(--accent-gold)]/16 blur-2xl float-slow" />
               <div className="absolute -left-12 bottom-4 h-40 w-40 rounded-full bg-[var(--accent-cyan)]/16 blur-2xl float-medium" />
 
-              <motion.h2 variants={itemV} className="text-2xl font-semibold mb-6 sm:mb-7">
+              <motion.h2 variants={itemV} className="text-2xl font-semibold">
                 {settings.landing_reason_title || `Защо ${settings.site_name || 'Elite Capital'}`}
               </motion.h2>
               <div className="space-y-4">
