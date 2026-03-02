@@ -57,7 +57,6 @@ export default function VideoPlayer({
   const [availableQualities, setAvailableQualities] = useState([]);
   const [gestureLabel, setGestureLabel] = useState('');
   const [playerStatus, setPlayerStatus] = useState('ready');
-  const [immersiveViewportHeight, setImmersiveViewportHeight] = useState(null);
 
   const playerRef = useRef(null);
   const containerRef = useRef(null);
@@ -74,7 +73,6 @@ export default function VideoPlayer({
   const touchGestureRef = useRef(null);
   const resumeAppliedRef = useRef(false);
   const progressDragRef = useRef(null);
-  const fullscreenScrollYRef = useRef(0);
 
   const getYouTubeId = (url) => {
     if (!url) return null;
@@ -91,9 +89,6 @@ export default function VideoPlayer({
   const isFullscreen = fullscreenMode !== 'none';
   const shouldShowControls = controlsVisible || !isPlaying || hasEnded || showSpeedMenu || showInfoPanel;
   const currentVolume = isMuted ? 0 : volume;
-  const fullscreenHeight = fullscreenMode === 'immersive' && immersiveViewportHeight
-    ? `${immersiveViewportHeight}px`
-    : '100dvh';
 
   const getDocumentFullscreenElement = () => (
     document.fullscreenElement ||
@@ -117,18 +112,9 @@ export default function VideoPlayer({
     return iframe;
   };
 
-  const prefersMobileFullscreenFallback = () => {
+  const prefersIframeFullscreenOnTouch = () => {
     if (typeof window === 'undefined') return false;
-
-    const coarsePointer = window.matchMedia?.('(pointer: coarse)')?.matches ?? false;
-    const narrowViewport = window.matchMedia?.('(max-width: 1024px)')?.matches ?? false;
-    return coarsePointer && narrowViewport;
-  };
-
-  const getImmersiveViewportHeight = () => {
-    if (typeof window === 'undefined') return null;
-    const nextHeight = Math.round(window.visualViewport?.height || window.innerHeight || 0);
-    return nextHeight > 0 ? nextHeight : null;
+    return window.matchMedia?.('(pointer: coarse)')?.matches ?? false;
   };
 
   const formatTime = (seconds) => {
@@ -401,11 +387,7 @@ export default function VideoPlayer({
   useEffect(() => {
     const handleFullscreenChange = () => {
       const fullscreenElement = getDocumentFullscreenElement();
-      if (fullscreenElement) {
-        setFullscreenMode('native');
-        return;
-      }
-      setFullscreenMode((current) => (current === 'native' ? 'none' : current));
+      setFullscreenMode(fullscreenElement ? 'native' : 'none');
     };
     handleFullscreenChange();
     document.addEventListener('fullscreenchange', handleFullscreenChange);
@@ -428,87 +410,6 @@ export default function VideoPlayer({
     document.addEventListener('pointerdown', handleClickOutside);
     return () => document.removeEventListener('pointerdown', handleClickOutside);
   }, []);
-
-  useEffect(() => {
-    if (!isFullscreen) {
-      setImmersiveViewportHeight(null);
-      return undefined;
-    }
-
-    const previousBodyOverflow = document.body.style.overflow;
-    const previousBodyTouchAction = document.body.style.touchAction;
-    const previousBodyPosition = document.body.style.position;
-    const previousBodyTop = document.body.style.top;
-    const previousBodyLeft = document.body.style.left;
-    const previousBodyRight = document.body.style.right;
-    const previousBodyWidth = document.body.style.width;
-    const previousHtmlOverscroll = document.documentElement.style.overscrollBehavior;
-    const visualViewport = window.visualViewport;
-    const orientation = window.screen?.orientation || null;
-
-    document.body.style.overflow = 'hidden';
-    document.body.style.touchAction = 'none';
-    document.documentElement.style.overscrollBehavior = 'none';
-
-    const syncViewportHeight = () => {
-      const nextHeight = getImmersiveViewportHeight();
-      if (nextHeight) {
-        setImmersiveViewportHeight(nextHeight);
-      }
-    };
-
-    if (fullscreenMode === 'immersive') {
-      fullscreenScrollYRef.current = window.scrollY;
-      document.body.style.position = 'fixed';
-      document.body.style.top = `-${fullscreenScrollYRef.current}px`;
-      document.body.style.left = '0';
-      document.body.style.right = '0';
-      document.body.style.width = '100%';
-
-      syncViewportHeight();
-
-      visualViewport?.addEventListener('resize', syncViewportHeight);
-      visualViewport?.addEventListener('scroll', syncViewportHeight);
-      window.addEventListener('resize', syncViewportHeight);
-      window.addEventListener('orientationchange', syncViewportHeight);
-
-      if (orientation && typeof orientation.lock === 'function') {
-        Promise.resolve()
-          .then(() => orientation.lock('landscape'))
-          .catch(() => {});
-      }
-    } else {
-      setImmersiveViewportHeight(null);
-    }
-
-    return () => {
-      if (fullscreenMode === 'immersive') {
-        visualViewport?.removeEventListener('resize', syncViewportHeight);
-        visualViewport?.removeEventListener('scroll', syncViewportHeight);
-        window.removeEventListener('resize', syncViewportHeight);
-        window.removeEventListener('orientationchange', syncViewportHeight);
-
-        if (orientation && typeof orientation.unlock === 'function') {
-          try {
-            orientation.unlock();
-          } catch {}
-        }
-      }
-
-      document.body.style.overflow = previousBodyOverflow;
-      document.body.style.touchAction = previousBodyTouchAction;
-      document.body.style.position = previousBodyPosition;
-      document.body.style.top = previousBodyTop;
-      document.body.style.left = previousBodyLeft;
-      document.body.style.right = previousBodyRight;
-      document.body.style.width = previousBodyWidth;
-      document.documentElement.style.overscrollBehavior = previousHtmlOverscroll;
-
-      if (fullscreenMode === 'immersive') {
-        window.scrollTo(0, fullscreenScrollYRef.current);
-      }
-    };
-  }, [fullscreenMode, isFullscreen]);
 
   useEffect(() => () => {
     if (animTimeoutRef.current) clearTimeout(animTimeoutRef.current);
@@ -701,39 +602,42 @@ export default function VideoPlayer({
     return false;
   };
 
+  const waitForNativeFullscreen = () => new Promise((resolve) => {
+    window.setTimeout(() => {
+      resolve(Boolean(getDocumentFullscreenElement()));
+    }, 180);
+  });
+
   const toggleFullscreen = async (e) => {
     if (e) e.stopPropagation();
     if (!wrapperRef.current) return;
 
-    if (fullscreenMode === 'immersive') {
+    if (getDocumentFullscreenElement()) {
+      await exitNativeFullscreen();
       setFullscreenMode('none');
       revealControls(true);
       focusPlayerSurface();
       return;
     }
 
-    if (getDocumentFullscreenElement()) {
-      const exited = await exitNativeFullscreen();
-      if (!exited) {
-        setFullscreenMode('none');
-      }
-      revealControls(true);
-      focusPlayerSurface();
-      return;
-    }
-
     const iframe = ensurePlayerIframePermissions();
-    const shouldSkipIframeNativeFullscreen = prefersMobileFullscreenFallback();
-    const enteredNative =
-      await requestNativeFullscreen(wrapperRef.current) ||
-      (!shouldSkipIframeNativeFullscreen && await requestNativeFullscreen(iframe));
+    const fullscreenTargets = prefersIframeFullscreenOnTouch()
+      ? [iframe, wrapperRef.current]
+      : [wrapperRef.current, iframe];
 
-    if (enteredNative) {
-      setFullscreenMode('native');
-    } else {
-      setFullscreenMode('immersive');
+    for (const target of fullscreenTargets) {
+      const requested = await requestNativeFullscreen(target);
+      if (!requested) continue;
+
+      const enteredNative = await waitForNativeFullscreen();
+      if (enteredNative) {
+        revealControls(true);
+        focusPlayerSurface();
+        return;
+      }
     }
 
+    setFullscreenMode('none');
     revealControls(true);
     focusPlayerSurface();
   };
@@ -978,8 +882,8 @@ export default function VideoPlayer({
           toggleMute();
           break;
         case 'escape':
-          if (fullscreenMode === 'immersive') {
-            setFullscreenMode('none');
+          if (getDocumentFullscreenElement()) {
+            exitNativeFullscreen();
             revealControls(true);
           }
           break;
@@ -1054,7 +958,7 @@ export default function VideoPlayer({
       animate={{ opacity: 1, scale: 1 }}
       transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
       className={`relative w-full overflow-hidden bg-black shadow-premium-md focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-gold)] focus-visible:ring-offset-1 focus-visible:ring-offset-black rounded-sm ${isFullscreen ? 'fixed inset-0 z-[9999] w-screen rounded-none border-none' : 'rounded-2xl border border-[var(--border)]'}`}
-      style={isFullscreen ? { height: fullscreenHeight } : { paddingBottom: '56.25%' }}
+      style={isFullscreen ? { height: '100dvh' } : { paddingBottom: '56.25%' }}
       onContextMenu={handleContextMenu}
       onPointerMove={(event) => {
         if (event.pointerType === 'mouse') revealControls();
