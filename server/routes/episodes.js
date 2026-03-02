@@ -335,7 +335,7 @@ router.get('/:id/embed', (req, res) => {
     <iframe
       src="https://www.youtube-nocookie.com/embed/${videoId}?modestbranding=1&rel=0&controls=0&disablekb=1&playsinline=1"
       referrerpolicy="strict-origin-when-cross-origin"
-      allow="autoplay; encrypted-media; picture-in-picture"
+      allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
       allowfullscreen>
     </iframe>
     <div class="wm">${siteName}</div>

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { Info, Play, Pause, RotateCcw, RotateCw, Volume2, VolumeX, Maximize, SkipForward, SkipBack, Settings } from 'lucide-react';
+import { Info, Play, Pause, RotateCcw, RotateCw, Volume2, VolumeX, Maximize, Minimize, SkipForward, SkipBack, Settings } from 'lucide-react';
 
 const CONTROL_HIDE_DELAY_MS = 2400;
 const END_AUTOPLAY_DELAY_SECONDS = 8;
@@ -42,7 +42,7 @@ export default function VideoPlayer({
   const [isMuted, setIsMuted] = useState(false);
   const [volume, setVolume] = useState(100);
   const [playerReady, setPlayerReady] = useState(false);
-  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [fullscreenMode, setFullscreenMode] = useState('none');
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
   const [showSpeedMenu, setShowSpeedMenu] = useState(false);
   const [showInfoPanel, setShowInfoPanel] = useState(false);
@@ -72,6 +72,7 @@ export default function VideoPlayer({
   const gestureTimeoutRef = useRef(null);
   const touchGestureRef = useRef(null);
   const resumeAppliedRef = useRef(false);
+  const progressDragRef = useRef(null);
 
   const getYouTubeId = (url) => {
     if (!url) return null;
@@ -85,8 +86,31 @@ export default function VideoPlayer({
   const videoId = normalizedYoutubeVideoId || getYouTubeId(embedUrl);
   const nextEpisodeId = nextEpisode?.id || null;
   const previousEpisodeId = previousEpisode?.id || null;
+  const isFullscreen = fullscreenMode !== 'none';
   const shouldShowControls = controlsVisible || !isPlaying || hasEnded || showSpeedMenu || showInfoPanel;
   const currentVolume = isMuted ? 0 : volume;
+
+  const getDocumentFullscreenElement = () => (
+    document.fullscreenElement ||
+    document.webkitFullscreenElement ||
+    document.msFullscreenElement ||
+    null
+  );
+
+  const getPlayerIframe = (player = playerRef.current) => (
+    player && typeof player.getIframe === 'function'
+      ? player.getIframe()
+      : null
+  );
+
+  const ensurePlayerIframePermissions = (player = playerRef.current) => {
+    const iframe = getPlayerIframe(player);
+    if (!iframe) return null;
+    iframe.setAttribute('allow', 'autoplay; encrypted-media; picture-in-picture; fullscreen');
+    iframe.setAttribute('allowfullscreen', '');
+    iframe.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin');
+    return iframe;
+  };
 
   const formatTime = (seconds) => {
     if (!seconds || isNaN(seconds)) return '0:00';
@@ -267,6 +291,7 @@ export default function VideoPlayer({
         },
         events: {
           onReady: (event) => {
+            ensurePlayerIframePermissions(event.target);
             const detectedDuration = event.target.getDuration();
             setDuration(detectedDuration);
             setPlayerReady(true);
@@ -356,10 +381,20 @@ export default function VideoPlayer({
 
   useEffect(() => {
     const handleFullscreenChange = () => {
-      setIsFullscreen(!!document.fullscreenElement);
+      const fullscreenElement = getDocumentFullscreenElement();
+      if (fullscreenElement) {
+        setFullscreenMode('native');
+        return;
+      }
+      setFullscreenMode((current) => (current === 'native' ? 'none' : current));
     };
+    handleFullscreenChange();
     document.addEventListener('fullscreenchange', handleFullscreenChange);
-    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
+    };
   }, []);
 
   useEffect(() => {
@@ -371,9 +406,27 @@ export default function VideoPlayer({
         setShowInfoPanel(false);
       }
     }
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    document.addEventListener('pointerdown', handleClickOutside);
+    return () => document.removeEventListener('pointerdown', handleClickOutside);
   }, []);
+
+  useEffect(() => {
+    if (!isFullscreen) return undefined;
+
+    const previousBodyOverflow = document.body.style.overflow;
+    const previousBodyTouchAction = document.body.style.touchAction;
+    const previousHtmlOverscroll = document.documentElement.style.overscrollBehavior;
+
+    document.body.style.overflow = 'hidden';
+    document.body.style.touchAction = 'none';
+    document.documentElement.style.overscrollBehavior = 'none';
+
+    return () => {
+      document.body.style.overflow = previousBodyOverflow;
+      document.body.style.touchAction = previousBodyTouchAction;
+      document.documentElement.style.overscrollBehavior = previousHtmlOverscroll;
+    };
+  }, [isFullscreen]);
 
   useEffect(() => () => {
     if (animTimeoutRef.current) clearTimeout(animTimeoutRef.current);
@@ -522,35 +575,141 @@ export default function VideoPlayer({
     revealControls();
   };
 
+  const requestNativeFullscreen = async (element) => {
+    if (!element) return false;
+
+    try {
+      if (typeof element.requestFullscreen === 'function') {
+        await element.requestFullscreen();
+        return true;
+      }
+      if (typeof element.webkitRequestFullscreen === 'function') {
+        element.webkitRequestFullscreen();
+        return true;
+      }
+      if (typeof element.msRequestFullscreen === 'function') {
+        element.msRequestFullscreen();
+        return true;
+      }
+    } catch {
+      return false;
+    }
+
+    return false;
+  };
+
+  const exitNativeFullscreen = async () => {
+    try {
+      if (typeof document.exitFullscreen === 'function') {
+        await document.exitFullscreen();
+        return true;
+      }
+      if (typeof document.webkitExitFullscreen === 'function') {
+        document.webkitExitFullscreen();
+        return true;
+      }
+      if (typeof document.msExitFullscreen === 'function') {
+        document.msExitFullscreen();
+        return true;
+      }
+    } catch {
+      return false;
+    }
+
+    return false;
+  };
+
   const toggleFullscreen = async (e) => {
     if (e) e.stopPropagation();
     if (!wrapperRef.current) return;
 
-    if (!document.fullscreenElement) {
-      try {
-        await wrapperRef.current.requestFullscreen();
-      } catch (err) {
-        console.error('Error attempting to enable fullscreen:', err);
-      }
-    } else if (document.exitFullscreen) {
-      document.exitFullscreen();
+    if (fullscreenMode === 'immersive') {
+      setFullscreenMode('none');
+      revealControls(true);
+      focusPlayerSurface();
+      return;
     }
+
+    if (getDocumentFullscreenElement()) {
+      const exited = await exitNativeFullscreen();
+      if (!exited) {
+        setFullscreenMode('none');
+      }
+      revealControls(true);
+      focusPlayerSurface();
+      return;
+    }
+
+    const iframe = ensurePlayerIframePermissions();
+    const enteredNative =
+      await requestNativeFullscreen(iframe) ||
+      await requestNativeFullscreen(wrapperRef.current);
+
+    if (enteredNative) {
+      setFullscreenMode('native');
+    } else {
+      setFullscreenMode('immersive');
+    }
+
     revealControls(true);
+    focusPlayerSurface();
   };
 
-  const handleSeek = (e) => {
-    if (e) e.stopPropagation();
-    if (!playerRef.current || !playerReady || !duration) return;
+  const seekToClientPosition = (clientX, target) => {
+    if (!playerRef.current || !playerReady || !duration || !target) return;
 
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = e.clientX - rect.left;
+    const rect = target.getBoundingClientRect();
+    const x = clientX - rect.left;
     const percentage = Math.max(0, Math.min(1, x / rect.width));
     const newTime = percentage * duration;
 
     playerRef.current.seekTo(newTime, true);
     setProgress(newTime);
     reportProgress(newTime, duration);
+  };
+
+  const handleSeek = (e) => {
+    if (e) e.stopPropagation();
+    seekToClientPosition(e.clientX, e.currentTarget);
     revealControls();
+  };
+
+  const releaseProgressPointer = (target, pointerId) => {
+    if (typeof target?.releasePointerCapture === 'function') {
+      try {
+        target.releasePointerCapture(pointerId);
+      } catch {}
+    }
+    progressDragRef.current = null;
+  };
+
+  const handleProgressPointerDown = (e) => {
+    if ((e.pointerType === 'mouse' && e.button !== 0) || !playerReady || !duration) return;
+    e.stopPropagation();
+    progressDragRef.current = e.pointerId;
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+    seekToClientPosition(e.clientX, e.currentTarget);
+    revealControls(true);
+  };
+
+  const handleProgressPointerMove = (e) => {
+    if (progressDragRef.current !== e.pointerId) return;
+    e.stopPropagation();
+    seekToClientPosition(e.clientX, e.currentTarget);
+    revealControls(true);
+  };
+
+  const handleProgressPointerUp = (e) => {
+    if (progressDragRef.current !== e.pointerId) return;
+    e.stopPropagation();
+    seekToClientPosition(e.clientX, e.currentTarget);
+    releaseProgressPointer(e.currentTarget, e.pointerId);
+    revealControls();
+  };
+
+  const handleProgressPointerCancel = (e) => {
+    if (progressDragRef.current !== e.pointerId) return;
+    releaseProgressPointer(e.currentTarget, e.pointerId);
   };
 
   const handleProgressMouseMove = (e) => {
@@ -694,7 +853,7 @@ export default function VideoPlayer({
       if (event.altKey || event.ctrlKey || event.metaKey) return;
 
       const key = event.key.toLowerCase();
-      const handledKeys = [' ', 'arrowleft', 'arrowright', 'arrowup', 'arrowdown', 'k', 'j', 'l', 'm', 'f', 'n', 'p'];
+      const handledKeys = [' ', 'arrowleft', 'arrowright', 'arrowup', 'arrowdown', 'escape', 'k', 'j', 'l', 'm', 'f', 'n', 'p'];
       if (handledKeys.includes(key)) event.preventDefault();
 
       switch (key) {
@@ -735,6 +894,12 @@ export default function VideoPlayer({
         case 'm':
           toggleMute();
           break;
+        case 'escape':
+          if (fullscreenMode === 'immersive') {
+            setFullscreenMode('none');
+            revealControls(true);
+          }
+          break;
         case 'f':
           toggleFullscreen();
           break;
@@ -755,6 +920,7 @@ export default function VideoPlayer({
     currentVolume,
     duration,
     isFullscreen,
+    fullscreenMode,
     nextEpisode,
     playerReady,
     previousEpisode,
@@ -786,7 +952,7 @@ export default function VideoPlayer({
           title={title || 'Видео'}
           frameBorder="0"
           sandbox="allow-scripts allow-same-origin allow-presentation"
-          allow="autoplay; encrypted-media; picture-in-picture"
+          allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
           allowFullScreen
           referrerPolicy="strict-origin-when-cross-origin"
         />
@@ -804,8 +970,8 @@ export default function VideoPlayer({
       initial={{ opacity: 0, scale: 0.98 }}
       animate={{ opacity: 1, scale: 1 }}
       transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-      className={`relative w-full overflow-hidden bg-black shadow-premium-md focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-gold)] focus-visible:ring-offset-1 focus-visible:ring-offset-black rounded-sm ${isFullscreen ? 'h-screen rounded-none border-none' : 'rounded-2xl border border-[var(--border)]'}`}
-      style={!isFullscreen ? { paddingBottom: '56.25%' } : {}}
+      className={`relative w-full overflow-hidden bg-black shadow-premium-md focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-gold)] focus-visible:ring-offset-1 focus-visible:ring-offset-black rounded-sm ${isFullscreen ? 'fixed inset-0 z-[9999] w-screen rounded-none border-none' : 'rounded-2xl border border-[var(--border)]'}`}
+      style={isFullscreen ? { height: '100dvh' } : { paddingBottom: '56.25%' }}
       onContextMenu={handleContextMenu}
       onPointerMove={(event) => {
         if (event.pointerType === 'mouse') revealControls();
@@ -937,10 +1103,20 @@ export default function VideoPlayer({
         )}
       </AnimatePresence>
 
-      <div className={`absolute bottom-0 inset-x-0 z-30 bg-gradient-to-t from-black/90 px-4 pb-3 pt-16 transition-opacity duration-300 ${shouldShowControls ? 'opacity-100' : 'pointer-events-none opacity-0'}`}>
+      <div
+        className={`absolute bottom-0 inset-x-0 z-30 bg-gradient-to-t from-black/90 px-4 pb-3 pt-16 transition-opacity duration-300 ${shouldShowControls ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
+        style={isFullscreen ? {
+          paddingLeft: 'max(1rem, env(safe-area-inset-left))',
+          paddingRight: 'max(1rem, env(safe-area-inset-right))',
+          paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))',
+        } : undefined}
+      >
         <div
           className="group/progress mb-1 flex w-full cursor-pointer items-center py-3"
-          onClick={handleSeek}
+          onPointerDown={handleProgressPointerDown}
+          onPointerMove={handleProgressPointerMove}
+          onPointerUp={handleProgressPointerUp}
+          onPointerCancel={handleProgressPointerCancel}
           onMouseMove={handleProgressMouseMove}
           onMouseLeave={handleProgressMouseLeave}
         >
@@ -1130,7 +1306,7 @@ export default function VideoPlayer({
               )}
             </div>
             <button onClick={toggleFullscreen} className="opacity-80 transition-colors hover:text-white hover:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-gold)] focus-visible:ring-offset-1 focus-visible:ring-offset-black rounded-sm" aria-label={isFullscreen ? 'Изход от цял екран' : 'Цял екран'}>
-              <Maximize className="h-5 w-5" />
+              {isFullscreen ? <Minimize className="h-5 w-5" /> : <Maximize className="h-5 w-5" />}
             </button>
           </div>
         </div>
