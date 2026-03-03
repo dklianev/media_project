@@ -6,6 +6,7 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
   const apiPort = env.PORT || '3001';
   const proxyTarget = env.VITE_API_PROXY_TARGET || `http://127.0.0.1:${apiPort}`;
+  const proxyTimeout = Number(env.DEV_PROXY_TIMEOUT_MS || 60 * 60 * 1000);
 
   return {
     plugins: [react(), tailwindcss()],
@@ -15,10 +16,14 @@ export default defineConfig(({ mode }) => {
         '/api': {
           target: proxyTarget,
           changeOrigin: true,
+          timeout: proxyTimeout,
+          proxyTimeout,
         },
         '/uploads': {
           target: proxyTarget,
           changeOrigin: true,
+          timeout: proxyTimeout,
+          proxyTimeout,
         },
       },
     },

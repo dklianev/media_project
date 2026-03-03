@@ -33,7 +33,13 @@ import commentsRoutes from './routes/comments.js';
 import notificationsRoutes from './routes/notifications.js';
 import supportRoutes from './routes/support.js';
 import mediaRoutes from './routes/media.js';
-import { optimizeUploadedImages, requireUploadLock, upload } from './middleware/upload.js';
+import {
+  optimizeUploadedImages,
+  requireUploadLock,
+  upload,
+  UPLOAD_MAX_FILE_SIZE_MB,
+  VIDEO_MAX_FILE_SIZE_MB,
+} from './middleware/upload.js';
 import { requireAdmin } from './middleware/auth.js';
 import { logAdminAction } from './utils/audit.js';
 import { registerUploadedMedia } from './utils/mediaLibrary.js';
@@ -44,7 +50,6 @@ const API_RATE_LIMIT_MAX = Number(process.env.API_RATE_LIMIT_MAX || 240);
 const AUTH_RATE_LIMIT_WINDOW_MS = Number(process.env.AUTH_RATE_LIMIT_WINDOW_MS || 15 * 60 * 1000);
 const AUTH_RATE_LIMIT_MAX = Number(process.env.AUTH_RATE_LIMIT_MAX || 40);
 const JSON_LIMIT = process.env.JSON_LIMIT || '1mb';
-const MAX_FILE_SIZE_MB = Number(process.env.UPLOAD_MAX_FILE_SIZE_MB || 10);
 const TRUST_PROXY_ENV = String(process.env.TRUST_PROXY ?? '1').trim().toLowerCase();
 const IS_PROD = process.env.NODE_ENV === 'production';
 const JWT_SECRET = process.env.JWT_SECRET || (IS_PROD ? undefined : 'dev-secret-change-me');
@@ -167,6 +172,9 @@ export function createApp() {
   app.use('/api/auth/', authLimiter);
 
   // Static files
+  app.use('/uploads/videos', (req, res) => {
+    res.status(404).json({ error: 'Файлът не е намерен' });
+  });
   app.use('/uploads', express.static(resolve(__dirname, '..', 'public', 'uploads'), {
     maxAge: '30d',
     etag: true,
@@ -292,7 +300,11 @@ export function createApp() {
   app.use((err, req, res, next) => {
     console.error('Server error:', err);
     if (err.code === 'LIMIT_FILE_SIZE') {
-      return res.status(413).json({ error: `Файлът е твърде голям (макс ${MAX_FILE_SIZE_MB}MB)` });
+      const isVideoUpload = err.field === 'video_file';
+      const limitLabel = isVideoUpload
+        ? `${Math.round((VIDEO_MAX_FILE_SIZE_MB / 1024) * 100) / 100} GB`
+        : `${UPLOAD_MAX_FILE_SIZE_MB}MB`;
+      return res.status(413).json({ error: `Файлът е твърде голям (макс ${limitLabel})` });
     }
     if (err.message?.includes('Неподдържан формат')) {
       return res.status(400).json({ error: err.message });

@@ -89,6 +89,7 @@ export default function ManageEpisodes() {
     thumbnail_url: '',
     ad_banner_url: '',
     video_source: 'youtube',
+    skip_transcoding: false,
   });
 
   const [migrateModalId, setMigrateModalId] = useState(null);
@@ -102,6 +103,7 @@ export default function ManageEpisodes() {
     thumbnailRef.current?.files?.length
     || adBannerRef.current?.files?.length
     || sideImagesRef.current?.files?.length
+    || videoFileRef.current?.files?.length
   );
   const isDirty = JSON.stringify({
     ...form,
@@ -199,6 +201,7 @@ export default function ManageEpisodes() {
       thumbnail_url: '',
       ad_banner_url: '',
       video_source: 'youtube',
+      skip_transcoding: false,
     };
     setForm(initialState);
     setInitialFormState(JSON.stringify({
@@ -232,6 +235,7 @@ export default function ManageEpisodes() {
       thumbnail_url: episode.thumbnail_url || '',
       ad_banner_url: episode.ad_banner_url || '',
       video_source: episode.video_source || 'youtube',
+      skip_transcoding: false,
       transcoding_status: episode.transcoding_status || null,
       local_video_url: episode.local_video_url || '',
     };
@@ -266,12 +270,14 @@ export default function ManageEpisodes() {
       return;
     }
 
+    const hasNewLocalVideoFile = Boolean(videoFileRef.current?.files?.[0]);
     const fd = new FormData();
     fd.append('production_id', String(form.production_id));
     fd.append('title', form.title);
     fd.append('description', form.description);
     fd.append('youtube_video_id', form.youtube_video_id);
     fd.append('video_source', form.video_source);
+    fd.append('skip_transcoding', String(form.video_source === 'local' && hasNewLocalVideoFile && form.skip_transcoding));
     fd.append('side_text', form.side_text);
     fd.append('ad_banner_link', form.ad_banner_link);
     fd.append('access_group', form.access_group);
@@ -288,7 +294,7 @@ export default function ManageEpisodes() {
     if (sideImagesRef.current?.files) {
       Array.from(sideImagesRef.current.files).forEach((file) => fd.append('side_images', file));
     }
-    if (form.video_source === 'local' && videoFileRef.current?.files?.[0]) {
+    if (form.video_source === 'local' && hasNewLocalVideoFile) {
       fd.append('video_file', videoFileRef.current.files[0]);
     }
 
@@ -296,7 +302,7 @@ export default function ManageEpisodes() {
     try {
       await runWithUploadLock(
         () => (editing ? api.upload(`/episodes/admin/${editing}`, fd, 'PUT') : api.upload('/episodes/admin', fd)),
-        'Обработваме изображенията за епизода...'
+        'Качваме и обработваме файловете за епизода...'
       );
       showToast(editing ? 'Епизодът е обновен' : 'Епизодът е създаден');
       resetForm();
@@ -404,7 +410,7 @@ export default function ManageEpisodes() {
               <button
                 type="button"
                 onClick={() => {
-                  setForm({ ...form, video_source: 'youtube' });
+                  setForm((current) => ({ ...current, video_source: 'youtube', skip_transcoding: false }));
                   if (videoFileRef.current) videoFileRef.current.value = '';
                 }}
                 className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${form.video_source !== 'local'
@@ -436,8 +442,17 @@ export default function ManageEpisodes() {
                   disabled={isActionLocked}
                   className="input-dark text-sm"
                 />
+                <label className="flex items-center gap-2 text-xs text-[var(--text-secondary)]">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(form.skip_transcoding)}
+                    onChange={(e) => setForm({ ...form, skip_transcoding: e.target.checked })}
+                    disabled={isActionLocked}
+                  />
+                  Прескочи transcoding за готов MP4 файл
+                </label>
                 <p className="text-[10px] text-[var(--text-muted)]">
-                  Максимален размер: 2 GB. Поддържани формати: MP4, WebM, MOV
+                  Максимален размер: 12 GB. Поддържани формати: MP4, WebM, MOV. Skip е позволен само за вече подготвен MP4.
                 </p>
                 {form.transcoding_status && (
                   <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-medium ${form.transcoding_status === 'ready'

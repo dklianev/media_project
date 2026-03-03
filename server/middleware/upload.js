@@ -7,7 +7,8 @@ import sharp from 'sharp';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const uploadsDir = resolve(__dirname, '..', '..', 'public', 'uploads');
-const MAX_FILE_SIZE = Number(process.env.UPLOAD_MAX_FILE_SIZE_MB || 10) * 1024 * 1024;
+export const UPLOAD_MAX_FILE_SIZE_MB = Number(process.env.UPLOAD_MAX_FILE_SIZE_MB || 10);
+const MAX_FILE_SIZE = UPLOAD_MAX_FILE_SIZE_MB * 1024 * 1024;
 const activeUploadLocks = new Set();
 const IMAGE_OPTIMIZATION_ENABLED = String(process.env.IMAGE_OPTIMIZATION_ENABLED ?? 'true')
   .trim()
@@ -15,8 +16,14 @@ const IMAGE_OPTIMIZATION_ENABLED = String(process.env.IMAGE_OPTIMIZATION_ENABLED
 const IMAGE_MAX_WIDTH = Math.max(200, Number(process.env.IMAGE_MAX_WIDTH || 1920));
 const IMAGE_MAX_HEIGHT = Math.max(200, Number(process.env.IMAGE_MAX_HEIGHT || 1080));
 const IMAGE_WEBP_QUALITY = Math.min(100, Math.max(45, Number(process.env.IMAGE_WEBP_QUALITY || 82)));
+const videosDir = resolve(__dirname, '..', '..', 'public', 'uploads', 'videos');
+export const VIDEO_MAX_FILE_SIZE_MB = Number(process.env.VIDEO_MAX_FILE_SIZE_MB || 2048);
+const VIDEO_MAX_FILE_SIZE = VIDEO_MAX_FILE_SIZE_MB * 1024 * 1024;
+const IMAGE_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+const VIDEO_MIME_TYPES = ['video/mp4', 'video/webm', 'video/quicktime'];
 
 mkdirSync(uploadsDir, { recursive: true });
+mkdirSync(videosDir, { recursive: true });
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -30,12 +37,49 @@ const storage = multer.diskStorage({
 });
 
 const fileFilter = (req, file, cb) => {
-  const allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
-  if (allowed.includes(file.mimetype)) {
+  if (IMAGE_MIME_TYPES.includes(file.mimetype)) {
     cb(null, true);
   } else {
     cb(new Error('Неподдържан формат. Разрешени: JPEG, PNG, WebP, GIF'), false);
   }
+};
+
+function cleanupUploadedFiles(files) {
+  return Promise.all(
+    files
+      .filter((file) => file?.path)
+      .map((file) => fs.unlink(file.path).catch(() => { }))
+  );
+}
+
+function isEpisodeVideoFile(file) {
+  return file?.fieldname === 'video_file';
+}
+
+const episodeStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, isEpisodeVideoFile(file) ? videosDir : uploadsDir);
+  },
+  filename: (req, file, cb) => {
+    const uniqueId = crypto.randomBytes(8).toString('hex');
+    const ext = extname(file.originalname);
+    cb(null, `${Date.now()}-${uniqueId}${ext}`);
+  },
+});
+
+const episodeFileFilter = (req, file, cb) => {
+  if (isEpisodeVideoFile(file)) {
+    if (VIDEO_MIME_TYPES.includes(file.mimetype)) {
+      return cb(null, true);
+    }
+    return cb(new Error('Неподдържан видео формат. Разрешени: MP4, WebM, MOV'), false);
+  }
+
+  if (IMAGE_MIME_TYPES.includes(file.mimetype)) {
+    return cb(null, true);
+  }
+
+  return cb(new Error('Неподдържан формат. Разрешени: JPEG, PNG, WebP, GIF'), false);
 };
 
 function getUploadLockKey(req) {
@@ -142,12 +186,25 @@ export async function optimizeUploadedImages(req, res, next) {
     );
     return next();
   } catch (err) {
-    for (const file of files) {
-      if (!file?.path) continue;
-      await fs.unlink(file.path).catch(() => { });
-    }
+    await cleanupUploadedFiles(files);
     return next(new Error('Грешка при обработка на изображението'));
   }
+}
+
+export async function validateEpisodeUploads(req, res, next) {
+  const files = getUploadedFiles(req);
+  const oversizedImage = files.find((file) => !isEpisodeVideoFile(file) && Number(file.size || 0) > MAX_FILE_SIZE);
+  if (!oversizedImage) {
+    return next();
+  }
+
+  await cleanupUploadedFiles(files);
+
+  const err = new Error(`Файлът е твърде голям (макс ${UPLOAD_MAX_FILE_SIZE_MB}MB)`);
+  err.code = 'LIMIT_FILE_SIZE';
+  err.field = oversizedImage.fieldname;
+  err.limitMB = UPLOAD_MAX_FILE_SIZE_MB;
+  return next(err);
 }
 
 export const upload = multer({
@@ -156,32 +213,8 @@ export const upload = multer({
   limits: { fileSize: MAX_FILE_SIZE },
 });
 
-// ─── Video upload ───
-const videosDir = resolve(__dirname, '..', '..', 'public', 'uploads', 'videos');
-mkdirSync(videosDir, { recursive: true });
-const VIDEO_MAX_FILE_SIZE = Number(process.env.VIDEO_MAX_FILE_SIZE_MB || 2048) * 1024 * 1024;
-
-const videoStorage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, videosDir),
-  filename: (req, file, cb) => {
-    const uniqueId = crypto.randomBytes(8).toString('hex');
-    const ext = extname(file.originalname);
-    cb(null, `${Date.now()}-${uniqueId}${ext}`);
-  },
-});
-
-const videoFileFilter = (req, file, cb) => {
-  const allowed = ['video/mp4', 'video/webm', 'video/quicktime'];
-  if (allowed.includes(file.mimetype)) {
-    cb(null, true);
-  } else {
-    cb(new Error('Неподдържан видео формат. Разрешени: MP4, WebM, MOV'), false);
-  }
-};
-
-export const videoUpload = multer({
-  storage: videoStorage,
-  fileFilter: videoFileFilter,
+export const episodeUpload = multer({
+  storage: episodeStorage,
+  fileFilter: episodeFileFilter,
   limits: { fileSize: VIDEO_MAX_FILE_SIZE },
 });
-

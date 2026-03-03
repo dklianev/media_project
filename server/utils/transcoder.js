@@ -1,15 +1,43 @@
 import { spawn } from 'child_process';
-import { promises as fs, existsSync } from 'fs';
+import { promises as fs } from 'fs';
 import { dirname, resolve, extname, basename } from 'path';
 import { fileURLToPath } from 'url';
 import db from '../db.js';
+import { normalizeManagedMediaUrl } from './mediaLibrary.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const uploadsDir = resolve(__dirname, '..', '..', 'public', 'uploads');
 const videosDir = resolve(__dirname, '..', '..', 'public', 'uploads', 'videos');
 
 // ─── Queue: max 1 concurrent transcode ───
 let activeJob = null;
 const jobQueue = [];
+let ffmpegAvailable = null;
+
+function normalizeLocalVideoUrl(value) {
+    const normalized = normalizeManagedMediaUrl(value);
+    if (!normalized || !normalized.startsWith('/uploads/videos/')) {
+        return null;
+    }
+    return normalized;
+}
+
+function resolveLocalVideoPath(videoUrl) {
+    const normalized = normalizeLocalVideoUrl(videoUrl);
+    if (!normalized) {
+        return null;
+    }
+
+    return resolve(uploadsDir, normalized.replace(/^\/uploads\//, ''));
+}
+
+function markTranscodeFailed(episodeId) {
+    db.prepare(`
+      UPDATE episodes
+      SET transcoding_status = 'failed', updated_at = datetime('now')
+      WHERE id = ?
+    `).run(episodeId);
+}
 
 /**
  * Check if ffmpeg is available on the system.
@@ -23,6 +51,50 @@ export function checkFfmpeg() {
         proc.on('error', () => resolve(false));
         proc.on('close', (code) => resolve(code === 0));
     });
+}
+
+export async function initializeTranscoder() {
+    ffmpegAvailable = await checkFfmpeg();
+
+    if (!ffmpegAvailable) {
+        console.warn('[Transcoder] ffmpeg is not available. Local uploads will be marked as failed.');
+        db.prepare(`
+          UPDATE episodes
+          SET transcoding_status = 'failed', updated_at = datetime('now')
+          WHERE video_source = 'local' AND transcoding_status IN ('pending', 'processing')
+        `).run();
+        return false;
+    }
+
+    const recoverableJobs = db.prepare(`
+      SELECT id, local_video_url
+      FROM episodes
+      WHERE video_source = 'local' AND transcoding_status IN ('pending', 'processing')
+      ORDER BY id ASC
+    `).all();
+
+    let recoveredCount = 0;
+    for (const job of recoverableJobs) {
+        const inputPath = resolveLocalVideoPath(job.local_video_url);
+        if (!inputPath) {
+            markTranscodeFailed(job.id);
+            continue;
+        }
+
+        try {
+            await fs.stat(inputPath);
+            enqueueTranscode(job.id, inputPath, { skipStatusUpdate: true });
+            recoveredCount += 1;
+        } catch {
+            markTranscodeFailed(job.id);
+        }
+    }
+
+    if (recoveredCount > 0) {
+        console.log(`[Transcoder] Recovered ${recoveredCount} pending transcode job(s)`);
+    }
+
+    return true;
 }
 
 /**
@@ -126,11 +198,7 @@ async function runTranscodeJob(episodeId, inputPath) {
         console.error(`[Transcoder] Episode ${episodeId} failed:`, err.message);
 
         // Mark as failed, keep original file as fallback
-        db.prepare(`
-      UPDATE episodes
-      SET transcoding_status = 'failed', updated_at = datetime('now')
-      WHERE id = ?
-    `).run(episodeId);
+        markTranscodeFailed(episodeId);
     }
 }
 
@@ -141,14 +209,24 @@ async function runTranscodeJob(episodeId, inputPath) {
  * @param {number} episodeId
  * @param {string} inputPath - Absolute path to the uploaded video file
  */
-export function enqueueTranscode(episodeId, inputPath) {
-    // Mark as pending in DB
-    db.prepare('UPDATE episodes SET transcoding_status = ? WHERE id = ?')
-        .run('pending', episodeId);
+export function enqueueTranscode(episodeId, inputPath, options = {}) {
+    const { skipStatusUpdate = false } = options;
+
+    if (ffmpegAvailable === false) {
+        console.error(`[Transcoder] Cannot transcode episode ${episodeId}: ffmpeg is unavailable`);
+        markTranscodeFailed(episodeId);
+        return false;
+    }
+
+    if (!skipStatusUpdate) {
+        db.prepare('UPDATE episodes SET transcoding_status = ? WHERE id = ?')
+            .run('pending', episodeId);
+    }
 
     jobQueue.push({ episodeId, inputPath });
     console.log(`[Transcoder] Queued episode ${episodeId} (queue length: ${jobQueue.length})`);
     processQueue();
+    return true;
 }
 
 /**

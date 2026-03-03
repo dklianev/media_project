@@ -1,4 +1,6 @@
 const API_BASE = '/api';
+const DEFAULT_REQUEST_TIMEOUT_MS = 30000;
+const DEFAULT_UPLOAD_TIMEOUT_MS = 60 * 60 * 1000;
 
 let accessToken = null;
 let isRefreshing = false;
@@ -89,14 +91,19 @@ export async function api(endpoint, options = {}) {
   }
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 30000);
+  const timeoutMs = Number.isFinite(Number(options.timeoutMs))
+    ? Number(options.timeoutMs)
+    : DEFAULT_REQUEST_TIMEOUT_MS;
+  const timeoutId = timeoutMs > 0
+    ? setTimeout(() => controller.abort(), timeoutMs)
+    : null;
   config.signal = config.signal || controller.signal;
 
   let res;
   try {
     res = await fetch(url, config);
   } catch (err) {
-    clearTimeout(timeoutId);
+    if (timeoutId) clearTimeout(timeoutId);
     if (err.name === 'AbortError') {
       const timeoutErr = new Error('Заявката отне твърде дълго. Опитай отново.');
       timeoutErr.status = 408;
@@ -104,7 +111,7 @@ export async function api(endpoint, options = {}) {
     }
     throw err;
   }
-  clearTimeout(timeoutId);
+  if (timeoutId) clearTimeout(timeoutId);
 
   // Auto-refresh on 401
   const canAttemptRefresh = Boolean(tokens.access_token);
@@ -156,6 +163,6 @@ api.post = (endpoint, body, options = {}) => api(endpoint, { ...options, method:
 api.put = (endpoint, body, options = {}) => api(endpoint, { ...options, method: 'PUT', body });
 api.delete = (endpoint, options = {}) => api(endpoint, { ...options, method: 'DELETE' });
 api.upload = (endpoint, formData, method = 'POST', options = {}) =>
-  api(endpoint, { ...options, method, body: formData });
+  api(endpoint, { timeoutMs: DEFAULT_UPLOAD_TIMEOUT_MS, ...options, method, body: formData });
 api.uploadPut = (endpoint, formData, options = {}) =>
-  api(endpoint, { ...options, method: 'PUT', body: formData });
+  api(endpoint, { timeoutMs: DEFAULT_UPLOAD_TIMEOUT_MS, ...options, method: 'PUT', body: formData });
