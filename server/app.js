@@ -306,7 +306,7 @@ export function createApp() {
         : `${UPLOAD_MAX_FILE_SIZE_MB}MB`;
       return res.status(413).json({ error: `Файлът е твърде голям (макс ${limitLabel})` });
     }
-    if (err.message?.includes('Неподдържан формат')) {
+    if (err.message?.includes('Неподдържан формат') || err.message?.includes('Неподдържан видео формат')) {
       return res.status(400).json({ error: err.message });
     }
     return res.status(500).json({ error: 'Вътрешна грешка на сървъра' });

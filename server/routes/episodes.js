@@ -46,8 +46,10 @@ const EMBED_TOKEN_SECRET =
   process.env.JWT_SECRET ||
   'dev-embed-secret';
 const EMBED_TOKEN_TTL = process.env.EMBED_TOKEN_TTL || '5m';
+const STREAM_TOKEN_TTL = process.env.STREAM_TOKEN_TTL || '8h';
 const EMBED_TOKEN_ISSUER = 'media-project';
 const EMBED_TOKEN_AUDIENCE = 'episode-embed';
+const STREAM_TOKEN_AUDIENCE = 'episode-stream';
 
 function escapeHtml(value) {
   return String(value || '')
@@ -80,7 +82,7 @@ function resolveLocalVideoFilePath(videoUrl) {
 }
 
 function buildLocalVideoStreamUrl(episodeId, userId, userAgent) {
-  return `/api/episodes/${episodeId}/stream?t=${encodeURIComponent(createEmbedToken(episodeId, userId, userAgent))}`;
+  return `/api/episodes/${episodeId}/stream?t=${encodeURIComponent(createStreamToken(episodeId, userId, userAgent))}`;
 }
 
 function getLocalVideoMimeType(videoUrl) {
@@ -115,9 +117,12 @@ function isStreamableLocalVideo(episode) {
   );
 }
 
-function getAuthorizedPlaybackContext(req, res) {
+function getAuthorizedPlaybackContext(req, res, options = {}) {
+  const { mode = 'embed' } = options;
   const token = req.query.t ? String(req.query.t) : '';
-  const decoded = verifyEmbedToken(token, req.params.id, req.get('user-agent'));
+  const decoded = mode === 'stream'
+    ? verifyStreamToken(token, req.params.id, req.get('user-agent'))
+    : verifyEmbedToken(token, req.params.id, req.get('user-agent'));
   if (!decoded) {
     res.status(403).send('Невалиден достъп до видеото');
     return null;
@@ -246,23 +251,28 @@ function resolveEpisodeAccess(episode, user) {
   };
 }
 
-function createEmbedToken(episodeId, userId, userAgent) {
+function createPlaybackToken(episodeId, userId, userAgent, options = {}) {
+  const {
+    audience = EMBED_TOKEN_AUDIENCE,
+    expiresIn = EMBED_TOKEN_TTL,
+    type = 'episode_embed',
+  } = options;
   const jwtId = crypto.randomUUID
     ? crypto.randomUUID()
     : crypto.randomBytes(16).toString('hex');
 
   return jwt.sign(
     {
-      type: 'episode_embed',
+      type,
       episode_id: Number(episodeId),
       user_id: Number(userId),
       ua: hashUserAgent(userAgent),
     },
     EMBED_TOKEN_SECRET,
     {
-      expiresIn: EMBED_TOKEN_TTL,
+      expiresIn,
       issuer: EMBED_TOKEN_ISSUER,
-      audience: EMBED_TOKEN_AUDIENCE,
+      audience,
       subject: String(userId),
       jwtid: jwtId,
       algorithm: 'HS256',
@@ -270,16 +280,36 @@ function createEmbedToken(episodeId, userId, userAgent) {
   );
 }
 
-function verifyEmbedToken(token, episodeId, userAgent) {
+function createEmbedToken(episodeId, userId, userAgent) {
+  return createPlaybackToken(episodeId, userId, userAgent, {
+    audience: EMBED_TOKEN_AUDIENCE,
+    expiresIn: EMBED_TOKEN_TTL,
+    type: 'episode_embed',
+  });
+}
+
+function createStreamToken(episodeId, userId, userAgent) {
+  return createPlaybackToken(episodeId, userId, userAgent, {
+    audience: STREAM_TOKEN_AUDIENCE,
+    expiresIn: STREAM_TOKEN_TTL,
+    type: 'episode_stream',
+  });
+}
+
+function verifyPlaybackToken(token, episodeId, userAgent, options = {}) {
+  const {
+    audience = EMBED_TOKEN_AUDIENCE,
+    type = 'episode_embed',
+  } = options;
   if (!token) return null;
   try {
     const decoded = jwt.verify(token, EMBED_TOKEN_SECRET, {
       algorithms: ['HS256'],
       issuer: EMBED_TOKEN_ISSUER,
-      audience: EMBED_TOKEN_AUDIENCE,
+      audience,
     });
 
-    if (decoded?.type !== 'episode_embed') return null;
+    if (decoded?.type !== type) return null;
     if (Number(decoded.episode_id) !== Number(episodeId)) return null;
     if (!Number.isFinite(Number(decoded.user_id)) || Number(decoded.user_id) <= 0) return null;
 
@@ -290,6 +320,20 @@ function verifyEmbedToken(token, episodeId, userAgent) {
   } catch {
     return null;
   }
+}
+
+function verifyEmbedToken(token, episodeId, userAgent) {
+  return verifyPlaybackToken(token, episodeId, userAgent, {
+    audience: EMBED_TOKEN_AUDIENCE,
+    type: 'episode_embed',
+  });
+}
+
+function verifyStreamToken(token, episodeId, userAgent) {
+  return verifyPlaybackToken(token, episodeId, userAgent, {
+    audience: STREAM_TOKEN_AUDIENCE,
+    type: 'episode_stream',
+  });
 }
 
 router.get('/latest', requireAuth, (req, res) => {
@@ -455,7 +499,7 @@ router.get('/:id/embed', (req, res) => {
 });
 
 router.get('/:id/stream', async (req, res) => {
-  const playback = getAuthorizedPlaybackContext(req, res);
+  const playback = getAuthorizedPlaybackContext(req, res, { mode: 'stream' });
   if (!playback) return;
 
   const { episode } = playback;
