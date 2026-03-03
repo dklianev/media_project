@@ -8,11 +8,12 @@ import db from '../db.js';
 import { requireAuth, requireAdmin } from '../middleware/auth.js';
 import {
   episodeUpload,
+  getUploadedFiles,
   optimizeUploadedImages,
   requireUploadLock,
   validateEpisodeUploads,
 } from '../middleware/upload.js';
-import { enqueueTranscode } from '../utils/transcoder.js';
+import { analyzeUploadedVideo, enqueueTranscode } from '../utils/transcoder.js';
 import { buildPageResult, parsePagination, parseSort, toInt } from '../utils/pagination.js';
 import { logAdminAction } from '../utils/audit.js';
 import {
@@ -81,6 +82,20 @@ function resolveLocalVideoFilePath(videoUrl) {
   return pathResolve(uploadsDir, normalized.replace(/^\/uploads\//, ''));
 }
 
+async function cleanupUploadedRequestFiles(req) {
+  const files = getUploadedFiles(req);
+  if (files.length === 0) {
+    return;
+  }
+
+  await Promise.all(files.map((file) => fs.unlink(file.path).catch(() => {})));
+}
+
+async function rejectEpisodeUploadRequest(req, res, status, error) {
+  await cleanupUploadedRequestFiles(req);
+  return res.status(status).json({ error });
+}
+
 function buildLocalVideoStreamUrl(episodeId, userId, userAgent) {
   return `/api/episodes/${episodeId}/stream?t=${encodeURIComponent(createStreamToken(episodeId, userId, userAgent))}`;
 }
@@ -96,16 +111,6 @@ function getLocalVideoMimeType(videoUrl) {
     default:
       return 'application/octet-stream';
   }
-}
-
-function isTruthyFormValue(value) {
-  return ['1', 'true', 'yes', 'on'].includes(String(value || '').trim().toLowerCase());
-}
-
-function canSkipTranscodingForUpload(file) {
-  if (!file) return false;
-  const ext = extname(file.originalname || file.filename || '').toLowerCase();
-  return file.mimetype === 'video/mp4' || ext === '.mp4';
 }
 
 function isStreamableLocalVideo(episode) {
@@ -605,11 +610,14 @@ router.get('/:id', requireAuth, (req, res) => {
   }
 
   const videoSource = episode.video_source || 'youtube';
-  const playbackToken = access.hasAccess
+  const embedToken = access.hasAccess
     ? createEmbedToken(episode.id, req.user.id, req.get('user-agent'))
     : null;
+  const streamToken = access.hasAccess && isStreamableLocalVideo(episode)
+    ? createStreamToken(episode.id, req.user.id, req.get('user-agent'))
+    : null;
   const playableLocalVideoUrl = access.hasAccess && isStreamableLocalVideo(episode)
-    ? `/api/episodes/${episode.id}/stream?t=${encodeURIComponent(playbackToken)}`
+    ? `/api/episodes/${episode.id}/stream?t=${encodeURIComponent(streamToken)}`
     : null;
 
   const responsePayload = {
@@ -671,7 +679,7 @@ router.get('/:id', requireAuth, (req, res) => {
   `).all(episode.production_id, episode.id, currentTimestamp);
 
   responsePayload.video_embed_url =
-    `/api/episodes/${episode.id}/embed?t=${encodeURIComponent(playbackToken)}`;
+    `/api/episodes/${episode.id}/embed?t=${encodeURIComponent(embedToken)}`;
   responsePayload.reactions = reactions;
   responsePayload.user_reaction = userReaction?.reaction_type || null;
   responsePayload.latest_episodes = latestEpisodes;
@@ -784,47 +792,47 @@ router.post(
         side_images_urls,
         video_source,
         local_video_url,
-        skip_transcoding,
       } = req.body;
       const uploadedVideo = req.files?.video_file?.[0] || null;
-      const skipTranscoding = isTruthyFormValue(skip_transcoding);
 
       const prod = db.prepare('SELECT id, title FROM productions WHERE id = ?').get(production_id);
-      if (!prod) return res.status(404).json({ error: 'Продукцията не е намерена' });
+      if (!prod) return rejectEpisodeUploadRequest(req, res, 404, 'Продукцията не е намерена');
       if (!title || String(title).trim().length < 2) {
-        return res.status(400).json({ error: 'Заглавието е задължително' });
+        return rejectEpisodeUploadRequest(req, res, 400, 'Заглавието е задължително');
       }
 
       const resolvedVideoSource = video_source === 'local' ? 'local' : 'youtube';
 
       if (resolvedVideoSource === 'youtube' && !isValidYouTubeId(youtube_video_id)) {
-        return res.status(400).json({ error: 'Невалиден YouTube видео идентификатор' });
-      }
-      if (skipTranscoding && !uploadedVideo) {
-        return res.status(400).json({ error: 'Опцията за пропускане на transcoding работи само при нов качен видео файл' });
-      }
-      if (skipTranscoding && !canSkipTranscodingForUpload(uploadedVideo)) {
-        return res.status(400).json({ error: 'Пропускането на transcoding е разрешено само за MP4 файл, подготвен за уеб' });
+        return rejectEpisodeUploadRequest(req, res, 400, 'Невалиден YouTube видео идентификатор');
       }
 
       // Resolve video file for local source
       let resolvedLocalVideoUrl = null;
       let videoFilePath = null;
+      let uploadedVideoPlan = null;
       const selectedLocalVideoUrl = local_video_url !== undefined && String(local_video_url).trim()
         ? normalizeLocalVideoUrl(local_video_url)
         : null;
       if (local_video_url !== undefined && String(local_video_url).trim() && !selectedLocalVideoUrl) {
-        return res.status(400).json({ error: 'Невалиден URL за локално видео' });
+        return rejectEpisodeUploadRequest(req, res, 400, 'Невалиден URL за локално видео');
       }
       if (resolvedVideoSource === 'local') {
         if (uploadedVideo) {
           resolvedLocalVideoUrl = `${LOCAL_VIDEO_URL_PREFIX}${uploadedVideo.filename}`;
           videoFilePath = uploadedVideo.path;
+          uploadedVideoPlan = await analyzeUploadedVideo(videoFilePath);
+          if (uploadedVideoPlan.decision === 'invalid') {
+            return rejectEpisodeUploadRequest(req, res, 400, 'Файлът не съдържа валидно видео');
+          }
+          if (uploadedVideoPlan.decision === 'unavailable') {
+            return rejectEpisodeUploadRequest(req, res, 503, 'Видео обработката е временно недостъпна');
+          }
         } else if (selectedLocalVideoUrl) {
           resolvedLocalVideoUrl = selectedLocalVideoUrl;
         }
         if (!resolvedLocalVideoUrl) {
-          return res.status(400).json({ error: 'Качи локален видео файл' });
+          return rejectEpisodeUploadRequest(req, res, 400, 'Качи локален видео файл');
         }
       }
 
@@ -837,13 +845,13 @@ router.post(
       const selectedSideImages = parseManagedMediaUrlList(side_images_urls, { maxItems: 5 });
 
       if (thumbnail_url !== undefined && String(thumbnail_url).trim() && !selectedThumbnailUrl) {
-        return res.status(400).json({ error: 'Невалиден URL за кадър' });
+        return rejectEpisodeUploadRequest(req, res, 400, 'Невалиден URL за кадър');
       }
       if (ad_banner_url !== undefined && String(ad_banner_url).trim() && !selectedBannerUrl) {
-        return res.status(400).json({ error: 'Невалиден URL за голямо изображение' });
+        return rejectEpisodeUploadRequest(req, res, 400, 'Невалиден URL за голямо изображение');
       }
       if (selectedSideImages.error) {
-        return res.status(400).json({ error: selectedSideImages.error });
+        return rejectEpisodeUploadRequest(req, res, 400, selectedSideImages.error);
       }
 
       const thumbnailUrl = req.files?.thumbnail?.[0]
@@ -860,7 +868,7 @@ router.post(
       const hasPublishedAt = published_at !== undefined && String(published_at).trim() !== '';
       const publishedAtValue = hasPublishedAt ? normalizePublishedAtToSofia(published_at) : null;
       if (hasPublishedAt && !publishedAtValue) {
-        return res.status(400).json({ error: 'Невалидна дата за публикуване' });
+        return rejectEpisodeUploadRequest(req, res, 400, 'Невалидна дата за публикуване');
       }
 
       const result = db.prepare(`
@@ -887,7 +895,9 @@ router.post(
         publishedAtValue,
         resolvedVideoSource,
         resolvedLocalVideoUrl,
-        videoFilePath ? (skipTranscoding ? 'ready' : 'pending') : (resolvedLocalVideoUrl ? 'ready' : null)
+        videoFilePath
+          ? (uploadedVideoPlan?.decision === 'ready' ? 'ready' : 'pending')
+          : (resolvedLocalVideoUrl ? 'ready' : null)
       );
 
       const episode = db.prepare('SELECT * FROM episodes WHERE id = ?').get(result.lastInsertRowid);
@@ -898,7 +908,7 @@ router.post(
       }, { source: 'episode.create' });
 
       // Start transcoding if local video was uploaded
-      if (videoFilePath && !skipTranscoding && episode) {
+      if (videoFilePath && uploadedVideoPlan?.decision !== 'ready' && episode) {
         enqueueTranscode(episode.id, videoFilePath);
       }
 
@@ -929,7 +939,7 @@ router.post(
           access_group: episode.access_group,
           is_active: episode.is_active,
           video_source: resolvedVideoSource,
-          skip_transcoding: skipTranscoding,
+          video_processing_plan: uploadedVideoPlan?.decision || null,
         },
       });
       res.status(201).json({ ...episode, access_group: normalizeEpisodeGroup(episode.access_group) });
@@ -955,7 +965,7 @@ router.put(
     try {
       const existing = db.prepare('SELECT * FROM episodes WHERE id = ?').get(req.params.id);
       if (!existing) {
-        return res.status(404).json({ error: 'Епизодът не е намерен' });
+        return rejectEpisodeUploadRequest(req, res, 404, 'Епизодът не е намерен');
       }
 
       const {
@@ -974,20 +984,18 @@ router.put(
         side_images_urls,
         video_source,
         local_video_url,
-        skip_transcoding,
       } = req.body;
       const uploadedVideo = req.files?.video_file?.[0] || null;
-      const skipTranscoding = isTruthyFormValue(skip_transcoding);
 
       const nextProductionId = production_id !== undefined
         ? toInt(production_id, null)
         : existing.production_id;
       if (!nextProductionId) {
-        return res.status(400).json({ error: 'Избери валидна продукция за епизода' });
+        return rejectEpisodeUploadRequest(req, res, 400, 'Избери валидна продукция за епизода');
       }
       const productionExists = db.prepare('SELECT id FROM productions WHERE id = ?').get(nextProductionId);
       if (!productionExists) {
-        return res.status(404).json({ error: 'Продукцията не е намерена' });
+        return rejectEpisodeUploadRequest(req, res, 404, 'Продукцията не е намерена');
       }
 
       const hasThumbnailUrl = Object.prototype.hasOwnProperty.call(req.body || {}, 'thumbnail_url');
@@ -1001,13 +1009,13 @@ router.put(
       const selectedSideImages = parseManagedMediaUrlList(side_images_urls, { maxItems: 5 });
 
       if (hasThumbnailUrl && String(thumbnail_url).trim() && !selectedThumbnailUrl) {
-        return res.status(400).json({ error: 'Невалиден URL за кадър' });
+        return rejectEpisodeUploadRequest(req, res, 400, 'Невалиден URL за кадър');
       }
       if (hasBannerUrl && String(ad_banner_url).trim() && !selectedBannerUrl) {
-        return res.status(400).json({ error: 'Невалиден URL за голямо изображение' });
+        return rejectEpisodeUploadRequest(req, res, 400, 'Невалиден URL за голямо изображение');
       }
       if (selectedSideImages.error) {
-        return res.status(400).json({ error: selectedSideImages.error });
+        return rejectEpisodeUploadRequest(req, res, 400, selectedSideImages.error);
       }
 
       const thumbnailUrl = req.files?.thumbnail?.[0]
@@ -1034,31 +1042,33 @@ router.put(
       if (resolvedVideoSource === 'youtube') {
         const ytId = youtube_video_id ?? existing.youtube_video_id;
         if (!isValidYouTubeId(ytId)) {
-          return res.status(400).json({ error: 'Невалиден YouTube видео идентификатор' });
+          return rejectEpisodeUploadRequest(req, res, 400, 'Невалиден YouTube видео идентификатор');
         }
-      }
-      if (skipTranscoding && !uploadedVideo) {
-        return res.status(400).json({ error: 'Опцията за пропускане на transcoding работи само при нов качен видео файл' });
-      }
-      if (skipTranscoding && !canSkipTranscodingForUpload(uploadedVideo)) {
-        return res.status(400).json({ error: 'Пропускането на transcoding е разрешено само за MP4 файл, подготвен за уеб' });
       }
 
       // Resolve local video
       let resolvedLocalVideoUrl = existing.local_video_url;
       let videoFilePath = null;
       let nextTranscodingStatus = existing.transcoding_status;
+      let uploadedVideoPlan = null;
       const selectedLocalVideoUrl = local_video_url !== undefined && String(local_video_url).trim()
         ? normalizeLocalVideoUrl(local_video_url)
         : null;
       if (local_video_url !== undefined && String(local_video_url).trim() && !selectedLocalVideoUrl) {
-        return res.status(400).json({ error: 'Невалиден URL за локално видео' });
+        return rejectEpisodeUploadRequest(req, res, 400, 'Невалиден URL за локално видео');
       }
       if (resolvedVideoSource === 'local') {
         if (uploadedVideo) {
           resolvedLocalVideoUrl = `${LOCAL_VIDEO_URL_PREFIX}${uploadedVideo.filename}`;
           videoFilePath = uploadedVideo.path;
-          nextTranscodingStatus = skipTranscoding ? 'ready' : 'pending';
+          uploadedVideoPlan = await analyzeUploadedVideo(videoFilePath);
+          if (uploadedVideoPlan.decision === 'invalid') {
+            return rejectEpisodeUploadRequest(req, res, 400, 'Файлът не съдържа валидно видео');
+          }
+          if (uploadedVideoPlan.decision === 'unavailable') {
+            return rejectEpisodeUploadRequest(req, res, 503, 'Видео обработката е временно недостъпна');
+          }
+          nextTranscodingStatus = uploadedVideoPlan.decision === 'ready' ? 'ready' : 'pending';
         } else if (selectedLocalVideoUrl) {
           resolvedLocalVideoUrl = selectedLocalVideoUrl;
           nextTranscodingStatus = existing.local_video_url === selectedLocalVideoUrl
@@ -1069,7 +1079,7 @@ router.put(
           nextTranscodingStatus = null;
         }
         if (!resolvedLocalVideoUrl) {
-          return res.status(400).json({ error: 'Качи локален видео файл' });
+          return rejectEpisodeUploadRequest(req, res, 400, 'Качи локален видео файл');
         }
       } else {
         resolvedLocalVideoUrl = null;
@@ -1084,7 +1094,7 @@ router.put(
         } else {
           publishedAtValue = normalizePublishedAtToSofia(rawPublishedAt);
           if (!publishedAtValue) {
-            return res.status(400).json({ error: 'Невалидна дата за публикуване' });
+            return rejectEpisodeUploadRequest(req, res, 400, 'Невалидна дата за публикуване');
           }
         }
       }
@@ -1137,7 +1147,7 @@ router.put(
       }, { source: 'episode.update' });
 
       // Start transcoding if new local video was uploaded
-      if (videoFilePath && !skipTranscoding && updated) {
+      if (videoFilePath && uploadedVideoPlan?.decision !== 'ready' && updated) {
         enqueueTranscode(updated.id, videoFilePath);
       }
       logAdminAction(req, {
@@ -1158,7 +1168,7 @@ router.put(
             episode_number: updated.episode_number,
             access_group: normalizeEpisodeGroup(updated.access_group),
             is_active: updated.is_active,
-            skip_transcoding: skipTranscoding,
+            video_processing_plan: uploadedVideoPlan?.decision || null,
           },
         },
       });

@@ -89,7 +89,6 @@ export default function ManageEpisodes() {
     thumbnail_url: '',
     ad_banner_url: '',
     video_source: 'youtube',
-    skip_transcoding: false,
   });
 
   const [migrateModalId, setMigrateModalId] = useState(null);
@@ -201,7 +200,6 @@ export default function ManageEpisodes() {
       thumbnail_url: '',
       ad_banner_url: '',
       video_source: 'youtube',
-      skip_transcoding: false,
     };
     setForm(initialState);
     setInitialFormState(JSON.stringify({
@@ -235,7 +233,6 @@ export default function ManageEpisodes() {
       thumbnail_url: episode.thumbnail_url || '',
       ad_banner_url: episode.ad_banner_url || '',
       video_source: episode.video_source || 'youtube',
-      skip_transcoding: false,
       transcoding_status: episode.transcoding_status || null,
       local_video_url: episode.local_video_url || '',
     };
@@ -277,7 +274,6 @@ export default function ManageEpisodes() {
     fd.append('description', form.description);
     fd.append('youtube_video_id', form.youtube_video_id);
     fd.append('video_source', form.video_source);
-    fd.append('skip_transcoding', String(form.video_source === 'local' && hasNewLocalVideoFile && form.skip_transcoding));
     fd.append('side_text', form.side_text);
     fd.append('ad_banner_link', form.ad_banner_link);
     fd.append('access_group', form.access_group);
@@ -410,7 +406,7 @@ export default function ManageEpisodes() {
               <button
                 type="button"
                 onClick={() => {
-                  setForm((current) => ({ ...current, video_source: 'youtube', skip_transcoding: false }));
+                  setForm((current) => ({ ...current, video_source: 'youtube' }));
                   if (videoFileRef.current) videoFileRef.current.value = '';
                 }}
                 className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${form.video_source !== 'local'
@@ -442,17 +438,8 @@ export default function ManageEpisodes() {
                   disabled={isActionLocked}
                   className="input-dark text-sm"
                 />
-                <label className="flex items-center gap-2 text-xs text-[var(--text-secondary)]">
-                  <input
-                    type="checkbox"
-                    checked={Boolean(form.skip_transcoding)}
-                    onChange={(e) => setForm({ ...form, skip_transcoding: e.target.checked })}
-                    disabled={isActionLocked}
-                  />
-                  Прескочи transcoding за готов MP4 файл
-                </label>
                 <p className="text-[10px] text-[var(--text-muted)]">
-                  Максимален размер: 12 GB. Поддържани формати: MP4, WebM, MOV. Skip е позволен само за вече подготвен MP4.
+                  Максимален размер: 12 GB. Поддържани формати: MP4, WebM, MOV. Системата автоматично определя дали файлът е готов за директно възпроизвеждане, дали му трябва faststart remux или пълен transcode.
                 </p>
                 {form.transcoding_status && (
                   <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-medium ${form.transcoding_status === 'ready'

@@ -13,6 +13,7 @@ const videosDir = resolve(__dirname, '..', '..', 'public', 'uploads', 'videos');
 let activeJob = null;
 const jobQueue = [];
 let ffmpegAvailable = null;
+let ffprobeAvailable = null;
 
 function normalizeLocalVideoUrl(value) {
     const normalized = normalizeManagedMediaUrl(value);
@@ -39,24 +40,227 @@ function markTranscodeFailed(episodeId) {
     `).run(episodeId);
 }
 
-/**
- * Check if ffmpeg is available on the system.
- * Called once at server startup.
- */
-export function checkFfmpeg() {
+function checkBinary(command, args = ['-version']) {
     return new Promise((resolve) => {
-        const proc = spawn('ffmpeg', ['-version'], { stdio: 'pipe', shell: true });
-        let output = '';
-        proc.stdout?.on('data', (d) => { output += d; });
+        const proc = spawn(command, args, { stdio: 'pipe', shell: true });
         proc.on('error', () => resolve(false));
         proc.on('close', (code) => resolve(code === 0));
     });
 }
 
-export async function initializeTranscoder() {
-    ffmpegAvailable = await checkFfmpeg();
+/**
+ * Check if ffmpeg is available on the system.
+ * Called once at server startup.
+ */
+export function checkFfmpeg() {
+    return checkBinary('ffmpeg');
+}
 
-    if (!ffmpegAvailable) {
+export function checkFfprobe() {
+    return checkBinary('ffprobe');
+}
+
+async function ensureMediaToolsStatus() {
+    if (ffmpegAvailable === null) {
+        ffmpegAvailable = await checkFfmpeg();
+    }
+    if (ffprobeAvailable === null) {
+        ffprobeAvailable = await checkFfprobe();
+    }
+
+    return {
+        ffmpegAvailable,
+        ffprobeAvailable,
+    };
+}
+
+async function probeVideo(inputPath) {
+    return new Promise((resolve, reject) => {
+        const args = [
+            '-v', 'error',
+            '-print_format', 'json',
+            '-show_format',
+            '-show_streams',
+            inputPath,
+        ];
+        const proc = spawn('ffprobe', args, { stdio: ['ignore', 'pipe', 'pipe'], shell: true });
+
+        let stdout = '';
+        let stderr = '';
+        proc.stdout?.on('data', (chunk) => { stdout += chunk.toString(); });
+        proc.stderr?.on('data', (chunk) => { stderr += chunk.toString(); });
+
+        proc.on('error', (err) => {
+            reject(new Error(`ffprobe spawn error: ${err.message}`));
+        });
+
+        proc.on('close', (code) => {
+            if (code !== 0) {
+                reject(new Error(`ffprobe exited with code ${code}: ${stderr.slice(-500)}`));
+                return;
+            }
+
+            try {
+                resolve(JSON.parse(stdout || '{}'));
+            } catch (err) {
+                reject(new Error(`ffprobe parse error: ${err.message}`));
+            }
+        });
+    });
+}
+
+async function detectMp4Faststart(inputPath) {
+    const fileHandle = await fs.open(inputPath, 'r');
+
+    try {
+        const stats = await fileHandle.stat();
+        let offset = 0;
+        let sawMdat = false;
+        const headerBuffer = Buffer.alloc(16);
+
+        while (offset + 8 <= stats.size) {
+            const { bytesRead } = await fileHandle.read(headerBuffer, 0, 8, offset);
+            if (bytesRead < 8) break;
+
+            let boxSize = headerBuffer.readUInt32BE(0);
+            const boxType = headerBuffer.toString('ascii', 4, 8);
+            let headerSize = 8;
+
+            if (boxSize === 1) {
+                const extended = await fileHandle.read(headerBuffer, 0, 16, offset);
+                if (extended.bytesRead < 16) return false;
+                boxSize = Number(headerBuffer.readBigUInt64BE(8));
+                headerSize = 16;
+            } else if (boxSize === 0) {
+                boxSize = stats.size - offset;
+            }
+
+            if (!Number.isFinite(boxSize) || boxSize < headerSize) {
+                return false;
+            }
+
+            if (boxType === 'moov') {
+                return !sawMdat;
+            }
+
+            if (boxType === 'mdat') {
+                sawMdat = true;
+            }
+
+            offset += boxSize;
+        }
+
+        return false;
+    } finally {
+        await fileHandle.close();
+    }
+}
+
+function hasSupportedAudio(streams) {
+    const audioStreams = streams.filter((stream) => stream?.codec_type === 'audio');
+    return audioStreams.every((stream) => stream?.codec_name === 'aac');
+}
+
+function isSupportedVideo(videoStream) {
+    if (!videoStream) return false;
+
+    const width = Number(videoStream.width || 0);
+    const height = Number(videoStream.height || 0);
+    return videoStream.codec_name === 'h264'
+        && videoStream.pix_fmt === 'yuv420p'
+        && width > 0
+        && height > 0
+        && width <= 1920
+        && height <= 1080;
+}
+
+function isMp4LikeFormat(formatName) {
+    const normalized = String(formatName || '').toLowerCase();
+    return normalized.includes('mp4') || normalized.includes('mov');
+}
+
+export async function analyzeUploadedVideo(inputPath) {
+    const tools = await ensureMediaToolsStatus();
+
+    if (!tools.ffprobeAvailable) {
+        if (!tools.ffmpegAvailable) {
+            return {
+                decision: 'unavailable',
+                reason: 'ffmpeg/ffprobe are unavailable',
+            };
+        }
+
+        return {
+            decision: 'transcode',
+            reason: 'ffprobe unavailable',
+        };
+    }
+
+    let probe;
+    try {
+        probe = await probeVideo(inputPath);
+    } catch (err) {
+        return {
+            decision: 'invalid',
+            reason: err.message,
+        };
+    }
+    const streams = Array.isArray(probe?.streams) ? probe.streams : [];
+    const videoStream = streams.find((stream) => stream?.codec_type === 'video');
+    const inputExt = extname(inputPath).toLowerCase();
+
+    if (!videoStream) {
+        return {
+            decision: 'invalid',
+            reason: 'missing video stream',
+        };
+    }
+
+    const codecCompatibleCandidate = isMp4LikeFormat(probe?.format?.format_name)
+        && isSupportedVideo(videoStream)
+        && hasSupportedAudio(streams);
+
+    if (codecCompatibleCandidate && inputExt === '.mp4') {
+        const hasFaststart = await detectMp4Faststart(inputPath);
+        if (hasFaststart) {
+            return {
+                decision: 'ready',
+                reason: 'already web-optimized',
+            };
+        }
+    }
+
+    if (codecCompatibleCandidate) {
+        if (!tools.ffmpegAvailable) {
+            return {
+                decision: 'unavailable',
+                reason: 'ffmpeg unavailable for mp4 remux',
+            };
+        }
+
+        return {
+            decision: 'remux',
+            reason: 'requires mp4 faststart remux',
+        };
+    }
+
+    if (!tools.ffmpegAvailable) {
+        return {
+            decision: 'unavailable',
+            reason: 'ffmpeg unavailable for transcoding',
+        };
+    }
+
+    return {
+        decision: 'transcode',
+        reason: 'codec/container requires transcoding',
+    };
+}
+
+export async function initializeTranscoder() {
+    const tools = await ensureMediaToolsStatus();
+
+    if (!tools.ffmpegAvailable) {
         console.warn('[Transcoder] ffmpeg is not available. Local uploads will be marked as failed.');
         db.prepare(`
           UPDATE episodes
@@ -64,6 +268,10 @@ export async function initializeTranscoder() {
           WHERE video_source = 'local' AND transcoding_status IN ('pending', 'processing')
         `).run();
         return false;
+    }
+
+    if (!tools.ffprobeAvailable) {
+        console.warn('[Transcoder] ffprobe is not available. Uploads will conservatively be transcoded.');
     }
 
     const recoverableJobs = db.prepare(`
@@ -136,6 +344,35 @@ function transcodeVideo(inputPath, outputPath) {
     });
 }
 
+function remuxVideoFaststart(inputPath, outputPath) {
+    return new Promise((resolve, reject) => {
+        const args = [
+            '-i', inputPath,
+            '-c', 'copy',
+            '-movflags', '+faststart',
+            '-y',
+            outputPath,
+        ];
+
+        const proc = spawn('ffmpeg', args, { stdio: ['ignore', 'pipe', 'pipe'], shell: true });
+
+        let stderr = '';
+        proc.stderr?.on('data', (d) => { stderr += d.toString(); });
+
+        proc.on('error', (err) => {
+            reject(new Error(`ffmpeg spawn error: ${err.message}`));
+        });
+
+        proc.on('close', (code) => {
+            if (code === 0) {
+                resolve(outputPath);
+            } else {
+                reject(new Error(`ffmpeg exited with code ${code}: ${stderr.slice(-500)}`));
+            }
+        });
+    });
+}
+
 /**
  * Process the next job in the queue (if any).
  */
@@ -166,34 +403,59 @@ async function runTranscodeJob(episodeId, inputPath) {
     const base = basename(inputPath, ext);
     const outputPath = resolve(videosDir, `${base}-transcoded.mp4`);
     const outputUrl = `/uploads/videos/${base}-transcoded.mp4`;
+    const remuxPath = resolve(videosDir, `${base}-faststart.mp4`);
+    const remuxUrl = `/uploads/videos/${base}-faststart.mp4`;
 
     try {
         // Mark as processing
         db.prepare('UPDATE episodes SET transcoding_status = ? WHERE id = ?')
             .run('processing', episodeId);
 
-        console.log(`[Transcoder] Starting transcode for episode ${episodeId}: ${inputPath}`);
-        await transcodeVideo(inputPath, outputPath);
-
-        // Verify output exists
-        const stats = await fs.stat(outputPath);
-        if (stats.size < 1000) {
-            throw new Error('Transcoded file is suspiciously small');
+        const plan = await analyzeUploadedVideo(inputPath);
+        if (plan.decision === 'invalid') {
+            throw new Error(`video analysis failed: ${plan.reason}`);
+        }
+        if (plan.decision === 'unavailable') {
+            throw new Error(plan.reason);
         }
 
-        // Update DB with transcoded file
+        let finalPath = inputPath;
+        let finalUrl = episode.local_video_url;
+
+        if (plan.decision === 'ready') {
+            finalPath = inputPath;
+            finalUrl = episode.local_video_url;
+        } else if (plan.decision === 'remux') {
+            console.log(`[Transcoder] Starting faststart remux for episode ${episodeId}: ${inputPath}`);
+            await remuxVideoFaststart(inputPath, remuxPath);
+            finalPath = remuxPath;
+            finalUrl = remuxUrl;
+        } else {
+            console.log(`[Transcoder] Starting transcode for episode ${episodeId}: ${inputPath}`);
+            await transcodeVideo(inputPath, outputPath);
+            finalPath = outputPath;
+            finalUrl = outputUrl;
+        }
+
+        // Verify output exists
+        const stats = await fs.stat(finalPath);
+        if (stats.size < 1000) {
+            throw new Error('Processed video file is suspiciously small');
+        }
+
+        // Update DB with processed file
         db.prepare(`
       UPDATE episodes
       SET local_video_url = ?, transcoding_status = 'ready', updated_at = datetime('now')
       WHERE id = ?
-    `).run(outputUrl, episodeId);
+    `).run(finalUrl, episodeId);
 
         // Delete original file (if different from output)
-        if (inputPath !== outputPath) {
+        if (inputPath !== finalPath) {
             await fs.unlink(inputPath).catch(() => { });
         }
 
-        console.log(`[Transcoder] Episode ${episodeId} transcoded successfully → ${outputUrl}`);
+        console.log(`[Transcoder] Episode ${episodeId} processed successfully → ${finalUrl}`);
     } catch (err) {
         console.error(`[Transcoder] Episode ${episodeId} failed:`, err.message);
 
