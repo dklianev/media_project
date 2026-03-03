@@ -382,7 +382,7 @@ function processQueue() {
     const job = jobQueue.shift();
     activeJob = job;
 
-    runTranscodeJob(job.episodeId, job.inputPath)
+    runTranscodeJob(job)
         .finally(() => {
             activeJob = null;
             processQueue();
@@ -392,7 +392,12 @@ function processQueue() {
 /**
  * Run the actual transcode for an episode.
  */
-async function runTranscodeJob(episodeId, inputPath) {
+async function runTranscodeJob(job) {
+    const {
+        episodeId,
+        inputPath,
+        processingPlan = null,
+    } = job;
     const episode = db.prepare('SELECT id, local_video_url FROM episodes WHERE id = ?').get(episodeId);
     if (!episode) {
         console.error(`[Transcoder] Episode ${episodeId} not found, skipping`);
@@ -411,7 +416,7 @@ async function runTranscodeJob(episodeId, inputPath) {
         db.prepare('UPDATE episodes SET transcoding_status = ? WHERE id = ?')
             .run('processing', episodeId);
 
-        const plan = await analyzeUploadedVideo(inputPath);
+        const plan = processingPlan || await analyzeUploadedVideo(inputPath);
         if (plan.decision === 'invalid') {
             throw new Error(`video analysis failed: ${plan.reason}`);
         }
@@ -472,7 +477,7 @@ async function runTranscodeJob(episodeId, inputPath) {
  * @param {string} inputPath - Absolute path to the uploaded video file
  */
 export function enqueueTranscode(episodeId, inputPath, options = {}) {
-    const { skipStatusUpdate = false } = options;
+    const { skipStatusUpdate = false, processingPlan = null } = options;
 
     if (ffmpegAvailable === false) {
         console.error(`[Transcoder] Cannot transcode episode ${episodeId}: ffmpeg is unavailable`);
@@ -485,16 +490,8 @@ export function enqueueTranscode(episodeId, inputPath, options = {}) {
             .run('pending', episodeId);
     }
 
-    jobQueue.push({ episodeId, inputPath });
+    jobQueue.push({ episodeId, inputPath, processingPlan });
     console.log(`[Transcoder] Queued episode ${episodeId} (queue length: ${jobQueue.length})`);
     processQueue();
     return true;
-}
-
-/**
- * Get current transcoding status for an episode.
- */
-export function getTranscodeStatus(episodeId) {
-    const row = db.prepare('SELECT transcoding_status FROM episodes WHERE id = ?').get(episodeId);
-    return row?.transcoding_status || null;
 }

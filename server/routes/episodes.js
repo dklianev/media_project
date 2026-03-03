@@ -909,7 +909,7 @@ router.post(
 
       // Start transcoding if local video was uploaded
       if (videoFilePath && uploadedVideoPlan?.decision !== 'ready' && episode) {
-        enqueueTranscode(episode.id, videoFilePath);
+        enqueueTranscode(episode.id, videoFilePath, { processingPlan: uploadedVideoPlan });
       }
 
       // Notify only when the episode is already visible, not when it is scheduled for later.
@@ -1148,7 +1148,7 @@ router.put(
 
       // Start transcoding if new local video was uploaded
       if (videoFilePath && uploadedVideoPlan?.decision !== 'ready' && updated) {
-        enqueueTranscode(updated.id, videoFilePath);
+        enqueueTranscode(updated.id, videoFilePath, { processingPlan: uploadedVideoPlan });
       }
       logAdminAction(req, {
         action: 'episode.update',
