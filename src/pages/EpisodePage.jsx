@@ -115,7 +115,8 @@ export default function EpisodePage() {
   }, [episode?.has_access, episode?.id]);
 
   const isLocked = Boolean(episode && episode.has_access === false);
-  const hasPlayableVideo = Boolean(episode?.has_access && episode?.video_embed_url);
+  const isLocalReady = episode?.video_source === 'local' && (episode?.local_video_url || episode?.transcoding_status === 'pending' || episode?.transcoding_status === 'processing');
+  const hasPlayableVideo = Boolean(episode?.has_access && (episode?.video_embed_url || isLocalReady));
 
   // Track watch progress
   useWatchProgress(
@@ -218,6 +219,9 @@ export default function EpisodePage() {
                     playerProgressRef.current = currentTime;
                     playerDurationRef.current = totalDuration;
                   }}
+                  videoSource={episode.video_source || 'youtube'}
+                  localVideoUrl={episode.local_video_url}
+                  transcodingStatus={episode.transcoding_status}
                 />
               ) : (
                 <div className="relative w-full overflow-hidden rounded-2xl border border-[var(--border)] bg-[linear-gradient(160deg,#0a0d17,#111626)] shadow-premium-md" style={{ paddingBottom: '56.25%' }}>

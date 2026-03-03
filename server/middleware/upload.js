@@ -117,7 +117,7 @@ async function optimizeImageFile(file) {
   const stats = await fs.stat(optimizedPath);
 
   if (optimizedPath !== file.path) {
-    await fs.unlink(file.path).catch(() => {});
+    await fs.unlink(file.path).catch(() => { });
   }
 
   file.filename = optimizedName;
@@ -144,7 +144,7 @@ export async function optimizeUploadedImages(req, res, next) {
   } catch (err) {
     for (const file of files) {
       if (!file?.path) continue;
-      await fs.unlink(file.path).catch(() => {});
+      await fs.unlink(file.path).catch(() => { });
     }
     return next(new Error('Грешка при обработка на изображението'));
   }
@@ -155,3 +155,33 @@ export const upload = multer({
   fileFilter,
   limits: { fileSize: MAX_FILE_SIZE },
 });
+
+// ─── Video upload ───
+const videosDir = resolve(__dirname, '..', '..', 'public', 'uploads', 'videos');
+mkdirSync(videosDir, { recursive: true });
+const VIDEO_MAX_FILE_SIZE = Number(process.env.VIDEO_MAX_FILE_SIZE_MB || 2048) * 1024 * 1024;
+
+const videoStorage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, videosDir),
+  filename: (req, file, cb) => {
+    const uniqueId = crypto.randomBytes(8).toString('hex');
+    const ext = extname(file.originalname);
+    cb(null, `${Date.now()}-${uniqueId}${ext}`);
+  },
+});
+
+const videoFileFilter = (req, file, cb) => {
+  const allowed = ['video/mp4', 'video/webm', 'video/quicktime'];
+  if (allowed.includes(file.mimetype)) {
+    cb(null, true);
+  } else {
+    cb(new Error('Неподдържан видео формат. Разрешени: MP4, WebM, MOV'), false);
+  }
+};
+
+export const videoUpload = multer({
+  storage: videoStorage,
+  fileFilter: videoFileFilter,
+  limits: { fileSize: VIDEO_MAX_FILE_SIZE },
+});
+

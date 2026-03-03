@@ -310,6 +310,17 @@ if (!hasColumn('episodes', 'duration_seconds')) {
   db.exec(`ALTER TABLE episodes ADD COLUMN duration_seconds INTEGER`);
 }
 
+// ─── Local video hosting columns ───
+if (!hasColumn('episodes', 'video_source')) {
+  db.exec(`ALTER TABLE episodes ADD COLUMN video_source TEXT DEFAULT 'youtube'`);
+}
+if (!hasColumn('episodes', 'local_video_url')) {
+  db.exec(`ALTER TABLE episodes ADD COLUMN local_video_url TEXT`);
+}
+if (!hasColumn('episodes', 'transcoding_status')) {
+  db.exec(`ALTER TABLE episodes ADD COLUMN transcoding_status TEXT`);
+}
+
 if (!hasColumn('subscription_plans', 'duration_days')) {
   db.exec(`ALTER TABLE subscription_plans ADD COLUMN duration_days INTEGER DEFAULT 30`);
 }

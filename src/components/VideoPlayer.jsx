@@ -33,6 +33,9 @@ export default function VideoPlayer({
   previousEpisode = null,
   initialProgressSeconds = 0,
   onProgressSample = null,
+  videoSource = 'youtube',
+  localVideoUrl = null,
+  transcodingStatus = null,
 }) {
   const navigate = useNavigate();
   const DOUBLE_TAP_DELAY_MS = 260;
@@ -60,6 +63,7 @@ export default function VideoPlayer({
 
   const playerRef = useRef(null);
   const containerRef = useRef(null);
+  const localVideoRef = useRef(null);
   const wrapperRef = useRef(null);
   const progressInterval = useRef(null);
   const speedMenuRef = useRef(null);
@@ -74,6 +78,10 @@ export default function VideoPlayer({
   const resumeAppliedRef = useRef(false);
   const progressDragRef = useRef(null);
 
+  const isLocalVideo = videoSource === 'local';
+  const isTranscoding = isLocalVideo && (transcodingStatus === 'pending' || transcodingStatus === 'processing');
+  const isTranscodingFailed = isLocalVideo && transcodingStatus === 'failed';
+
   const getYouTubeId = (url) => {
     if (!url) return null;
     const match = url.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/i);
@@ -83,7 +91,7 @@ export default function VideoPlayer({
   const normalizedYoutubeVideoId = typeof youtubeVideoId === 'string' && youtubeVideoId.trim()
     ? youtubeVideoId.trim()
     : null;
-  const videoId = normalizedYoutubeVideoId || getYouTubeId(embedUrl);
+  const videoId = isLocalVideo ? null : (normalizedYoutubeVideoId || getYouTubeId(embedUrl));
   const nextEpisodeId = nextEpisode?.id || null;
   const previousEpisodeId = previousEpisode?.id || null;
   const isFullscreen = fullscreenMode !== 'none';
@@ -258,7 +266,123 @@ export default function VideoPlayer({
     navigate(`/episodes/${episode.id}`);
   };
 
+  // ─── LOCAL VIDEO: adapter that wraps <video> element to match YouTube player API ───
   useEffect(() => {
+    if (!isLocalVideo || isTranscoding) return;
+
+    resumeAppliedRef.current = false;
+    setControlsVisible(true);
+    setHasEnded(false);
+    setAutoplayCountdown(null);
+    setShowSpeedMenu(false);
+    setShowInfoPanel(false);
+    setCurrentQuality('auto');
+    setAvailableQualities([]);
+    setPlayerStatus('ready');
+
+    if (!localVideoUrl) return;
+
+    const vid = localVideoRef.current;
+    if (!vid) return;
+
+    // Build YouTube-compatible adapter
+    const adapter = {
+      seekTo: (seconds) => { vid.currentTime = seconds; },
+      playVideo: () => vid.play().catch(() => { }),
+      pauseVideo: () => vid.pause(),
+      getDuration: () => vid.duration || 0,
+      getCurrentTime: () => vid.currentTime || 0,
+      setVolume: (v) => { vid.volume = clamp(v, 0, 100) / 100; },
+      getVolume: () => Math.round(vid.volume * 100),
+      mute: () => { vid.muted = true; },
+      unMute: () => { vid.muted = false; },
+      isMuted: () => vid.muted,
+      setPlaybackRate: (r) => { vid.playbackRate = r; },
+      getPlaybackRate: () => vid.playbackRate,
+      getIframe: () => null,
+      destroy: () => {
+        vid.pause();
+        vid.removeAttribute('src');
+        vid.load();
+      },
+    };
+    playerRef.current = adapter;
+
+    const onLoadedMetadata = () => {
+      const detectedDuration = vid.duration || 0;
+      setDuration(detectedDuration);
+      setPlayerReady(true);
+      setIsMuted(vid.muted);
+      setVolume(Math.round(vid.volume * 100));
+      maybeApplyResume(adapter, detectedDuration);
+    };
+
+    const onPlay = () => {
+      clearInterval(progressInterval.current);
+      setIsPlaying(true);
+      setHasEnded(false);
+      setPlayerStatus('playing');
+      progressInterval.current = setInterval(() => {
+        setProgress(vid.currentTime);
+        setDuration(vid.duration || 0);
+        reportProgress(vid.currentTime, vid.duration || 0);
+      }, 500);
+      revealControls();
+    };
+
+    const onPause = () => {
+      clearInterval(progressInterval.current);
+      setIsPlaying(false);
+      setProgress(vid.currentTime);
+      reportProgress(vid.currentTime, vid.duration || 0);
+      setPlayerStatus('paused');
+      revealControls(true);
+    };
+
+    const onEnded = () => {
+      clearInterval(progressInterval.current);
+      setIsPlaying(false);
+      setHasEnded(true);
+      const finalDuration = vid.duration || 0;
+      setProgress(finalDuration);
+      reportProgress(finalDuration, finalDuration);
+      setPlayerStatus('ended');
+      revealControls(true);
+    };
+
+    const onWaiting = () => {
+      setPlayerStatus('buffering');
+    };
+
+    const onCanPlay = () => {
+      if (playerStatus === 'buffering') setPlayerStatus('ready');
+    };
+
+    vid.addEventListener('loadedmetadata', onLoadedMetadata);
+    vid.addEventListener('play', onPlay);
+    vid.addEventListener('pause', onPause);
+    vid.addEventListener('ended', onEnded);
+    vid.addEventListener('waiting', onWaiting);
+    vid.addEventListener('canplay', onCanPlay);
+
+    // If metadata already loaded (cached)
+    if (vid.readyState >= 1) onLoadedMetadata();
+
+    return () => {
+      clearInterval(progressInterval.current);
+      vid.removeEventListener('loadedmetadata', onLoadedMetadata);
+      vid.removeEventListener('play', onPlay);
+      vid.removeEventListener('pause', onPause);
+      vid.removeEventListener('ended', onEnded);
+      vid.removeEventListener('waiting', onWaiting);
+      vid.removeEventListener('canplay', onCanPlay);
+    };
+  }, [isLocalVideo, localVideoUrl, isTranscoding, initialProgressSeconds, maybeApplyResume]);
+
+  // ─── YOUTUBE: original player init ───
+  useEffect(() => {
+    if (isLocalVideo) return;
+
     resumeAppliedRef.current = false;
     setControlsVisible(true);
     setHasEnded(false);
@@ -385,7 +509,7 @@ export default function VideoPlayer({
         playerRef.current.destroy();
       }
     };
-  }, [initialProgressSeconds, maybeApplyResume, videoId]);
+  }, [isLocalVideo, initialProgressSeconds, maybeApplyResume, videoId]);
 
   useEffect(() => {
     const handleFullscreenChange = () => {
@@ -668,7 +792,7 @@ export default function VideoPlayer({
     if (typeof target?.releasePointerCapture === 'function') {
       try {
         target.releasePointerCapture(pointerId);
-      } catch {}
+      } catch { }
     }
     progressDragRef.current = null;
   };
@@ -973,88 +1097,120 @@ export default function VideoPlayer({
       }}
     >
       <div className={`${isMobile ? 'pointer-events-auto' : 'pointer-events-none'} absolute inset-0`}>
-        <div ref={containerRef} className="h-full w-full" />
+        {isTranscoding ? (
+          <div className="flex h-full w-full flex-col items-center justify-center gap-4 text-white">
+            <motion.div
+              animate={{ rotate: 360 }}
+              transition={{ repeat: Infinity, duration: 1.5, ease: 'linear' }}
+              className="h-12 w-12 rounded-full border-4 border-white/20 border-t-[var(--accent-gold)]"
+            />
+            <p className="text-sm text-white/70">
+              {transcodingStatus === 'pending' ? 'В опашка за обработка...' : 'Видеото се обработва...'}
+            </p>
+          </div>
+        ) : isTranscodingFailed ? (
+          <div className="flex h-full w-full flex-col items-center justify-center gap-3 text-white">
+            <div className="rounded-full bg-red-500/20 p-4">
+              <Info className="h-8 w-8 text-red-400" />
+            </div>
+            <p className="text-sm text-red-300">Обработката на видеото не успя</p>
+            {localVideoUrl && (
+              <p className="text-xs text-white/50">Оригиналният файл е запазен и може да се гледа</p>
+            )}
+          </div>
+        ) : isLocalVideo && localVideoUrl ? (
+          <video
+            ref={localVideoRef}
+            src={localVideoUrl}
+            className="h-full w-full object-contain"
+            playsInline
+            preload="metadata"
+            onContextMenu={(e) => e.preventDefault()}
+          />
+        ) : (
+          <div ref={containerRef} className="h-full w-full" />
+        )}
       </div>
 
       {!isMobile && (
-      <div
-        className="absolute inset-0 z-10 flex cursor-pointer touch-manipulation items-center justify-center overflow-hidden"
-        onPointerDown={handleOverlayPointerDown}
-        onPointerMove={handleOverlayPointerMove}
-        onPointerUp={handleOverlayPointerUp}
-        onPointerCancel={handleOverlayPointerCancel}
-      >
-        <AnimatePresence>
-          {animState === 'play' && (
-            <motion.div
-              key="anim-play"
-              initial={{ opacity: 0, scale: 0.5 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 1.5 }}
-              transition={{ duration: 0.4 }}
-              className="rounded-full bg-black/40 p-5 backdrop-blur-md"
-            >
-              <Play className="ml-1 h-12 w-12 fill-current text-white sm:ml-2 sm:h-16 sm:w-16" />
-            </motion.div>
-          )}
-          {animState === 'pause' && (
-            <motion.div
-              key="anim-pause"
-              initial={{ opacity: 0, scale: 0.5 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 1.5 }}
-              transition={{ duration: 0.4 }}
-              className="rounded-full bg-black/40 p-5 backdrop-blur-md"
-            >
-              <Pause className="h-12 w-12 fill-current text-white sm:h-16 sm:w-16" />
-            </motion.div>
-          )}
-          {animState === 'rewind' && (
-            <motion.div
-              key={`anim-rewind-${animKey}`}
-              initial={{ opacity: 0, x: -50, scale: 0.8 }}
-              animate={{ opacity: 1, x: 0, scale: 1 }}
-              exit={{ opacity: 0, scale: 1.5 }}
-              transition={{ duration: 0.4 }}
-              className="mr-24 flex flex-col items-center justify-center rounded-full bg-black/40 p-5 backdrop-blur-md sm:mr-48"
-            >
-              <RotateCcw className="mb-1 h-10 w-10 text-white sm:h-14 sm:w-14" />
-              <span className="text-xs font-bold text-white sm:text-sm">10s</span>
-            </motion.div>
-          )}
-          {animState === 'forward' && (
-            <motion.div
-              key={`anim-forward-${animKey}`}
-              initial={{ opacity: 0, x: 50, scale: 0.8 }}
-              animate={{ opacity: 1, x: 0, scale: 1 }}
-              exit={{ opacity: 0, scale: 1.5 }}
-              transition={{ duration: 0.4 }}
-              className="ml-24 flex flex-col items-center justify-center rounded-full bg-black/40 p-5 backdrop-blur-md sm:ml-48"
-            >
-              <RotateCw className="mb-1 h-10 w-10 text-white sm:h-14 sm:w-14" />
-              <span className="text-xs font-bold text-white sm:text-sm">10s</span>
-            </motion.div>
-          )}
-        </AnimatePresence>
+        <div
+          className="absolute inset-0 z-10 flex cursor-pointer touch-manipulation items-center justify-center overflow-hidden"
+          onPointerDown={handleOverlayPointerDown}
+          onPointerMove={handleOverlayPointerMove}
+          onPointerUp={handleOverlayPointerUp}
+          onPointerCancel={handleOverlayPointerCancel}
+        >
+          <AnimatePresence>
+            {animState === 'play' && (
+              <motion.div
+                key="anim-play"
+                initial={{ opacity: 0, scale: 0.5 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 1.5 }}
+                transition={{ duration: 0.4 }}
+                className="rounded-full bg-black/40 p-5 backdrop-blur-md"
+              >
+                <Play className="ml-1 h-12 w-12 fill-current text-white sm:ml-2 sm:h-16 sm:w-16" />
+              </motion.div>
+            )}
+            {animState === 'pause' && (
+              <motion.div
+                key="anim-pause"
+                initial={{ opacity: 0, scale: 0.5 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 1.5 }}
+                transition={{ duration: 0.4 }}
+                className="rounded-full bg-black/40 p-5 backdrop-blur-md"
+              >
+                <Pause className="h-12 w-12 fill-current text-white sm:h-16 sm:w-16" />
+              </motion.div>
+            )}
+            {animState === 'rewind' && (
+              <motion.div
+                key={`anim-rewind-${animKey}`}
+                initial={{ opacity: 0, x: -50, scale: 0.8 }}
+                animate={{ opacity: 1, x: 0, scale: 1 }}
+                exit={{ opacity: 0, scale: 1.5 }}
+                transition={{ duration: 0.4 }}
+                className="mr-24 flex flex-col items-center justify-center rounded-full bg-black/40 p-5 backdrop-blur-md sm:mr-48"
+              >
+                <RotateCcw className="mb-1 h-10 w-10 text-white sm:h-14 sm:w-14" />
+                <span className="text-xs font-bold text-white sm:text-sm">10s</span>
+              </motion.div>
+            )}
+            {animState === 'forward' && (
+              <motion.div
+                key={`anim-forward-${animKey}`}
+                initial={{ opacity: 0, x: 50, scale: 0.8 }}
+                animate={{ opacity: 1, x: 0, scale: 1 }}
+                exit={{ opacity: 0, scale: 1.5 }}
+                transition={{ duration: 0.4 }}
+                className="ml-24 flex flex-col items-center justify-center rounded-full bg-black/40 p-5 backdrop-blur-md sm:ml-48"
+              >
+                <RotateCw className="mb-1 h-10 w-10 text-white sm:h-14 sm:w-14" />
+                <span className="text-xs font-bold text-white sm:text-sm">10s</span>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
-        <AnimatePresence>
-          {gestureLabel && (
-            <motion.div
-              key={gestureLabel}
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -8 }}
-              className="absolute right-4 top-4 rounded-full border border-white/10 bg-black/65 px-3 py-2 text-xs font-semibold tracking-wide text-white shadow-xl backdrop-blur-md"
-              style={isFullscreen ? {
-                right: 'max(1rem, env(safe-area-inset-right))',
-                top: 'max(1rem, env(safe-area-inset-top))',
-              } : undefined}
-            >
-              {gestureLabel}
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
+          <AnimatePresence>
+            {gestureLabel && (
+              <motion.div
+                key={gestureLabel}
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                className="absolute right-4 top-4 rounded-full border border-white/10 bg-black/65 px-3 py-2 text-xs font-semibold tracking-wide text-white shadow-xl backdrop-blur-md"
+                style={isFullscreen ? {
+                  right: 'max(1rem, env(safe-area-inset-right))',
+                  top: 'max(1rem, env(safe-area-inset-top))',
+                } : undefined}
+              >
+                {gestureLabel}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
       )}
 
       {isMobile && (previousEpisode || nextEpisode) && (
@@ -1125,214 +1281,214 @@ export default function VideoPlayer({
       </AnimatePresence>
 
       {!isMobile && (
-      <div
-        className={`absolute bottom-0 inset-x-0 z-30 bg-gradient-to-t from-black/90 px-4 pb-3 pt-16 transition-opacity duration-300 ${shouldShowControls ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
-        style={isFullscreen ? {
-          paddingLeft: 'max(1rem, env(safe-area-inset-left))',
-          paddingRight: 'max(1rem, env(safe-area-inset-right))',
-          paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))',
-        } : undefined}
-      >
         <div
-          className="group/progress mb-1 flex w-full cursor-pointer items-center py-3"
-          onPointerDown={handleProgressPointerDown}
-          onPointerMove={handleProgressPointerMove}
-          onPointerUp={handleProgressPointerUp}
-          onPointerCancel={handleProgressPointerCancel}
-          onMouseMove={handleProgressMouseMove}
-          onMouseLeave={handleProgressMouseLeave}
+          className={`absolute bottom-0 inset-x-0 z-30 bg-gradient-to-t from-black/90 px-4 pb-3 pt-16 transition-opacity duration-300 ${shouldShowControls ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
+          style={isFullscreen ? {
+            paddingLeft: 'max(1rem, env(safe-area-inset-left))',
+            paddingRight: 'max(1rem, env(safe-area-inset-right))',
+            paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))',
+          } : undefined}
         >
-          <div className="relative h-[3px] w-full rounded-full bg-white/20 transition-all duration-200 group-hover/progress:h-[8px]">
-            {hoverTime !== null && hoverPos !== null && (
+          <div
+            className="group/progress mb-1 flex w-full cursor-pointer items-center py-3"
+            onPointerDown={handleProgressPointerDown}
+            onPointerMove={handleProgressPointerMove}
+            onPointerUp={handleProgressPointerUp}
+            onPointerCancel={handleProgressPointerCancel}
+            onMouseMove={handleProgressMouseMove}
+            onMouseLeave={handleProgressMouseLeave}
+          >
+            <div className="relative h-[3px] w-full rounded-full bg-white/20 transition-all duration-200 group-hover/progress:h-[8px]">
+              {hoverTime !== null && hoverPos !== null && (
+                <div
+                  className="pointer-events-none absolute -top-10 z-30 -translate-x-1/2 whitespace-nowrap rounded border border-white/5 bg-black/80 px-2 py-1 text-[11px] font-semibold text-white shadow-md backdrop-blur-sm"
+                  style={{ left: `${hoverPos}%` }}
+                >
+                  {formatTime(hoverTime)}
+                </div>
+              )}
               <div
-                className="pointer-events-none absolute -top-10 z-30 -translate-x-1/2 whitespace-nowrap rounded border border-white/5 bg-black/80 px-2 py-1 text-[11px] font-semibold text-white shadow-md backdrop-blur-sm"
-                style={{ left: `${hoverPos}%` }}
-              >
-                {formatTime(hoverTime)}
-              </div>
-            )}
-            <div
-              className="absolute left-0 top-0 h-full rounded-full bg-[var(--accent-gold)] transition-all duration-100 ease-linear"
-              style={{ width: `${duration > 0 ? (progress / duration) * 100 : 0}%` }}
-            />
-            <div
-              className="absolute top-1/2 -mt-1.5 h-3 w-3 scale-0 rounded-full bg-[var(--accent-gold)] shadow-sm transition-transform group-hover/progress:scale-100"
-              style={{ left: `calc(${duration > 0 ? (progress / duration) * 100 : 0}% - 6px)` }}
-            />
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-white/90 sm:flex-nowrap sm:gap-4">
-          <button onClick={togglePlay} className="flex-shrink-0 transition-colors hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-gold)] focus-visible:ring-offset-1 focus-visible:ring-offset-black rounded-sm" aria-label={isPlaying ? 'Пауза' : 'Възпроизвеждане'}>
-            {isPlaying ? <Pause className="h-6 w-6 fill-current" /> : <Play className="ml-0.5 h-6 w-6 fill-current" />}
-          </button>
-          <div className="flex items-center gap-2 sm:gap-3">
-            {previousEpisode && (
-              <button
-                onClick={(event) => navigateToEpisode(previousEpisode, event)}
-                className="flex items-center gap-1 opacity-75 transition-colors hover:text-white hover:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-gold)] focus-visible:ring-offset-1 focus-visible:ring-offset-black rounded-sm"
-                aria-label="Предишен епизод"
-              >
-                <SkipBack className="h-5 w-5 fill-current" />
-              </button>
-            )}
-            <button onClick={handleRewind} className="flex items-center gap-1 opacity-70 transition-colors hover:text-white hover:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-gold)] focus-visible:ring-offset-1 focus-visible:ring-offset-black rounded-sm" aria-label="Върни 10 секунди">
-              <RotateCcw className="h-4 w-4" />
-              <span className="hidden text-[11px] font-semibold tracking-wide sm:inline">10s</span>
-            </button>
-            <button onClick={handleSkipForward} className="flex items-center gap-1 opacity-70 transition-colors hover:text-white hover:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-gold)] focus-visible:ring-offset-1 focus-visible:ring-offset-black rounded-sm" aria-label="Напред 10 секунди">
-              <RotateCw className="h-4 w-4" />
-              <span className="hidden text-[11px] font-semibold tracking-wide sm:inline">10s</span>
-            </button>
-            {nextEpisodeId && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  navigate(`/episodes/${nextEpisodeId}`);
-                }}
-                className="ml-1 flex items-center gap-1 opacity-70 transition-colors hover:text-white hover:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-gold)] focus-visible:ring-offset-1 focus-visible:ring-offset-black rounded-sm sm:ml-2"
-                aria-label="Следващ епизод"
-              >
-                <SkipForward className="h-5 w-5 fill-current" />
-              </button>
-            )}
-          </div>
-          <div className="group/volume relative ml-1 flex items-center gap-2">
-            <button onClick={toggleMute} className="opacity-80 transition-colors hover:text-white hover:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-gold)] focus-visible:ring-offset-1 focus-visible:ring-offset-black rounded-sm" aria-label={isMuted ? 'Включи звук' : 'Изключи звук'}>
-              {isMuted || volume === 0 ? <VolumeX className="h-5 w-5" /> : <Volume2 className="h-5 w-5" />}
-            </button>
-            <div className="flex w-16 items-center rounded-full bg-black/30 px-2 py-1.5 backdrop-blur-sm transition-colors duration-200 group-hover/volume:bg-black/45 sm:w-20">
-              <input
-                type="range"
-                min="0"
-                max="100"
-                value={currentVolume}
-                onInput={handleVolumeChange}
-                onChange={handleVolumeChange}
-                className="m-0 h-1 w-full cursor-pointer appearance-none rounded-full bg-white/30 p-0 accent-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-gold)] focus-visible:ring-offset-2 focus-visible:ring-offset-black [&::-moz-range-thumb]:h-2.5 [&::-moz-range-thumb]:w-2.5 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-none [&::-moz-range-thumb]:bg-white [&::-webkit-slider-runnable-track]:h-1 [&::-webkit-slider-runnable-track]:rounded-full [&::-webkit-slider-thumb]:-mt-[3px] [&::-webkit-slider-thumb]:h-2.5 [&::-webkit-slider-thumb]:w-2.5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white"
-                style={{
-                  background: `linear-gradient(to right, white ${currentVolume}%, rgba(255,255,255,0.3) ${currentVolume}%)`
-                }}
+                className="absolute left-0 top-0 h-full rounded-full bg-[var(--accent-gold)] transition-all duration-100 ease-linear"
+                style={{ width: `${duration > 0 ? (progress / duration) * 100 : 0}%` }}
+              />
+              <div
+                className="absolute top-1/2 -mt-1.5 h-3 w-3 scale-0 rounded-full bg-[var(--accent-gold)] shadow-sm transition-transform group-hover/progress:scale-100"
+                style={{ left: `calc(${duration > 0 ? (progress / duration) * 100 : 0}% - 6px)` }}
               />
             </div>
           </div>
-          <div className="order-last basis-full text-[12px] font-medium tracking-wide opacity-80 sm:order-none sm:basis-auto sm:ml-1 sm:text-[13px]">
-            {formatTime(progress)} <span className="mx-0.5 opacity-50">/</span> {formatTime(duration)}
-            {initialProgressSeconds > 5 && duration > 0 && progress < Math.max(0, initialProgressSeconds - 3) && (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (!playerRef.current || !playerReady) return;
-                  playerRef.current.seekTo(initialProgressSeconds, true);
-                  playerRef.current.playVideo();
-                  setProgress(initialProgressSeconds);
-                  reportProgress(initialProgressSeconds, duration);
-                  revealControls();
-                }}
-                className="ml-3 hidden cursor-pointer rounded-full border border-[var(--accent-gold)]/30 bg-[var(--accent-gold)]/15 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.16em] text-[var(--accent-gold-light)] transition-colors hover:bg-[var(--accent-gold)]/30 sm:inline-block focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-gold)] focus-visible:ring-offset-1 focus-visible:ring-offset-black rounded-sm"
-                aria-label={`Продължи от ${formatTime(initialProgressSeconds)}`}
-              >
-                Продължи от {formatTime(initialProgressSeconds)}
-              </button>
-            )}
-          </div>
-          <div className="hidden flex-1 sm:block" />
-          <div className="ml-auto flex items-center gap-3 sm:gap-4">
-            <div className="hidden select-none text-[11px] font-bold uppercase tracking-[0.2em] text-white/50 sm:block">{siteName}</div>
-            <div className="relative" ref={infoPanelRef}>
-              <button
-                onClick={(event) => {
-                  event.stopPropagation();
-                  setShowInfoPanel((current) => !current);
-                  revealControls(true);
-                }}
-                className={`flex items-center gap-1 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-gold)] focus-visible:ring-offset-1 focus-visible:ring-offset-black rounded-sm ${showInfoPanel ? 'text-white opacity-100' : 'opacity-80 hover:text-white hover:opacity-100'}`}
-                aria-label="Информация за плеъра"
-              >
-                <Info className="h-5 w-5" />
-              </button>
 
-              {showInfoPanel && (
-                <div className="absolute bottom-full right-0 mb-4 w-72 rounded-2xl border border-white/10 bg-black/80 p-4 text-sm text-white/85 shadow-2xl backdrop-blur-md">
-                  <div className="mb-3">
-                    <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-white/45">Източник</p>
-                    <p className="mt-1 font-medium">YouTube secure embed</p>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3 text-[13px]">
-                    <div>
-                      <p className="text-white/45">Статус</p>
-                      <p className="mt-1 font-medium">{playerStatus === 'playing' ? 'Възпроизвеждане' : playerStatus === 'paused' ? 'Пауза' : playerStatus === 'ended' ? 'Приключи' : playerStatus === 'buffering' ? 'Буфериране' : 'Готово'}</p>
-                    </div>
-                    <div>
-                      <p className="text-white/45">Качество</p>
-                      <p className="mt-1 font-medium">{formatQuality(currentQuality)}</p>
-                    </div>
-                    <div>
-                      <p className="text-white/45">Скорост</p>
-                      <p className="mt-1 font-medium">{playbackSpeed}x</p>
-                    </div>
-                    <div>
-                      <p className="text-white/45">Звук</p>
-                      <p className="mt-1 font-medium">{currentVolume}%</p>
-                    </div>
-                    <div>
-                      <p className="text-white/45">Продължи от</p>
-                      <p className="mt-1 font-medium">{initialProgressSeconds > 0 ? formatTime(initialProgressSeconds) : 'Няма'}</p>
-                    </div>
-                    <div>
-                      <p className="text-white/45">Навигация</p>
-                      <p className="mt-1 font-medium">{previousEpisode || nextEpisode ? 'Налична' : 'Няма'}</p>
-                    </div>
-                  </div>
-                  <div className="mt-3 border-t border-white/10 pt-3 text-[12px] text-white/70">
-                    <p className="font-semibold text-white/45">Налични качества</p>
-                    <p className="mt-1">{availableQualities.length > 0 ? availableQualities.map(formatQuality).join(', ') : 'Автоматично'}</p>
-                  </div>
-                  <div className="mt-3 border-t border-white/10 pt-3 text-[12px] text-white/70">
-                    <p className="font-semibold text-white/45">Предишен</p>
-                    <p className="mt-1">{formatEpisodeLabel(previousEpisode)}</p>
-                  </div>
-                  <div className="mt-3 text-[12px] text-white/70">
-                    <p className="font-semibold text-white/45">Следващ</p>
-                    <p className="mt-1">{formatEpisodeLabel(nextEpisode)}</p>
-                  </div>
-                </div>
-              )}
-            </div>
-            <div className="relative" ref={speedMenuRef}>
-              <button
-                onClick={(event) => {
-                  event.stopPropagation();
-                  setShowSpeedMenu((current) => !current);
-                  revealControls(true);
-                }}
-                className={`flex items-center gap-1 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-gold)] focus-visible:ring-offset-1 focus-visible:ring-offset-black rounded-sm ${showSpeedMenu ? 'text-white opacity-100' : 'opacity-80 hover:text-white hover:opacity-100'}`}
-                aria-label="Скорост на възпроизвеждане"
-              >
-                <Settings className="h-5 w-5" />
-                {playbackSpeed !== 1 && <span className="hidden text-[10px] font-bold leading-none sm:inline-block">{playbackSpeed}x</span>}
-              </button>
-              {showSpeedMenu && (
-                <div className="absolute bottom-full right-0 mb-4 flex min-w-[120px] flex-col gap-1 rounded-xl border border-white/10 bg-black/80 p-2 shadow-2xl backdrop-blur-md">
-                  {[0.5, 1, 1.25, 1.5, 2].map((speed) => (
-                    <button
-                      key={speed}
-                      onClick={(event) => changePlaybackSpeed(speed, event)}
-                      className={`rounded-lg px-3 py-1.5 text-left text-sm transition-colors hover:bg-white/10 ${playbackSpeed === speed ? 'bg-white/15 font-semibold text-white' : 'text-white/80'}`}
-                    >
-                      {speed === 1 ? 'Нормална' : `${speed}x`}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-            <button onClick={toggleFullscreen} className="opacity-80 transition-colors hover:text-white hover:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-gold)] focus-visible:ring-offset-1 focus-visible:ring-offset-black rounded-sm" aria-label={isFullscreen ? 'Изход от цял екран' : 'Цял екран'}>
-              {isFullscreen ? <Minimize className="h-5 w-5" /> : <Maximize className="h-5 w-5" />}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-white/90 sm:flex-nowrap sm:gap-4">
+            <button onClick={togglePlay} className="flex-shrink-0 transition-colors hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-gold)] focus-visible:ring-offset-1 focus-visible:ring-offset-black rounded-sm" aria-label={isPlaying ? 'Пауза' : 'Възпроизвеждане'}>
+              {isPlaying ? <Pause className="h-6 w-6 fill-current" /> : <Play className="ml-0.5 h-6 w-6 fill-current" />}
             </button>
+            <div className="flex items-center gap-2 sm:gap-3">
+              {previousEpisode && (
+                <button
+                  onClick={(event) => navigateToEpisode(previousEpisode, event)}
+                  className="flex items-center gap-1 opacity-75 transition-colors hover:text-white hover:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-gold)] focus-visible:ring-offset-1 focus-visible:ring-offset-black rounded-sm"
+                  aria-label="Предишен епизод"
+                >
+                  <SkipBack className="h-5 w-5 fill-current" />
+                </button>
+              )}
+              <button onClick={handleRewind} className="flex items-center gap-1 opacity-70 transition-colors hover:text-white hover:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-gold)] focus-visible:ring-offset-1 focus-visible:ring-offset-black rounded-sm" aria-label="Върни 10 секунди">
+                <RotateCcw className="h-4 w-4" />
+                <span className="hidden text-[11px] font-semibold tracking-wide sm:inline">10s</span>
+              </button>
+              <button onClick={handleSkipForward} className="flex items-center gap-1 opacity-70 transition-colors hover:text-white hover:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-gold)] focus-visible:ring-offset-1 focus-visible:ring-offset-black rounded-sm" aria-label="Напред 10 секунди">
+                <RotateCw className="h-4 w-4" />
+                <span className="hidden text-[11px] font-semibold tracking-wide sm:inline">10s</span>
+              </button>
+              {nextEpisodeId && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    navigate(`/episodes/${nextEpisodeId}`);
+                  }}
+                  className="ml-1 flex items-center gap-1 opacity-70 transition-colors hover:text-white hover:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-gold)] focus-visible:ring-offset-1 focus-visible:ring-offset-black rounded-sm sm:ml-2"
+                  aria-label="Следващ епизод"
+                >
+                  <SkipForward className="h-5 w-5 fill-current" />
+                </button>
+              )}
+            </div>
+            <div className="group/volume relative ml-1 flex items-center gap-2">
+              <button onClick={toggleMute} className="opacity-80 transition-colors hover:text-white hover:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-gold)] focus-visible:ring-offset-1 focus-visible:ring-offset-black rounded-sm" aria-label={isMuted ? 'Включи звук' : 'Изключи звук'}>
+                {isMuted || volume === 0 ? <VolumeX className="h-5 w-5" /> : <Volume2 className="h-5 w-5" />}
+              </button>
+              <div className="flex w-16 items-center rounded-full bg-black/30 px-2 py-1.5 backdrop-blur-sm transition-colors duration-200 group-hover/volume:bg-black/45 sm:w-20">
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={currentVolume}
+                  onInput={handleVolumeChange}
+                  onChange={handleVolumeChange}
+                  className="m-0 h-1 w-full cursor-pointer appearance-none rounded-full bg-white/30 p-0 accent-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-gold)] focus-visible:ring-offset-2 focus-visible:ring-offset-black [&::-moz-range-thumb]:h-2.5 [&::-moz-range-thumb]:w-2.5 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-none [&::-moz-range-thumb]:bg-white [&::-webkit-slider-runnable-track]:h-1 [&::-webkit-slider-runnable-track]:rounded-full [&::-webkit-slider-thumb]:-mt-[3px] [&::-webkit-slider-thumb]:h-2.5 [&::-webkit-slider-thumb]:w-2.5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white"
+                  style={{
+                    background: `linear-gradient(to right, white ${currentVolume}%, rgba(255,255,255,0.3) ${currentVolume}%)`
+                  }}
+                />
+              </div>
+            </div>
+            <div className="order-last basis-full text-[12px] font-medium tracking-wide opacity-80 sm:order-none sm:basis-auto sm:ml-1 sm:text-[13px]">
+              {formatTime(progress)} <span className="mx-0.5 opacity-50">/</span> {formatTime(duration)}
+              {initialProgressSeconds > 5 && duration > 0 && progress < Math.max(0, initialProgressSeconds - 3) && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (!playerRef.current || !playerReady) return;
+                    playerRef.current.seekTo(initialProgressSeconds, true);
+                    playerRef.current.playVideo();
+                    setProgress(initialProgressSeconds);
+                    reportProgress(initialProgressSeconds, duration);
+                    revealControls();
+                  }}
+                  className="ml-3 hidden cursor-pointer rounded-full border border-[var(--accent-gold)]/30 bg-[var(--accent-gold)]/15 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.16em] text-[var(--accent-gold-light)] transition-colors hover:bg-[var(--accent-gold)]/30 sm:inline-block focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-gold)] focus-visible:ring-offset-1 focus-visible:ring-offset-black rounded-sm"
+                  aria-label={`Продължи от ${formatTime(initialProgressSeconds)}`}
+                >
+                  Продължи от {formatTime(initialProgressSeconds)}
+                </button>
+              )}
+            </div>
+            <div className="hidden flex-1 sm:block" />
+            <div className="ml-auto flex items-center gap-3 sm:gap-4">
+              <div className="hidden select-none text-[11px] font-bold uppercase tracking-[0.2em] text-white/50 sm:block">{siteName}</div>
+              <div className="relative" ref={infoPanelRef}>
+                <button
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setShowInfoPanel((current) => !current);
+                    revealControls(true);
+                  }}
+                  className={`flex items-center gap-1 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-gold)] focus-visible:ring-offset-1 focus-visible:ring-offset-black rounded-sm ${showInfoPanel ? 'text-white opacity-100' : 'opacity-80 hover:text-white hover:opacity-100'}`}
+                  aria-label="Информация за плеъра"
+                >
+                  <Info className="h-5 w-5" />
+                </button>
+
+                {showInfoPanel && (
+                  <div className="absolute bottom-full right-0 mb-4 w-72 rounded-2xl border border-white/10 bg-black/80 p-4 text-sm text-white/85 shadow-2xl backdrop-blur-md">
+                    <div className="mb-3">
+                      <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-white/45">Източник</p>
+                      <p className="mt-1 font-medium">YouTube secure embed</p>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3 text-[13px]">
+                      <div>
+                        <p className="text-white/45">Статус</p>
+                        <p className="mt-1 font-medium">{playerStatus === 'playing' ? 'Възпроизвеждане' : playerStatus === 'paused' ? 'Пауза' : playerStatus === 'ended' ? 'Приключи' : playerStatus === 'buffering' ? 'Буфериране' : 'Готово'}</p>
+                      </div>
+                      <div>
+                        <p className="text-white/45">Качество</p>
+                        <p className="mt-1 font-medium">{formatQuality(currentQuality)}</p>
+                      </div>
+                      <div>
+                        <p className="text-white/45">Скорост</p>
+                        <p className="mt-1 font-medium">{playbackSpeed}x</p>
+                      </div>
+                      <div>
+                        <p className="text-white/45">Звук</p>
+                        <p className="mt-1 font-medium">{currentVolume}%</p>
+                      </div>
+                      <div>
+                        <p className="text-white/45">Продължи от</p>
+                        <p className="mt-1 font-medium">{initialProgressSeconds > 0 ? formatTime(initialProgressSeconds) : 'Няма'}</p>
+                      </div>
+                      <div>
+                        <p className="text-white/45">Навигация</p>
+                        <p className="mt-1 font-medium">{previousEpisode || nextEpisode ? 'Налична' : 'Няма'}</p>
+                      </div>
+                    </div>
+                    <div className="mt-3 border-t border-white/10 pt-3 text-[12px] text-white/70">
+                      <p className="font-semibold text-white/45">Налични качества</p>
+                      <p className="mt-1">{availableQualities.length > 0 ? availableQualities.map(formatQuality).join(', ') : 'Автоматично'}</p>
+                    </div>
+                    <div className="mt-3 border-t border-white/10 pt-3 text-[12px] text-white/70">
+                      <p className="font-semibold text-white/45">Предишен</p>
+                      <p className="mt-1">{formatEpisodeLabel(previousEpisode)}</p>
+                    </div>
+                    <div className="mt-3 text-[12px] text-white/70">
+                      <p className="font-semibold text-white/45">Следващ</p>
+                      <p className="mt-1">{formatEpisodeLabel(nextEpisode)}</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+              <div className="relative" ref={speedMenuRef}>
+                <button
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setShowSpeedMenu((current) => !current);
+                    revealControls(true);
+                  }}
+                  className={`flex items-center gap-1 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-gold)] focus-visible:ring-offset-1 focus-visible:ring-offset-black rounded-sm ${showSpeedMenu ? 'text-white opacity-100' : 'opacity-80 hover:text-white hover:opacity-100'}`}
+                  aria-label="Скорост на възпроизвеждане"
+                >
+                  <Settings className="h-5 w-5" />
+                  {playbackSpeed !== 1 && <span className="hidden text-[10px] font-bold leading-none sm:inline-block">{playbackSpeed}x</span>}
+                </button>
+                {showSpeedMenu && (
+                  <div className="absolute bottom-full right-0 mb-4 flex min-w-[120px] flex-col gap-1 rounded-xl border border-white/10 bg-black/80 p-2 shadow-2xl backdrop-blur-md">
+                    {[0.5, 1, 1.25, 1.5, 2].map((speed) => (
+                      <button
+                        key={speed}
+                        onClick={(event) => changePlaybackSpeed(speed, event)}
+                        className={`rounded-lg px-3 py-1.5 text-left text-sm transition-colors hover:bg-white/10 ${playbackSpeed === speed ? 'bg-white/15 font-semibold text-white' : 'text-white/80'}`}
+                      >
+                        {speed === 1 ? 'Нормална' : `${speed}x`}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <button onClick={toggleFullscreen} className="opacity-80 transition-colors hover:text-white hover:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-gold)] focus-visible:ring-offset-1 focus-visible:ring-offset-black rounded-sm" aria-label={isFullscreen ? 'Изход от цял екран' : 'Цял екран'}>
+                {isFullscreen ? <Minimize className="h-5 w-5" /> : <Maximize className="h-5 w-5" />}
+              </button>
+            </div>
           </div>
         </div>
-      </div>
       )}
     </motion.div>
   );

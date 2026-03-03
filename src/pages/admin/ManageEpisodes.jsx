@@ -6,13 +6,17 @@ import {
   Calendar,
   Eye,
   EyeOff,
+  Film,
   Filter,
   ImagePlus,
   Pencil,
+  RefreshCw,
   Save,
   Search,
   Trash2,
+  Upload,
   X,
+  Youtube,
 } from 'lucide-react';
 import { api } from '../../utils/api';
 import AdminPagination from '../../components/AdminPagination';
@@ -67,6 +71,7 @@ export default function ManageEpisodes() {
   const adBannerRef = useRef();
   const sideImagesRef = useRef();
   const fetchSeq = useRef(0);
+  const videoFileRef = useRef();
   const { isUploading, runWithUploadLock } = useUploadActivity();
 
   const [form, setForm] = useState({
@@ -83,7 +88,11 @@ export default function ManageEpisodes() {
     published_at: '',
     thumbnail_url: '',
     ad_banner_url: '',
+    video_source: 'youtube',
   });
+
+  const [migrateModalId, setMigrateModalId] = useState(null);
+  const [migrateYoutubeId, setMigrateYoutubeId] = useState('');
 
   const [initialFormState, setInitialFormState] = useState(JSON.stringify({
     ...form,
@@ -189,6 +198,7 @@ export default function ManageEpisodes() {
       published_at: '',
       thumbnail_url: '',
       ad_banner_url: '',
+      video_source: 'youtube',
     };
     setForm(initialState);
     setInitialFormState(JSON.stringify({
@@ -197,7 +207,7 @@ export default function ManageEpisodes() {
     }));
     setEditing(null);
     setSelectedSideImages([]);
-    [thumbnailRef, adBannerRef, sideImagesRef].forEach((ref) => {
+    [thumbnailRef, adBannerRef, sideImagesRef, videoFileRef].forEach((ref) => {
       if (ref.current) ref.current.value = '';
     });
     resetSinglePreview(setThumbnailUploadPreview, thumbnailUploadPreview);
@@ -221,6 +231,9 @@ export default function ManageEpisodes() {
       published_at: toSofiaLocalDateTimeInputValue(episode.published_at),
       thumbnail_url: episode.thumbnail_url || '',
       ad_banner_url: episode.ad_banner_url || '',
+      video_source: episode.video_source || 'youtube',
+      transcoding_status: episode.transcoding_status || null,
+      local_video_url: episode.local_video_url || '',
     };
     let sidePreviews = [];
     try {
@@ -234,7 +247,7 @@ export default function ManageEpisodes() {
       side_images_urls: sidePreviews,
     }));
 
-    [thumbnailRef, adBannerRef, sideImagesRef].forEach((ref) => {
+    [thumbnailRef, adBannerRef, sideImagesRef, videoFileRef].forEach((ref) => {
       if (ref.current) ref.current.value = '';
     });
     resetSinglePreview(setThumbnailUploadPreview, thumbnailUploadPreview);
@@ -258,6 +271,7 @@ export default function ManageEpisodes() {
     fd.append('title', form.title);
     fd.append('description', form.description);
     fd.append('youtube_video_id', form.youtube_video_id);
+    fd.append('video_source', form.video_source);
     fd.append('side_text', form.side_text);
     fd.append('ad_banner_link', form.ad_banner_link);
     fd.append('access_group', form.access_group);
@@ -273,6 +287,9 @@ export default function ManageEpisodes() {
     if (adBannerRef.current?.files[0]) fd.append('ad_banner', adBannerRef.current.files[0]);
     if (sideImagesRef.current?.files) {
       Array.from(sideImagesRef.current.files).forEach((file) => fd.append('side_images', file));
+    }
+    if (form.video_source === 'local' && videoFileRef.current?.files?.[0]) {
+      fd.append('video_file', videoFileRef.current.files[0]);
     }
 
     setSaving(true);
@@ -382,13 +399,82 @@ export default function ManageEpisodes() {
             />
           </div>
           <div className="md:col-span-2">
-            <label className="text-sm text-[var(--text-muted)] block mb-1">Видео ID от YouTube</label>
-            <input
-              value={form.youtube_video_id}
-              onChange={(e) => setForm({ ...form, youtube_video_id: e.target.value })}
-              placeholder="напр. dQw4w9WgXcQ"
-              className="input-dark"
-            />
+            <label className="text-sm text-[var(--text-muted)] block mb-1">Източник на видео</label>
+            <div className="flex gap-2 mb-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setForm({ ...form, video_source: 'youtube' });
+                  if (videoFileRef.current) videoFileRef.current.value = '';
+                }}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${form.video_source !== 'local'
+                  ? 'bg-red-600/20 text-red-400 border border-red-500/40'
+                  : 'bg-[var(--bg-tertiary)] text-[var(--text-muted)] border border-[var(--border)] hover:border-red-500/30'
+                  }`}
+              >
+                <Youtube className="w-4 h-4" />
+                YouTube
+              </button>
+              <button
+                type="button"
+                onClick={() => setForm({ ...form, video_source: 'local' })}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${form.video_source === 'local'
+                  ? 'bg-[var(--accent-gold)]/20 text-[var(--accent-gold-light)] border border-[var(--accent-gold)]/40'
+                  : 'bg-[var(--bg-tertiary)] text-[var(--text-muted)] border border-[var(--border)] hover:border-[var(--accent-gold)]/30'
+                  }`}
+              >
+                <Film className="w-4 h-4" />
+                Локално видео
+              </button>
+            </div>
+            {form.video_source === 'local' ? (
+              <div className="space-y-2">
+                <input
+                  type="file"
+                  ref={videoFileRef}
+                  accept="video/mp4,video/webm,video/quicktime"
+                  disabled={isActionLocked}
+                  className="input-dark text-sm"
+                />
+                <p className="text-[10px] text-[var(--text-muted)]">
+                  Максимален размер: 2 GB. Поддържани формати: MP4, WebM, MOV
+                </p>
+                {form.transcoding_status && (
+                  <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-medium ${form.transcoding_status === 'ready'
+                    ? 'bg-green-500/15 text-green-400 border border-green-500/30'
+                    : form.transcoding_status === 'failed'
+                      ? 'bg-red-500/15 text-red-400 border border-red-500/30'
+                      : 'bg-yellow-500/15 text-yellow-400 border border-yellow-500/30'
+                    }`}>
+                    {form.transcoding_status === 'ready' && '✅ Обработено'}
+                    {form.transcoding_status === 'processing' && '⏳ Обработва се...'}
+                    {form.transcoding_status === 'pending' && '⏳ В опашка...'}
+                    {form.transcoding_status === 'failed' && '❌ Грешка'}
+                  </div>
+                )}
+                {editing && form.video_source === 'local' && form.local_video_url && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMigrateModalId(editing);
+                      setMigrateYoutubeId('');
+                    }}
+                    disabled={isActionLocked}
+                    className="btn-outline inline-flex items-center gap-2 !px-3 !py-2 text-xs disabled:opacity-50 mt-1"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    Мигрирай към YouTube
+                  </button>
+                )}
+              </div>
+            ) : (
+              <input
+                value={form.youtube_video_id}
+                onChange={(e) => setForm({ ...form, youtube_video_id: e.target.value })}
+                placeholder="напр. dQw4w9WgXcQ"
+                className="input-dark"
+              />
+            )}
           </div>
           <div className="md:col-span-2">
             <label className="text-sm text-[var(--text-muted)] block mb-1">Описание</label>
@@ -869,6 +955,50 @@ export default function ManageEpisodes() {
         }}
       />
 
+      {/* Migrate to YouTube modal */}
+      <ConfirmActionModal
+        open={Boolean(migrateModalId)}
+        title="Мигриране към YouTube"
+        message={
+          <div className="space-y-3">
+            <p className="text-sm text-[var(--text-secondary)]">
+              Въведи YouTube видео ID и локалният файл ще бъде изтрит.
+            </p>
+            <input
+              value={migrateYoutubeId}
+              onChange={(e) => setMigrateYoutubeId(e.target.value)}
+              placeholder="напр. dQw4w9WgXcQ"
+              className="input-dark"
+            />
+          </div>
+        }
+        confirmLabel="Мигрирай"
+        cancelLabel="Назад"
+        tone="warning"
+        loading={workingId === migrateModalId}
+        onClose={() => { setMigrateModalId(null); setMigrateYoutubeId(''); }}
+        onConfirm={async () => {
+          if (!migrateYoutubeId.trim()) {
+            showToast('Въведи YouTube видео ID', 'error');
+            return;
+          }
+          setWorkingId(migrateModalId);
+          try {
+            await api.post(`/episodes/admin/${migrateModalId}/migrate-to-youtube`, {
+              youtube_video_id: migrateYoutubeId.trim(),
+            });
+            showToast('Епизодът е мигриран към YouTube');
+            setMigrateModalId(null);
+            setMigrateYoutubeId('');
+            resetForm();
+            fetchEpisodes();
+          } catch (err) {
+            showToast(err.message, 'error');
+          } finally {
+            setWorkingId(null);
+          }
+        }}
+      />
 
     </div>
   );
