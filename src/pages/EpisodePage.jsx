@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { ArrowLeft, Crown, Eye, Lock, Sparkles } from 'lucide-react';
+import { ArrowLeft, Crown, Eye, Lock, SkipForward, Sparkles } from 'lucide-react';
 import DOMPurify from 'dompurify';
 import { api } from '../utils/api';
 import { useAuth } from '../context/AuthContext';
@@ -349,3 +349,4 @@ export default function EpisodePage() {
     </div>
   );
 }
+

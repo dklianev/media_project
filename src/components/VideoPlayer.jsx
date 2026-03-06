@@ -118,7 +118,6 @@ export default function VideoPlayer({
     const iframe = getPlayerIframe(player);
     if (!iframe) return null;
     iframe.setAttribute('allow', 'autoplay; encrypted-media; picture-in-picture; fullscreen');
-    iframe.setAttribute('allowfullscreen', '');
     iframe.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin');
     return iframe;
   };
@@ -1067,7 +1066,6 @@ export default function VideoPlayer({
           frameBorder="0"
           sandbox="allow-scripts allow-same-origin allow-presentation"
           allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
-          allowFullScreen
           referrerPolicy="strict-origin-when-cross-origin"
         />
         <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex justify-end bg-gradient-to-t from-black/65 to-transparent p-3">
@@ -1493,3 +1491,4 @@ export default function VideoPlayer({
     </motion.div>
   );
 }
+
