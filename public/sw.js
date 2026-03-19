@@ -8,7 +8,8 @@ self.addEventListener('activate', (event) => {
   event.waitUntil((async () => {
     try {
       const cacheKeys = await caches.keys();
-      await Promise.all(cacheKeys.map((key) => caches.delete(key)));
+      const legacyKeys = cacheKeys.filter((key) => key.startsWith('workbox-precache-'));
+      await Promise.all(legacyKeys.map((key) => caches.delete(key)));
     } catch {
       // Ignore cache cleanup failures during legacy SW teardown.
     }
