@@ -102,7 +102,7 @@ export default function ReferralsPage() {
             <h1 className="text-3xl sm:text-4xl font-bold text-[var(--text-primary)]">
               Препоръчай приятел
             </h1>
-            <p className="text-[var(--text-secondary)] text-sm sm:text-base max-w-md mx-auto">
+            <p className="text-[var(--text-secondary)] text-sm sm:text-base max-w-lg mx-auto text-center leading-relaxed">
               Сподели своя реферален код и печели бонус дни за всеки нов потребител.
             </p>
           </div>

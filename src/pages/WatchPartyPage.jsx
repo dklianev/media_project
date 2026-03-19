@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { motion } from '@/lib/motion';
 import { Tv, Users, Send, LogOut, Copy, Check, MessageCircle } from 'lucide-react';
 import { api } from '../utils/api.js';
@@ -25,7 +25,7 @@ function CopyCodeButton({ code }) {
     <button
       onClick={handleCopy}
       className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[var(--bg-tertiary)] hover:bg-[var(--bg-tertiary)]/80 text-sm font-mono text-[var(--text-secondary)] transition-colors cursor-pointer"
-      title="Копирай код"
+      title="Копирай кода"
     >
       {code}
       {copied ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
@@ -38,24 +38,25 @@ function ParticipantList({ participants }) {
 
   return (
     <div className="flex flex-wrap gap-3">
-      {participants.map((p) => (
-        <div key={p.id || p.user_id || p.username} className="flex items-center gap-2">
-          {p.avatar_url ? (
-            <img
-              src={p.avatar_url}
-              alt={p.display_name || p.username}
-              className="w-8 h-8 rounded-full object-cover border border-[var(--border)]"
-            />
-          ) : (
-            <div className="w-8 h-8 rounded-full bg-[var(--accent-gold)]/20 flex items-center justify-center text-xs font-bold text-[var(--accent-gold)]">
-              {(p.display_name || p.username || '?').charAt(0).toUpperCase()}
-            </div>
-          )}
-          <span className="text-sm text-[var(--text-primary)]">
-            {p.display_name || p.username}
-          </span>
-        </div>
-      ))}
+      {participants.map((participant) => {
+        const name = participant.display_name || participant.username || '?';
+        return (
+          <div key={participant.id || participant.user_id || name} className="flex items-center gap-2">
+            {participant.avatar_url ? (
+              <img
+                src={participant.avatar_url}
+                alt={name}
+                className="w-8 h-8 rounded-full object-cover border border-[var(--border)]"
+              />
+            ) : (
+              <div className="w-8 h-8 rounded-full bg-[var(--accent-gold)]/20 flex items-center justify-center text-xs font-bold text-[var(--accent-gold)]">
+                {name.charAt(0).toUpperCase()}
+              </div>
+            )}
+            <span className="text-sm text-[var(--text-primary)]">{name}</span>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -64,7 +65,7 @@ function ChatMessage({ message }) {
   return (
     <div className="flex gap-2 py-1.5">
       <span className="text-xs font-semibold text-[var(--accent-gold)] whitespace-nowrap">
-        {message.display_name || message.username || 'Анонимен'}:
+        {(message.display_name || message.username || 'Потребител')}:
       </span>
       <span className="text-sm text-[var(--text-primary)] break-words">
         {message.content}
@@ -76,8 +77,7 @@ function ChatMessage({ message }) {
 export default function WatchPartyPage() {
   const { showToast } = useToastContext();
 
-  // Lobby state
-  const [mode, setMode] = useState('create'); // 'create' | 'join'
+  const [mode, setMode] = useState('create');
   const [episodeId, setEpisodeId] = useState('');
   const [joinCode, setJoinCode] = useState('');
   const [creating, setCreating] = useState(false);
@@ -85,7 +85,6 @@ export default function WatchPartyPage() {
   const [inviteCode, setInviteCode] = useState(null);
   const [formError, setFormError] = useState(null);
 
-  // Party state
   const [partyCode, setPartyCode] = useState(null);
   const [party, setParty] = useState(null);
   const [messageText, setMessageText] = useState('');
@@ -94,33 +93,45 @@ export default function WatchPartyPage() {
   const [ending, setEnding] = useState(false);
 
   const chatEndRef = useRef(null);
-  const chatContainerRef = useRef(null);
 
-  // Auto-scroll chat to bottom
   useEffect(() => {
     if (chatEndRef.current) {
       chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [party?.messages]);
 
-  // Poll for party updates
   useEffect(() => {
-    if (!partyCode) return;
+    if (!partyCode) return undefined;
 
     let cancelled = false;
+
+    const clearPartyState = () => {
+      setPartyCode(null);
+      setParty(null);
+      setInviteCode(null);
+      setMessageText('');
+    };
 
     const fetchParty = () => {
       api.get(`/watch-party/${partyCode}`)
         .then((data) => {
-          if (!cancelled) setParty(data);
+          if (cancelled) return;
+          if (data.status && data.status !== 'active') {
+            showToast('Watch party приключи.', 'success');
+            clearPartyState();
+            return;
+          }
+          setParty(data);
         })
         .catch((err) => {
           console.error('Failed to fetch party:', err);
-          if (!cancelled && err.status === 404) {
-            showToast('Партито не беше намерено.', 'error');
-            setPartyCode(null);
-            setParty(null);
+          if (cancelled) return;
+          if (err.status === 404) {
+            showToast('Watch party не беше намерен.', 'error');
+          } else {
+            showToast(err?.data?.error || err?.message || 'Неуспешно зареждане на watch party.', 'error');
           }
+          clearPartyState();
         });
     };
 
@@ -131,10 +142,10 @@ export default function WatchPartyPage() {
       cancelled = true;
       clearInterval(intervalId);
     };
-  }, [partyCode]);
+  }, [partyCode, showToast]);
 
-  const handleCreate = async (e) => {
-    e.preventDefault();
+  const handleCreate = async (event) => {
+    event.preventDefault();
     const id = episodeId.trim();
     if (!id) return;
 
@@ -142,11 +153,12 @@ export default function WatchPartyPage() {
     setFormError(null);
     try {
       const data = await api.post('/watch-party/create', { episode_id: id });
-      showToast('Партито беше създадено успешно!', 'success');
-      setInviteCode(data.code);
-      setPartyCode(data.code);
+      const code = data.invite_code || data.code;
+      showToast('Watch party беше създаден успешно!', 'success');
+      setInviteCode(code);
+      setPartyCode(code);
     } catch (err) {
-      const message = err?.data?.error || err?.message || 'Грешка при създаване на парти.';
+      const message = err?.data?.error || err?.message || 'Неуспешно създаване на watch party.';
       setFormError(message);
       showToast(message, 'error');
     } finally {
@@ -154,19 +166,19 @@ export default function WatchPartyPage() {
     }
   };
 
-  const handleJoin = async (e) => {
-    e.preventDefault();
-    const code = joinCode.trim();
+  const handleJoin = async (event) => {
+    event.preventDefault();
+    const code = joinCode.trim().toUpperCase();
     if (!code) return;
 
     setJoining(true);
     setFormError(null);
     try {
       await api.post(`/watch-party/${code}/join`);
-      showToast('Присъединихте се към партито!', 'success');
+      showToast('Успешно се присъедини към watch party!', 'success');
       setPartyCode(code);
     } catch (err) {
-      const message = err?.data?.error || err?.message || 'Грешка при присъединяване.';
+      const message = err?.data?.error || err?.message || 'Неуспешно присъединяване.';
       setFormError(message);
       showToast(message, 'error');
     } finally {
@@ -174,20 +186,19 @@ export default function WatchPartyPage() {
     }
   };
 
-  const handleSendMessage = async (e) => {
-    e.preventDefault();
+  const handleSendMessage = async (event) => {
+    event.preventDefault();
     const content = messageText.trim();
     if (!content || !partyCode) return;
 
     setSending(true);
     try {
-      await api.post(`/watch-party/${partyCode}/message`, { content });
+      await api.post(`/watch-party/${partyCode}/message`, { message: content });
       setMessageText('');
-      // Immediately refetch to show the new message
       const data = await api.get(`/watch-party/${partyCode}`);
       setParty(data);
     } catch (err) {
-      const message = err?.data?.error || err?.message || 'Грешка при изпращане на съобщение.';
+      const message = err?.data?.error || err?.message || 'Неуспешно изпращане на съобщение.';
       showToast(message, 'error');
     } finally {
       setSending(false);
@@ -198,13 +209,14 @@ export default function WatchPartyPage() {
     if (!partyCode) return;
     setLeaving(true);
     try {
-      await api.post(`/watch-party/${partyCode}/leave`);
-      showToast('Напуснахте партито.', 'success');
+      const result = await api.post(`/watch-party/${partyCode}/leave`);
+      showToast(result?.ended ? 'Watch party приключи.' : 'Напусна watch party.', 'success');
       setPartyCode(null);
       setParty(null);
       setInviteCode(null);
+      setMessageText('');
     } catch (err) {
-      const message = err?.data?.error || err?.message || 'Грешка при напускане.';
+      const message = err?.data?.error || err?.message || 'Неуспешно напускане.';
       showToast(message, 'error');
     } finally {
       setLeaving(false);
@@ -216,12 +228,13 @@ export default function WatchPartyPage() {
     setEnding(true);
     try {
       await api.put(`/watch-party/${partyCode}/end`);
-      showToast('Партито беше приключено.', 'success');
+      showToast('Watch party беше приключен.', 'success');
       setPartyCode(null);
       setParty(null);
       setInviteCode(null);
+      setMessageText('');
     } catch (err) {
-      const message = err?.data?.error || err?.message || 'Грешка при приключване на партито.';
+      const message = err?.data?.error || err?.message || 'Неуспешно приключване на watch party.';
       showToast(message, 'error');
     } finally {
       setEnding(false);
@@ -237,20 +250,18 @@ export default function WatchPartyPage() {
     <div className="relative max-w-4xl mx-auto px-4 py-8 overflow-hidden min-h-screen flex flex-col gap-6">
       <PageBackground />
 
-      {/* Page Title */}
       <ScrollReveal variant="fadeUp" className="mb-2">
         <div className="flex items-center gap-3">
           <Tv className="w-8 h-8 text-[var(--accent-gold)]" />
           <h1 className="text-3xl font-bold">Watch Party</h1>
         </div>
         <p className="text-[var(--text-secondary)] mt-1 ml-11">
-          Гледайте заедно с приятели в реално време.
+          Гледайте заедно с приятели и чатете в реално време.
         </p>
       </ScrollReveal>
 
       {!inParty ? (
         <>
-          {/* Mode Tabs */}
           <ScrollReveal variant="fadeUp" delay={0.1}>
             <div className="flex gap-2">
               {[
@@ -275,7 +286,6 @@ export default function WatchPartyPage() {
             </div>
           </ScrollReveal>
 
-          {/* Create / Join Forms */}
           <ScrollReveal variant="fadeUp" delay={0.15}>
             <motion.div
               initial={{ opacity: 0, y: 16 }}
@@ -285,12 +295,12 @@ export default function WatchPartyPage() {
             >
               {mode === 'create' ? (
                 <>
-                  <h2 className="text-lg font-semibold mb-4">Създай ново парти</h2>
+                  <h2 className="text-lg font-semibold mb-4">Създай нов watch party</h2>
                   <form onSubmit={handleCreate} className="flex flex-col sm:flex-row gap-3">
                     <input
                       type="text"
                       value={episodeId}
-                      onChange={(e) => setEpisodeId(e.target.value)}
+                      onChange={(event) => setEpisodeId(event.target.value)}
                       placeholder="ID на епизод"
                       className="flex-1 px-4 py-2.5 rounded-xl bg-[var(--bg-tertiary)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-secondary)]/50 focus:outline-none focus:ring-2 focus:ring-[var(--accent-cyan)]/40 transition-all text-sm"
                       disabled={creating}
@@ -300,7 +310,7 @@ export default function WatchPartyPage() {
                       disabled={creating || !episodeId.trim()}
                       className="px-6 py-2.5 rounded-xl bg-[var(--accent-gold)] text-black font-semibold text-sm hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer whitespace-nowrap"
                     >
-                      {creating ? 'Създаване...' : 'Създай парти'}
+                      {creating ? 'Създаване...' : 'Създай party'}
                     </button>
                   </form>
 
@@ -315,7 +325,7 @@ export default function WatchPartyPage() {
                       className="mt-4 p-4 rounded-xl bg-green-500/10 border border-green-500/20"
                     >
                       <p className="text-sm text-green-400 mb-2">
-                        Партито беше създадено! Сподели кода с приятели:
+                        Watch party беше създаден. Сподели този код с приятелите си:
                       </p>
                       <CopyCodeButton code={inviteCode} />
                     </motion.div>
@@ -323,13 +333,13 @@ export default function WatchPartyPage() {
                 </>
               ) : (
                 <>
-                  <h2 className="text-lg font-semibold mb-4">Присъедини се към парти</h2>
+                  <h2 className="text-lg font-semibold mb-4">Присъедини се към watch party</h2>
                   <form onSubmit={handleJoin} className="flex flex-col sm:flex-row gap-3">
                     <input
                       type="text"
                       value={joinCode}
-                      onChange={(e) => setJoinCode(e.target.value)}
-                      placeholder="Въведи код на парти"
+                      onChange={(event) => setJoinCode(event.target.value.toUpperCase())}
+                      placeholder="Въведи кода за party"
                       className="flex-1 px-4 py-2.5 rounded-xl bg-[var(--bg-tertiary)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-secondary)]/50 focus:outline-none focus:ring-2 focus:ring-[var(--accent-cyan)]/40 transition-all font-mono text-sm"
                       disabled={joining}
                     />
@@ -338,7 +348,7 @@ export default function WatchPartyPage() {
                       disabled={joining || !joinCode.trim()}
                       className="px-6 py-2.5 rounded-xl bg-[var(--accent-gold)] text-black font-semibold text-sm hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer whitespace-nowrap"
                     >
-                      {joining ? 'Присъединяване...' : 'Присъедини се'}
+                      {joining ? 'Присъединяване...' : 'Влез'}
                     </button>
                   </form>
                   {formError && mode === 'join' && (
@@ -351,7 +361,6 @@ export default function WatchPartyPage() {
         </>
       ) : (
         <>
-          {/* Party Info */}
           <ScrollReveal variant="fadeUp" delay={0.1}>
             <motion.div
               initial={{ opacity: 0, y: 16 }}
@@ -370,14 +379,13 @@ export default function WatchPartyPage() {
                     {party.host_name && (
                       <span>Домакин: <span className="text-[var(--accent-gold)]">{party.host_name}</span></span>
                     )}
-                    <span>Статус: <span className="text-[var(--text-primary)]">{party.status === 'active' ? 'Активно' : 'Приключено'}</span></span>
+                    <span>Статус: <span className="text-[var(--text-primary)]">{party.status === 'active' ? 'Активен' : 'Приключен'}</span></span>
                     <span>Участници: <span className="text-[var(--text-primary)]">{participants.length}</span></span>
                   </div>
                 </div>
                 <CopyCodeButton code={partyCode} />
               </div>
 
-              {/* Participants */}
               <div>
                 <h3 className="text-sm font-medium text-[var(--text-secondary)] mb-2 flex items-center gap-1.5">
                   <Users className="w-4 h-4" />
@@ -388,7 +396,6 @@ export default function WatchPartyPage() {
             </motion.div>
           </ScrollReveal>
 
-          {/* Chat */}
           <ScrollReveal variant="fadeUp" delay={0.15}>
             <motion.div
               initial={{ opacity: 0, y: 16 }}
@@ -401,14 +408,12 @@ export default function WatchPartyPage() {
                 Чат
               </h3>
 
-              {/* Messages Area */}
               <div
-                ref={chatContainerRef}
                 className="h-72 overflow-y-auto rounded-xl bg-[var(--bg-tertiary)] border border-[var(--border)] p-4 mb-3 flex flex-col gap-1"
               >
                 {messages.length === 0 ? (
                   <p className="text-sm text-[var(--text-secondary)] text-center my-auto">
-                    Няма съобщения. Напишете първото!
+                    Все още няма съобщения. Започни разговора!
                   </p>
                 ) : (
                   messages.map((msg, index) => (
@@ -418,13 +423,12 @@ export default function WatchPartyPage() {
                 <div ref={chatEndRef} />
               </div>
 
-              {/* Message Input */}
               <form onSubmit={handleSendMessage} className="flex gap-2">
                 <input
                   type="text"
                   value={messageText}
-                  onChange={(e) => setMessageText(e.target.value)}
-                  placeholder="Напишете съобщение..."
+                  onChange={(event) => setMessageText(event.target.value)}
+                  placeholder="Напиши съобщение..."
                   className="flex-1 px-4 py-2.5 rounded-xl bg-[var(--bg-tertiary)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-secondary)]/50 focus:outline-none focus:ring-2 focus:ring-[var(--accent-cyan)]/40 transition-all text-sm"
                   disabled={sending}
                 />
@@ -440,7 +444,6 @@ export default function WatchPartyPage() {
             </motion.div>
           </ScrollReveal>
 
-          {/* Action Buttons */}
           <ScrollReveal variant="fadeUp" delay={0.2}>
             <div className="flex gap-3">
               <button
@@ -449,7 +452,7 @@ export default function WatchPartyPage() {
                 className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-zinc-700 text-[var(--text-primary)] text-sm font-medium hover:bg-zinc-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
               >
                 <LogOut className="w-4 h-4" />
-                {leaving ? 'Напускане...' : 'Напусни'}
+                {leaving ? 'Излизане...' : 'Напусни'}
               </button>
 
               {isHost && (

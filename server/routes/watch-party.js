@@ -14,11 +14,21 @@ const partyLimiter = rateLimit({
   keyGenerator: (req) => `wp-${req.user?.id || 'anon'}`,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: 'Твърде много заявки. Опитай отново след малко.' },
+  message: { error: 'Твърде много заявки. Опитайте отново след малко.' },
 });
 
 function generateInviteCode() {
   return crypto.randomBytes(4).toString('hex').toUpperCase();
+}
+
+function endParty(partyId) {
+  const endedAt = getCurrentSofiaDbTimestamp();
+  db.prepare(
+    "UPDATE watch_parties SET status = 'ended', ended_at = COALESCE(ended_at, ?) WHERE id = ?"
+  ).run(endedAt, partyId);
+  db.prepare(
+    'UPDATE watch_party_participants SET left_at = COALESCE(left_at, ?) WHERE party_id = ? AND left_at IS NULL'
+  ).run(endedAt, partyId);
 }
 
 function checkPartyEpisodeAccess(episodeId, user) {
@@ -37,12 +47,32 @@ function checkPartyEpisodeAccess(episodeId, user) {
     WHERE e.id = ? AND e.is_active = 1 AND p.is_active = 1
       AND (e.published_at IS NULL OR e.published_at <= ?)
   `).get(episodeId, currentTimestamp);
+
   if (!episode) return false;
   const purchaseState = getUserPurchaseState(user.id);
   return evaluateEpisodeAccess(episode, user, purchaseState).hasAccess;
 }
 
-// Create a watch party
+function getExistingActivePartyForHost(userId) {
+  return db.prepare(`
+    SELECT wp.id,
+           host_participant.left_at as host_left_at,
+           active_participants.count as active_count
+    FROM watch_parties wp
+    LEFT JOIN watch_party_participants host_participant
+      ON host_participant.party_id = wp.id AND host_participant.user_id = wp.host_id
+    LEFT JOIN (
+      SELECT party_id, COUNT(*) as count
+      FROM watch_party_participants
+      WHERE left_at IS NULL
+      GROUP BY party_id
+    ) active_participants ON active_participants.party_id = wp.id
+    WHERE wp.host_id = ? AND wp.status = 'active'
+    ORDER BY wp.created_at DESC
+    LIMIT 1
+  `).get(userId);
+}
+
 router.post('/create', requireAuth, partyLimiter, (req, res) => {
   const { episode_id, max_participants } = req.body || {};
   const episodeId = Number(episode_id);
@@ -50,7 +80,6 @@ router.post('/create', requireAuth, partyLimiter, (req, res) => {
     return res.status(400).json({ error: 'Невалиден епизод.' });
   }
 
-  // Verify episode exists and user has access
   const episode = db.prepare(`
     SELECT e.id, e.title, e.production_id, e.access_group,
            e.published_at, e.available_from, e.available_until,
@@ -73,15 +102,18 @@ router.post('/create', requireAuth, partyLimiter, (req, res) => {
   const purchaseState = getUserPurchaseState(req.user.id);
   const access = evaluateEpisodeAccess(episode, req.user, purchaseState);
   if (!access.hasAccess) {
-    return res.status(403).json({ error: 'Нямаш достъп до този епизод.' });
+    return res.status(403).json({ error: 'Нямате достъп до този епизод.' });
   }
 
-  // Check no active party by this host
-  const existingParty = db.prepare(
-    "SELECT id FROM watch_parties WHERE host_id = ? AND status = 'active'"
-  ).get(req.user.id);
+  const existingParty = getExistingActivePartyForHost(req.user.id);
   if (existingParty) {
-    return res.status(400).json({ error: 'Вече имаш активна watch party.', party_id: existingParty.id });
+    const hostHasLeft = Boolean(existingParty.host_left_at);
+    const hasActiveParticipants = Number(existingParty.active_count || 0) > 0;
+    if (hostHasLeft || !hasActiveParticipants) {
+      endParty(existingParty.id);
+    } else {
+      return res.status(400).json({ error: 'Вече имате активен watch party.', party_id: existingParty.id });
+    }
   }
 
   const inviteCode = generateInviteCode();
@@ -92,7 +124,6 @@ router.post('/create', requireAuth, partyLimiter, (req, res) => {
     VALUES (?, ?, ?, ?)
   `).run(req.user.id, episodeId, inviteCode, maxPart);
 
-  // Add host as participant
   db.prepare(`
     INSERT INTO watch_party_participants (party_id, user_id)
     VALUES (?, ?)
@@ -106,7 +137,6 @@ router.post('/create', requireAuth, partyLimiter, (req, res) => {
   });
 });
 
-// Get party info by invite code
 router.get('/:code', requireAuth, (req, res) => {
   const party = db.prepare(`
     SELECT wp.*,
@@ -119,20 +149,35 @@ router.get('/:code', requireAuth, (req, res) => {
   `).get(req.params.code);
 
   if (!party) {
-    return res.status(404).json({ error: 'Watch party не е намерена.' });
+    return res.status(404).json({ error: 'Watch party не е намерен.' });
   }
 
   const hasAccess = checkPartyEpisodeAccess(party.episode_id, req.user);
 
   const participants = db.prepare(`
-    SELECT wpp.user_id, wpp.joined_at, u.character_name, u.discord_avatar
+    SELECT wpp.user_id, wpp.joined_at,
+           u.character_name as display_name,
+           u.character_name as username,
+           u.character_name,
+           u.discord_avatar,
+           u.discord_avatar as avatar_url
     FROM watch_party_participants wpp
     JOIN users u ON u.id = wpp.user_id
     WHERE wpp.party_id = ? AND wpp.left_at IS NULL
   `).all(party.id);
 
   const messages = db.prepare(`
-    SELECT wpm.*, u.character_name, u.discord_avatar
+    SELECT wpm.id,
+           wpm.party_id,
+           wpm.user_id,
+           wpm.message as content,
+           wpm.message,
+           wpm.created_at,
+           u.character_name as display_name,
+           u.character_name as username,
+           u.character_name,
+           u.discord_avatar,
+           u.discord_avatar as avatar_url
     FROM watch_party_messages wpm
     JOIN users u ON u.id = wpm.user_id
     WHERE wpm.party_id = ?
@@ -152,27 +197,25 @@ router.get('/:code', requireAuth, (req, res) => {
   res.json(response);
 });
 
-// Join a watch party
 router.post('/:code/join', requireAuth, partyLimiter, (req, res) => {
   const party = db.prepare(
     "SELECT * FROM watch_parties WHERE invite_code = ? AND status = 'active'"
   ).get(req.params.code);
 
   if (!party) {
-    return res.status(404).json({ error: 'Watch party не е намерена или е приключила.' });
+    return res.status(404).json({ error: 'Watch party не е активен или не съществува.' });
   }
 
   if (!checkPartyEpisodeAccess(party.episode_id, req.user)) {
-    return res.status(403).json({ error: 'Нямаш достъп до този епизод.' });
+    return res.status(403).json({ error: 'Нямате достъп до този епизод.' });
   }
 
-  // Check participant count
   const currentCount = db.prepare(
     'SELECT COUNT(*) as count FROM watch_party_participants WHERE party_id = ? AND left_at IS NULL'
   ).get(party.id)?.count || 0;
 
   if (currentCount >= party.max_participants) {
-    return res.status(400).json({ error: 'Watch party е пълна.' });
+    return res.status(400).json({ error: 'Watch party-то е пълно.' });
   }
 
   try {
@@ -182,7 +225,6 @@ router.post('/:code/join', requireAuth, partyLimiter, (req, res) => {
     `).run(party.id, req.user.id);
   } catch (err) {
     if (err.message?.includes('UNIQUE constraint')) {
-      // Already joined, update left_at to null
       db.prepare(
         'UPDATE watch_party_participants SET left_at = NULL, joined_at = ? WHERE party_id = ? AND user_id = ?'
       ).run(getCurrentSofiaDbTimestamp(), party.id, req.user.id);
@@ -194,33 +236,36 @@ router.post('/:code/join', requireAuth, partyLimiter, (req, res) => {
   res.json({ success: true, party_id: party.id });
 });
 
-// Leave a watch party
 router.post('/:code/leave', requireAuth, (req, res) => {
-  const party = db.prepare('SELECT id FROM watch_parties WHERE invite_code = ?').get(req.params.code);
-  if (!party) return res.status(404).json({ error: 'Watch party не е намерена.' });
+  const party = db.prepare('SELECT id, host_id, status FROM watch_parties WHERE invite_code = ?').get(req.params.code);
+  if (!party) return res.status(404).json({ error: 'Watch party не е намерен.' });
 
+  const leftAt = getCurrentSofiaDbTimestamp();
   db.prepare(
     'UPDATE watch_party_participants SET left_at = ? WHERE party_id = ? AND user_id = ? AND left_at IS NULL'
-  ).run(getCurrentSofiaDbTimestamp(), party.id, req.user.id);
+  ).run(leftAt, party.id, req.user.id);
+
+  if (party.status === 'active' && party.host_id === req.user.id) {
+    endParty(party.id);
+    return res.json({ success: true, ended: true });
+  }
 
   res.json({ success: true });
 });
 
-// Send chat message
 router.post('/:code/message', requireAuth, partyLimiter, (req, res) => {
   const party = db.prepare(
     "SELECT id FROM watch_parties WHERE invite_code = ? AND status = 'active'"
   ).get(req.params.code);
-  if (!party) return res.status(404).json({ error: 'Watch party не е намерена.' });
+  if (!party) return res.status(404).json({ error: 'Watch party не е намерен.' });
 
-  const message = String(req.body?.message || '').trim().slice(0, 500);
+  const message = String(req.body?.message || req.body?.content || '').trim().slice(0, 500);
   if (!message) return res.status(400).json({ error: 'Съобщението е празно.' });
 
-  // Must be a participant
   const isParticipant = db.prepare(
     'SELECT 1 FROM watch_party_participants WHERE party_id = ? AND user_id = ? AND left_at IS NULL'
   ).get(party.id, req.user.id);
-  if (!isParticipant) return res.status(403).json({ error: 'Не си участник в тази watch party.' });
+  if (!isParticipant) return res.status(403).json({ error: 'Не сте участник в този watch party.' });
 
   const result = db.prepare(`
     INSERT INTO watch_party_messages (party_id, user_id, message)
@@ -230,23 +275,24 @@ router.post('/:code/message', requireAuth, partyLimiter, (req, res) => {
   res.status(201).json({
     success: true,
     message_id: result.lastInsertRowid,
+    display_name: req.user.character_name,
+    username: req.user.character_name,
     character_name: req.user.character_name,
     message,
+    content: message,
   });
 });
 
-// End a watch party (host only)
 router.put('/:code/end', requireAuth, (req, res) => {
   const party = db.prepare(
     "SELECT * FROM watch_parties WHERE invite_code = ? AND status = 'active'"
   ).get(req.params.code);
-  if (!party) return res.status(404).json({ error: 'Watch party не е намерена.' });
-  if (party.host_id !== req.user.id) return res.status(403).json({ error: 'Само домакинът може да приключи watch party.' });
+  if (!party) return res.status(404).json({ error: 'Watch party не е намерен.' });
+  if (party.host_id !== req.user.id) {
+    return res.status(403).json({ error: 'Само домакинът може да приключи watch party.' });
+  }
 
-  db.prepare(
-    "UPDATE watch_parties SET status = 'ended', ended_at = ? WHERE id = ?"
-  ).run(getCurrentSofiaDbTimestamp(), party.id);
-
+  endParty(party.id);
   res.json({ success: true });
 });
 

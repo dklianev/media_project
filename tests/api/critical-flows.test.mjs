@@ -3207,6 +3207,67 @@ test('watch party: leave party', async () => {
   assert.ok(participant.left_at);
 });
 
+test('watch party: host leaving ends the party and allows creating a new one', async () => {
+  const production = createProduction({ access_group: 'free' });
+  const episodeA = createEpisode({ production_id: production.id, access_group: 'free' });
+  const episodeB = createEpisode({ production_id: production.id, access_group: 'free', episode_number: 2 });
+  const host = createUser();
+  const hostToken = createAccessToken(host);
+
+  const created = await apiRequest('/api/watch-party/create', {
+    method: 'POST',
+    token: hostToken,
+    body: { episode_id: episodeA.id },
+  });
+
+  const left = await apiRequest(`/api/watch-party/${created.data.invite_code}/leave`, {
+    method: 'POST',
+    token: hostToken,
+  });
+  assert.equal(left.response.status, 200);
+  assert.equal(left.data.success, true);
+  assert.equal(left.data.ended, true);
+
+  const endedParty = db.prepare('SELECT status FROM watch_parties WHERE id = ?').get(created.data.party_id);
+  assert.equal(endedParty.status, 'ended');
+
+  const recreated = await apiRequest('/api/watch-party/create', {
+    method: 'POST',
+    token: hostToken,
+    body: { episode_id: episodeB.id },
+  });
+  assert.equal(recreated.response.status, 201);
+  assert.equal(recreated.data.success, true);
+  assert.ok(recreated.data.invite_code);
+});
+
+test('watch party: info payload exposes normalized participant and message fields', async () => {
+  const production = createProduction({ access_group: 'free' });
+  const episode = createEpisode({ production_id: production.id, access_group: 'free' });
+  const host = createUser({ character_name: 'Host Name' });
+  const hostToken = createAccessToken(host);
+
+  const created = await apiRequest('/api/watch-party/create', {
+    method: 'POST',
+    token: hostToken,
+    body: { episode_id: episode.id },
+  });
+
+  await apiRequest(`/api/watch-party/${created.data.invite_code}/message`, {
+    method: 'POST',
+    token: hostToken,
+    body: { content: 'Hello from content payload' },
+  });
+
+  const info = await apiRequest(`/api/watch-party/${created.data.invite_code}`, {
+    token: hostToken,
+  });
+  assert.equal(info.response.status, 200);
+  assert.equal(info.data.participants[0].display_name, 'Host Name');
+  assert.equal(info.data.messages.at(-1).display_name, 'Host Name');
+  assert.equal(info.data.messages.at(-1).content, 'Hello from content payload');
+});
+
 test('watch party: end party (host only)', async () => {
   const production = createProduction({ access_group: 'free' });
   const episode = createEpisode({ production_id: production.id, access_group: 'free' });

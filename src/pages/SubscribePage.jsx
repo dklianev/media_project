@@ -65,7 +65,10 @@ export default function SubscribePage() {
         setPlans(plansData);
         setMyPayments(paymentsData);
         setSettings(publicSettings || {});
-        if (plansData.length > 0) setSelectedPlanId(String(plansData[0].id));
+        if (plansData.length > 0) {
+          const defaultPlan = plansData.find((plan) => plan.is_popular) || plansData[0];
+          setSelectedPlanId(String(defaultPlan.id));
+        }
         setInitialError('');
       })
       .catch((err) => {
