@@ -16,6 +16,7 @@ import {
 import { analyzeUploadedVideo, enqueueTranscode } from '../utils/transcoder.js';
 import { buildPageResult, parsePagination, parseSort, toInt } from '../utils/pagination.js';
 import { logAdminAction } from '../utils/audit.js';
+import { createNotification, createBulkNotifications } from '../utils/notifications.js';
 import {
   normalizeManagedMediaUrl,
   parseManagedMediaUrlList,
@@ -917,17 +918,24 @@ router.post(
         enqueueTranscode(episode.id, videoFilePath, { processingPlan: uploadedVideoPlan });
       }
 
-      // Notify only when the episode is already visible, not when it is scheduled for later.
+      // Notify watchlisted users about new episode
       if (shouldNotifyEpisodeNow(episode)) {
         try {
-          db.prepare(`
-          INSERT INTO notifications (user_id, title, message, link)
-          SELECT id, ?, ?, ? FROM users WHERE role != 'banned'
-        `).run(
-            `Нов епизод: ${prod.title}`,
-            `Епизод ${episode.episode_number} на "${prod.title}" е добавен в платформата.`,
-            `/episodes/${episode.id}`
-          );
+          const watchlistUsers = db.prepare(
+            'SELECT user_id FROM watchlist WHERE production_id = ?'
+          ).all(production_id);
+          if (watchlistUsers.length > 0) {
+            const userIds = watchlistUsers.map((row) => row.user_id).filter((id) => id !== req.user.id);
+            if (userIds.length > 0) {
+              createBulkNotifications(userIds, {
+                type: 'new_episode',
+                title: `Нов епизод: ${title}`,
+                message: `Нов епизод е добавен в продукция, която следите.`,
+                link: `/episodes/${episode.id}`,
+                metadata: { episode_id: episode.id, production_id: Number(production_id) },
+              });
+            }
+          }
         } catch (err) {
           console.error('Неуспешно създаване на известия:', err);
         }

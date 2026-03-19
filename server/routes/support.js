@@ -2,6 +2,7 @@ import express from 'express';
 import db from '../db.js';
 import { requireAuth, requireAdmin } from '../middleware/auth.js';
 import { logAdminAction } from '../utils/audit.js';
+import { createNotification } from '../utils/notifications.js';
 
 const router = express.Router();
 
@@ -154,11 +155,13 @@ router.post('/:id/reply', requireAuth, (req, res) => {
             db.prepare('UPDATE support_tickets SET status = ? WHERE id = ?').run('closed', ticketId);
 
             // Create a notification for the user
-            const title = `Отговор на Вашето запитване: ${ticket.subject}`;
-            db.prepare(`
-                 INSERT INTO notifications (user_id, title, message, link)
-                 VALUES (?, ?, ?, ?)
-             `).run(ticket.user_id, title, replyText, `/support/${ticketId}`);
+            createNotification(ticket.user_id, {
+                type: 'support_reply',
+                title: `Отговор на Вашето запитване: ${ticket.subject}`,
+                message: replyText,
+                link: `/support/${ticketId}`,
+                metadata: { ticket_id: Number(ticketId) },
+            });
 
             logAdminAction(req, {
                 action: 'support_ticket.reply',

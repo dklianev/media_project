@@ -27,6 +27,11 @@ const LiveStreamPage = lazy(() => import('./pages/LiveStreamPage'));
 const FAQPage = lazy(() => import('./pages/FAQPage'));
 const CalendarPage = lazy(() => import('./pages/CalendarPage'));
 const TicketPage = lazy(() => import('./pages/TicketPage'));
+const MyPurchasesPage = lazy(() => import('./pages/MyPurchasesPage'));
+const GiftsPage = lazy(() => import('./pages/GiftsPage'));
+const WishlistPage = lazy(() => import('./pages/WishlistPage'));
+const ReferralsPage = lazy(() => import('./pages/ReferralsPage'));
+const WatchPartyPage = lazy(() => import('./pages/WatchPartyPage'));
 
 // Admin pages
 const AdminLayout = lazy(() => import('./pages/admin/AdminLayout'));
@@ -43,6 +48,8 @@ const ManageSettings = lazy(() => import('./pages/admin/ManageSettings'));
 const ManageAuditLogs = lazy(() => import('./pages/admin/ManageAuditLogs'));
 const ManageSupport = lazy(() => import('./pages/admin/ManageSupport'));
 const ManageMediaLibrary = lazy(() => import('./pages/admin/ManageMediaLibrary'));
+const ManagePromotions = lazy(() => import('./pages/admin/ManagePromotions'));
+const ManageBundles = lazy(() => import('./pages/admin/ManageBundles'));
 
 import { Crown } from 'lucide-react';
 
@@ -237,6 +244,11 @@ export default function App() {
                 <Route path="/profile" element={<ProtectedRoute><AnimatedPage><ProfilePage /></AnimatedPage></ProtectedRoute>} />
                 <Route path="/live" element={<ProtectedRoute><AnimatedPage><LiveStreamPage /></AnimatedPage></ProtectedRoute>} />
                 <Route path="/support/:id" element={<ProtectedRoute><AnimatedPage><TicketPage /></AnimatedPage></ProtectedRoute>} />
+                <Route path="/my-purchases" element={<ProtectedRoute><AnimatedPage><MyPurchasesPage /></AnimatedPage></ProtectedRoute>} />
+                <Route path="/gifts" element={<ProtectedRoute><AnimatedPage><GiftsPage /></AnimatedPage></ProtectedRoute>} />
+                <Route path="/wishlist" element={<ProtectedRoute><AnimatedPage><WishlistPage /></AnimatedPage></ProtectedRoute>} />
+                <Route path="/referrals" element={<ProtectedRoute><AnimatedPage><ReferralsPage /></AnimatedPage></ProtectedRoute>} />
+                <Route path="/watch-party" element={<ProtectedRoute><AnimatedPage><WatchPartyPage /></AnimatedPage></ProtectedRoute>} />
 
                 {/* Admin */}
                 <Route path="/admin" element={<AdminRoute><AdminLayout /></AdminRoute>}>
@@ -253,6 +265,8 @@ export default function App() {
                   <Route path="settings" element={<ManageSettings />} />
                   <Route path="audit" element={<ManageAuditLogs />} />
                   <Route path="support" element={<ManageSupport />} />
+                  <Route path="promotions" element={<ManagePromotions />} />
+                  <Route path="bundles" element={<ManageBundles />} />
                 </Route>
 
                 {/* Fallback */}

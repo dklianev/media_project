@@ -6,6 +6,14 @@ import {
   resolveEffectiveGroup,
   resolveProductionGroup,
 } from './access.js';
+import { getCurrentSofiaDbTimestamp } from './sofiaTime.js';
+
+function isWithinAvailabilityWindow(availableFrom, availableUntil) {
+  const now = getCurrentSofiaDbTimestamp();
+  if (availableFrom && now < availableFrom) return false;
+  if (availableUntil && now > availableUntil) return false;
+  return true;
+}
 
 const PURCHASE_TARGET_TYPES = ['production', 'episode'];
 const PRODUCTION_PURCHASE_MODES = ['none', 'production', 'episodes', 'both'];
@@ -142,18 +150,23 @@ export function evaluateProductionAccess(production, user, purchaseState = creat
   const productionPurchase = getProductionPurchaseConfig(production);
   const productionOwned = hasProductionEntitlement(purchaseState, productionId);
   const productionPending = hasPendingProductionPurchase(purchaseState, productionId);
+  const available = isWithinAvailabilityWindow(production?.available_from, production?.available_until);
 
   return {
     accessGroup,
     hasAccess:
       isAdmin
-      || productionOwned
-      || hasGroupAccess(accessGroup, user?.tier_level || 0, isAdmin, requiredTier),
+      || ((productionOwned
+        || hasGroupAccess(accessGroup, user?.tier_level || 0, isAdmin, requiredTier))
+        && available),
     isPurchased: productionOwned,
     hasPendingPurchase: productionPending,
-    canPurchase: productionPurchase.isEnabled && !isAdmin && !productionOwned && !productionPending,
+    canPurchase: productionPurchase.isEnabled && !isAdmin && !productionOwned && !productionPending && available,
     purchaseMode: productionPurchase.purchaseMode,
     purchasePrice: productionPurchase.purchasePrice,
+    isAvailable: available,
+    availableFrom: production?.available_from || null,
+    availableUntil: production?.available_until || null,
   };
 }
 
@@ -181,6 +194,7 @@ export function evaluateEpisodeAccess(episode, user, purchaseState = createEmpty
   const productionPending = hasPendingProductionPurchase(purchaseState, productionId);
   const episodePending = hasPendingEpisodePurchase(purchaseState, episodeId);
   const isPurchased = productionOwned || episodeOwned;
+  const available = isWithinAvailabilityWindow(episode?.available_from, episode?.available_until);
 
   return {
     productionGroup,
@@ -188,8 +202,9 @@ export function evaluateEpisodeAccess(episode, user, purchaseState = createEmpty
     effectiveGroup,
     hasAccess:
       isAdmin
-      || isPurchased
-      || hasGroupAccess(effectiveGroup, user?.tier_level || 0, isAdmin, requiredTier),
+      || ((isPurchased
+        || hasGroupAccess(effectiveGroup, user?.tier_level || 0, isAdmin, requiredTier))
+        && available),
     isPurchased,
     purchaseSource: productionOwned ? 'production' : (episodeOwned ? 'episode' : null),
     isProductionPurchased: productionOwned,
@@ -203,11 +218,15 @@ export function evaluateEpisodeAccess(episode, user, purchaseState = createEmpty
       && !isAdmin
       && !productionOwned
       && !episodeOwned
-      && !episodePending,
+      && !episodePending
+      && available,
     productionPurchaseMode: productionPurchase.purchaseMode,
     productionPurchasePrice: productionPurchase.purchasePrice,
     episodePurchaseEnabled: episodePurchase.purchaseEnabled,
     episodePurchasePrice: episodePurchase.purchasePrice,
+    isAvailable: available,
+    availableFrom: episode?.available_from || null,
+    availableUntil: episode?.available_until || null,
   };
 }
 

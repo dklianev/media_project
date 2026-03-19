@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, NavLink, useLocation } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Calendar as CalendarIcon, Crown, Film, Home, LogOut, Menu, Moon, Settings, Sparkles, Sun, User, X } from 'lucide-react';
+import { Calendar as CalendarIcon, Crown, Film, Gift, Heart, Home, LogOut, Menu, Moon, Settings, ShoppingBag, Sparkles, Sun, User, Users, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import SubscriptionBadge from './SubscriptionBadge';
@@ -14,6 +14,13 @@ const DEFAULT_NAV = [
   { to: '/calendar', key: 'nav_label_calendar', fallback: 'График', icon: CalendarIcon },
   { to: '/subscribe', key: 'nav_label_subscribe', fallback: 'Абонаменти', icon: Crown },
   { to: '/profile', key: 'nav_label_profile', fallback: 'Профил', icon: User },
+];
+
+const EXTRA_NAV = [
+  { to: '/my-purchases', fallback: 'Покупки', icon: ShoppingBag },
+  { to: '/gifts', fallback: 'Подаръци', icon: Gift },
+  { to: '/wishlist', fallback: 'Желания', icon: Heart },
+  { to: '/referrals', fallback: 'Покани', icon: Users },
 ];
 
 function NavPill({ to, label, icon: Icon, onClick }) {
@@ -224,9 +231,10 @@ export default function Navbar() {
     stream_is_live: 'false',
   });
 
-  const [navLinks, setNavLinks] = useState(
-    DEFAULT_NAV.map((n) => ({ to: n.to, label: n.fallback, icon: n.icon }))
-  );
+  const [navLinks, setNavLinks] = useState([
+    ...DEFAULT_NAV.map((n) => ({ to: n.to, label: n.fallback, icon: n.icon })),
+    ...EXTRA_NAV.map((n) => ({ to: n.to, label: n.fallback, icon: n.icon, extra: true })),
+  ]);
 
   useEffect(() => {
     const loadSettings = (force = false) => {
@@ -240,13 +248,19 @@ export default function Navbar() {
             siteLogo: settings?.site_logo || '',
             stream_is_live: settings?.stream_is_live || 'false',
           }));
-          setNavLinks(
-            DEFAULT_NAV.map((n) => ({
+          setNavLinks([
+            ...DEFAULT_NAV.map((n) => ({
               to: n.to,
               label: settings?.[n.key] || n.fallback,
               icon: n.icon,
-            }))
-          );
+            })),
+            ...EXTRA_NAV.map((n) => ({
+              to: n.to,
+              label: n.fallback,
+              icon: n.icon,
+              extra: true,
+            })),
+          ]);
         })
         .catch((err) => { console.error('Navbar settings load failed:', err); });
     };
@@ -317,7 +331,7 @@ export default function Navbar() {
             </Link>
 
             <nav className="hidden md:flex flex-1 justify-center items-center gap-1">
-              {navLinks.map((link) => (
+              {navLinks.filter((l) => !l.extra).map((link) => (
                 <NavPill key={link.to} {...link} />
               ))}
               {isAdmin && <NavPill to="/admin" label={ui.adminZoneLabel || 'Админ'} icon={Settings} />}

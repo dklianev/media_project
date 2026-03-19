@@ -5,6 +5,7 @@ import db from '../db.js';
 import { requireAdmin, requireAuth } from '../middleware/auth.js';
 import { buildPageResult, parsePagination, parseSort, toInt } from '../utils/pagination.js';
 import { logAdminAction } from '../utils/audit.js';
+import { createNotification } from '../utils/notifications.js';
 import { getCurrentSofiaDbTimestamp } from '../utils/sofiaTime.js';
 import {
   evaluateEpisodeAccess,
@@ -609,6 +610,15 @@ function confirmPurchase(req, res) {
         final_price: request.final_price,
       },
     });
+    createNotification(request.user_id, {
+      type: 'purchase_confirmed',
+      title: 'Покупката ви е потвърдена',
+      message: `Достъпът до "${request.target_title_snapshot || 'съдържанието'}" е активиран.`,
+      link: request.target_type === 'production'
+        ? `/productions/${request.production_slug_snapshot || ''}`
+        : `/episodes/${request.target_id}`,
+      metadata: { target_type: request.target_type, target_id: request.target_id },
+    });
     return res.json({ success: true });
   } catch (err) {
     if (err.message === 'Съдържанието вече е отключено за този потребител.'
@@ -657,6 +667,13 @@ function rejectPurchase(req, res) {
         target_id: request.target_id,
         reason,
       },
+    });
+    createNotification(request.user_id, {
+      type: 'purchase_rejected',
+      title: 'Заявката ви за покупка е отказана',
+      message: reason ? `Причина: ${reason}` : 'Свържете се с екипа за повече информация.',
+      link: '/profile',
+      metadata: { target_type: request.target_type, target_id: request.target_id },
     });
     return res.json({ success: true });
   } catch (err) {

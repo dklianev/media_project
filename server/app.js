@@ -34,6 +34,13 @@ import commentsRoutes from './routes/comments.js';
 import notificationsRoutes from './routes/notifications.js';
 import supportRoutes from './routes/support.js';
 import mediaRoutes from './routes/media.js';
+import ratingsRoutes from './routes/ratings.js';
+import promotionsRoutes from './routes/promotions.js';
+import purchaseWishlistRoutes from './routes/purchase-wishlist.js';
+import referralsRoutes from './routes/referrals.js';
+import giftsRoutes from './routes/gifts.js';
+import bundlesRoutes from './routes/bundles.js';
+import watchPartyRoutes from './routes/watch-party.js';
 import {
   optimizeUploadedImages,
   requireUploadLock,
@@ -239,6 +246,13 @@ export function createApp() {
   app.use('/api/comments', commentsRoutes);
   app.use('/api/notifications', notificationsRoutes);
   app.use('/api/support', supportRoutes);
+  app.use('/api/ratings', ratingsRoutes);
+  app.use('/api/promotions', promotionsRoutes);
+  app.use('/api/wishlist', purchaseWishlistRoutes);
+  app.use('/api/referrals', referralsRoutes);
+  app.use('/api/gifts', giftsRoutes);
+  app.use('/api/bundles', bundlesRoutes);
+  app.use('/api/watch-party', watchPartyRoutes);
 
   // Generic upload endpoint for admin
   app.post(

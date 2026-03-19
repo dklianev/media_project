@@ -5,6 +5,7 @@ import db from '../db.js';
 import { requireAuth, requireAdmin } from '../middleware/auth.js';
 import { buildPageResult, parsePagination, parseSort, toInt } from '../utils/pagination.js';
 import { logAdminAction } from '../utils/audit.js';
+import { createNotification } from '../utils/notifications.js';
 
 const router = Router();
 const PAYMENT_STATUSES = ['pending', 'confirmed', 'rejected', 'cancelled'];
@@ -305,6 +306,54 @@ router.get('/my-payments', requireAuth, (req, res) => {
   res.json(payments);
 });
 
+router.get('/renewal-info', requireAuth, (req, res) => {
+  try {
+    const user = db.prepare(`
+      SELECT subscription_plan_id, subscription_expires_at
+      FROM users
+      WHERE id = ?
+    `).get(req.user.id);
+
+    if (!user || !user.subscription_plan_id || !user.subscription_expires_at) {
+      return res.json({ has_subscription: false });
+    }
+
+    const plan = db.prepare(`
+      SELECT id, name, price
+      FROM subscription_plans
+      WHERE id = ?
+    `).get(user.subscription_plan_id);
+
+    if (!plan) {
+      return res.json({ has_subscription: false });
+    }
+
+    // Parse expires_at and calculate days remaining in Sofia timezone
+    const expiresRaw = user.subscription_expires_at.replace('T', ' ').replace('Z', '');
+    const expiresAt = new Date(expiresRaw + 'Z');
+    const nowSofia = new Date(new Date().toLocaleString('en-US', { timeZone: 'Europe/Sofia' }));
+    const expiresSofia = new Date(expiresAt.toLocaleString('en-US', { timeZone: 'Europe/Sofia' }));
+
+    if (expiresSofia <= nowSofia) {
+      return res.json({ has_subscription: false });
+    }
+
+    const diffMs = expiresSofia.getTime() - nowSofia.getTime();
+    const daysRemaining = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+
+    res.json({
+      has_subscription: true,
+      plan_name: plan.name,
+      plan_price: plan.price,
+      expires_at: user.subscription_expires_at,
+      days_remaining: daysRemaining,
+      is_expiring_soon: daysRemaining <= 7,
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Неуспешно зареждане на информация за абонамента' });
+  }
+});
+
 router.put('/my-payments/:id/cancel', requireAuth, (req, res) => {
   const { reason } = req.body || {};
 
@@ -431,6 +480,13 @@ function confirmPayment(req, res) {
         discount_percent: payment.discount_percent,
       },
     });
+    createNotification(payment.user_id, {
+      type: 'subscription_confirmed',
+      title: 'Абонаментът ви е активиран',
+      message: 'Плащането е потвърдено. Приятно гледане!',
+      link: '/profile',
+      metadata: { plan_id: payment.plan_id, payment_id: payment.id },
+    });
     res.json({ success: true, message: 'Плащането е потвърдено и абонаментът е активиран' });
   } catch (err) {
     return res.status(400).json({ error: err.message || 'Неуспешно потвърждаване на плащането' });
@@ -469,6 +525,13 @@ function rejectPayment(req, res) {
     metadata: {
       reason,
     },
+  });
+  createNotification(payment.user_id, {
+    type: 'subscription_rejected',
+    title: 'Плащането ви е отказано',
+    message: reason ? `Причина: ${reason}` : 'Свържете се с екипа за повече информация.',
+    link: '/subscribe',
+    metadata: { payment_id: payment.id },
   });
   res.json({ success: true, message: 'Плащането е отказано' });
 }

@@ -294,6 +294,145 @@ db.exec(`
     FOREIGN KEY (ticket_id) REFERENCES support_tickets(id),
     FOREIGN KEY (user_id) REFERENCES users(id)
   );
+
+  CREATE TABLE IF NOT EXISTS ratings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    target_type TEXT NOT NULL,
+    target_id INTEGER NOT NULL,
+    score INTEGER NOT NULL,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(user_id, target_type, target_id),
+    FOREIGN KEY (user_id) REFERENCES users(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS promotions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    description TEXT,
+    type TEXT NOT NULL,
+    discount_type TEXT DEFAULT 'percent',
+    discount_value REAL NOT NULL,
+    conditions TEXT,
+    applies_to TEXT DEFAULT 'all',
+    starts_at TEXT,
+    ends_at TEXT,
+    is_active INTEGER DEFAULT 1,
+    max_uses INTEGER,
+    uses_count INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS promotion_usages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    promotion_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    applied_to_type TEXT,
+    applied_to_id INTEGER,
+    discount_amount REAL,
+    created_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (promotion_id) REFERENCES promotions(id),
+    FOREIGN KEY (user_id) REFERENCES users(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS bundles (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    description TEXT,
+    production_id INTEGER,
+    bundle_type TEXT DEFAULT 'quantity',
+    buy_count INTEGER,
+    pay_count INTEGER,
+    fixed_price REAL,
+    episode_ids TEXT,
+    is_active INTEGER DEFAULT 1,
+    starts_at TEXT,
+    ends_at TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS purchase_wishlist (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    target_type TEXT NOT NULL,
+    target_id INTEGER NOT NULL,
+    notified_price REAL,
+    created_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(user_id, target_type, target_id),
+    FOREIGN KEY (user_id) REFERENCES users(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS gift_codes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    code TEXT UNIQUE NOT NULL,
+    sender_id INTEGER NOT NULL,
+    recipient_id INTEGER,
+    gift_type TEXT NOT NULL,
+    target_id INTEGER,
+    plan_id INTEGER,
+    plan_duration_days INTEGER,
+    source_request_id INTEGER,
+    status TEXT DEFAULT 'pending',
+    message TEXT,
+    redeemed_at TEXT,
+    expires_at TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (sender_id) REFERENCES users(id),
+    FOREIGN KEY (recipient_id) REFERENCES users(id),
+    FOREIGN KEY (plan_id) REFERENCES subscription_plans(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS referral_rewards (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    referrer_id INTEGER NOT NULL,
+    referred_id INTEGER NOT NULL,
+    reward_type TEXT NOT NULL,
+    reward_value REAL NOT NULL,
+    trigger_event TEXT,
+    applied INTEGER DEFAULT 0,
+    applied_at TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (referrer_id) REFERENCES users(id),
+    FOREIGN KEY (referred_id) REFERENCES users(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS watch_parties (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    host_id INTEGER NOT NULL,
+    episode_id INTEGER NOT NULL,
+    invite_code TEXT UNIQUE NOT NULL,
+    status TEXT DEFAULT 'active',
+    max_participants INTEGER DEFAULT 10,
+    started_at TEXT DEFAULT (datetime('now')),
+    ended_at TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (host_id) REFERENCES users(id),
+    FOREIGN KEY (episode_id) REFERENCES episodes(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS watch_party_participants (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    party_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    joined_at TEXT DEFAULT (datetime('now')),
+    left_at TEXT,
+    UNIQUE(party_id, user_id),
+    FOREIGN KEY (party_id) REFERENCES watch_parties(id),
+    FOREIGN KEY (user_id) REFERENCES users(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS watch_party_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    party_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    message TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (party_id) REFERENCES watch_parties(id),
+    FOREIGN KEY (user_id) REFERENCES users(id)
+  );
 `);
 
 function hasColumn(table, column) {
@@ -405,6 +544,41 @@ if (!hasColumn('promo_codes', 'updated_at')) {
 
 if (!hasColumn('productions', 'genres')) {
   db.exec(`ALTER TABLE productions ADD COLUMN genres TEXT DEFAULT '[]'`);
+}
+
+// Notifications
+if (!hasColumn('notifications', 'type')) {
+  db.exec("ALTER TABLE notifications ADD COLUMN type TEXT");
+}
+if (!hasColumn('notifications', 'metadata')) {
+  db.exec("ALTER TABLE notifications ADD COLUMN metadata TEXT");
+}
+
+// Time-limited content
+if (!hasColumn('episodes', 'available_from')) {
+  db.exec("ALTER TABLE episodes ADD COLUMN available_from TEXT");
+}
+if (!hasColumn('episodes', 'available_until')) {
+  db.exec("ALTER TABLE episodes ADD COLUMN available_until TEXT");
+}
+if (!hasColumn('productions', 'available_from')) {
+  db.exec("ALTER TABLE productions ADD COLUMN available_from TEXT");
+}
+if (!hasColumn('productions', 'available_until')) {
+  db.exec("ALTER TABLE productions ADD COLUMN available_until TEXT");
+}
+
+// Promo codes extension for purchases
+if (!hasColumn('promo_codes', 'applies_to')) {
+  db.exec("ALTER TABLE promo_codes ADD COLUMN applies_to TEXT DEFAULT 'subscriptions'");
+}
+
+// Referral system
+if (!hasColumn('users', 'referral_code')) {
+  db.exec("ALTER TABLE users ADD COLUMN referral_code TEXT");
+}
+if (!hasColumn('users', 'referred_by')) {
+  db.exec("ALTER TABLE users ADD COLUMN referred_by INTEGER");
 }
 
 db.exec(`
@@ -598,6 +772,20 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_productions_slug ON productions(slug);
   CREATE INDEX IF NOT EXISTS idx_promo_codes_code ON promo_codes(code, is_active);
   CREATE INDEX IF NOT EXISTS idx_support_tickets_user ON support_tickets(user_id, created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_ratings_target ON ratings(target_type, target_id);
+  CREATE INDEX IF NOT EXISTS idx_ratings_user ON ratings(user_id);
+  CREATE INDEX IF NOT EXISTS idx_promotions_active_dates ON promotions(is_active, starts_at, ends_at);
+  CREATE INDEX IF NOT EXISTS idx_promotion_usages_user ON promotion_usages(user_id, promotion_id);
+  CREATE INDEX IF NOT EXISTS idx_purchase_wishlist_user ON purchase_wishlist(user_id, created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_purchase_wishlist_target ON purchase_wishlist(target_type, target_id);
+  CREATE INDEX IF NOT EXISTS idx_gift_codes_code ON gift_codes(code);
+  CREATE INDEX IF NOT EXISTS idx_gift_codes_sender ON gift_codes(sender_id, created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_gift_codes_recipient ON gift_codes(recipient_id);
+  CREATE INDEX IF NOT EXISTS idx_referral_rewards_referrer ON referral_rewards(referrer_id, applied);
+  CREATE INDEX IF NOT EXISTS idx_watch_parties_code ON watch_parties(invite_code);
+  CREATE INDEX IF NOT EXISTS idx_watch_parties_host ON watch_parties(host_id, status);
+  CREATE INDEX IF NOT EXISTS idx_watch_party_messages_party ON watch_party_messages(party_id, created_at);
+  CREATE INDEX IF NOT EXISTS idx_users_referral_code ON users(referral_code);
   `);
 
 db.exec(`

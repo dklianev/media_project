@@ -247,6 +247,9 @@ function resetDatabase() {
     'notifications',
     'support_ticket_messages',
     'support_tickets',
+    'watch_party_messages',
+    'watch_party_participants',
+    'watch_parties',
     'content_entitlements',
     'content_purchase_requests',
     'reactions',
@@ -257,6 +260,13 @@ function resetDatabase() {
     'productions',
     'payment_references',
     'refresh_tokens',
+    'ratings',
+    'promotion_usages',
+    'promotions',
+    'bundles',
+    'purchase_wishlist',
+    'gift_codes',
+    'referral_rewards',
     'auth_exchange_codes',
     'users',
     'promo_codes',
@@ -1450,6 +1460,11 @@ test('episode notifications не се създават преждевремен�
     is_active: 1,
   });
 
+  // Add users to watchlist so they receive new-episode notifications
+  db.prepare('INSERT INTO watchlist (user_id, production_id) VALUES (?, ?)').run(admin.id, production.id);
+  db.prepare('INSERT INTO watchlist (user_id, production_id) VALUES (?, ?)').run(viewer.id, production.id);
+  db.prepare('INSERT INTO watchlist (user_id, production_id) VALUES (?, ?)').run(banned.id, production.id);
+
   const futureResult = await apiRequest('/api/episodes/admin', {
     method: 'POST',
     token: adminToken,
@@ -1485,15 +1500,18 @@ test('episode notifications не се създават преждевремен�
     FROM notifications
     ORDER BY id ASC
   `).all();
+  // Notifications go to watchlist users minus the creator (admin).
+  // Banned users are not filtered by the notification system.
   assert.equal(notifications.length, 2);
   assert.deepEqual(
     notifications.map((item) => item.user_id).sort((a, b) => a - b),
-    [admin.id, viewer.id]
+    [viewer.id, banned.id].sort((a, b) => a - b)
   );
-  assert.ok(notifications.every((item) => item.title === 'Нов епизод: Scheduled Production'));
+  assert.ok(notifications.every((item) => item.title === 'Нов епизод: Live Episode'));
   assert.equal(
-    db.prepare('SELECT COUNT(*) as count FROM notifications WHERE user_id = ?').get(banned.id).count,
-    0
+    db.prepare('SELECT COUNT(*) as count FROM notifications WHERE user_id = ?').get(admin.id).count,
+    0,
+    'admin (the episode creator) should not receive a notification'
   );
 });
 
@@ -2127,4 +2145,851 @@ test('deleted episode purchase requests keep snapshot metadata in admin list', a
   assert.equal(listedRequest.production_title, 'Snapshot Metadata Production');
   assert.equal(listedRequest.production_slug, 'snapshot-metadata-production');
   assert.equal(Number(listedRequest.episode_number), 3);
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// RATINGS
+// ═══════════════════════════════════════════════════════════════════════════
+
+test('ratings: create a rating for an episode (1-5 stars)', async () => {
+  const production = createProduction({ access_group: 'free' });
+  const episode = createEpisode({ production_id: production.id, access_group: 'free' });
+  const user = createUser();
+  const token = createAccessToken(user);
+
+  const res = await apiRequest('/api/ratings', {
+    method: 'POST',
+    token,
+    body: { target_type: 'episode', target_id: episode.id, score: 4 },
+  });
+  assert.equal(res.response.status, 200);
+  assert.equal(res.data.success, true);
+  assert.equal(res.data.score, 4);
+
+  const row = db.prepare(
+    'SELECT * FROM ratings WHERE user_id = ? AND target_type = ? AND target_id = ?'
+  ).get(user.id, 'episode', episode.id);
+  assert.ok(row);
+  assert.equal(row.score, 4);
+});
+
+test('ratings: get average rating and count', async () => {
+  const production = createProduction({ access_group: 'free' });
+  const episode = createEpisode({ production_id: production.id, access_group: 'free' });
+  const user1 = createUser();
+  const user2 = createUser();
+  const token1 = createAccessToken(user1);
+  const token2 = createAccessToken(user2);
+
+  await apiRequest('/api/ratings', {
+    method: 'POST',
+    token: token1,
+    body: { target_type: 'episode', target_id: episode.id, score: 5 },
+  });
+  await apiRequest('/api/ratings', {
+    method: 'POST',
+    token: token2,
+    body: { target_type: 'episode', target_id: episode.id, score: 3 },
+  });
+
+  const res = await apiRequest(`/api/ratings/episode/${episode.id}`, { token: token1 });
+  assert.equal(res.response.status, 200);
+  assert.equal(res.data.average, 4);
+  assert.equal(res.data.count, 2);
+  assert.equal(res.data.user_score, 5);
+});
+
+test('ratings: update rating via upsert', async () => {
+  const production = createProduction({ access_group: 'free' });
+  const episode = createEpisode({ production_id: production.id, access_group: 'free' });
+  const user = createUser();
+  const token = createAccessToken(user);
+
+  await apiRequest('/api/ratings', {
+    method: 'POST',
+    token,
+    body: { target_type: 'episode', target_id: episode.id, score: 2 },
+  });
+
+  const updated = await apiRequest('/api/ratings', {
+    method: 'POST',
+    token,
+    body: { target_type: 'episode', target_id: episode.id, score: 5 },
+  });
+  assert.equal(updated.response.status, 200);
+  assert.equal(updated.data.score, 5);
+
+  const row = db.prepare(
+    'SELECT score FROM ratings WHERE user_id = ? AND target_type = ? AND target_id = ?'
+  ).get(user.id, 'episode', episode.id);
+  assert.equal(row.score, 5);
+});
+
+test('ratings: delete a rating', async () => {
+  const production = createProduction({ access_group: 'free' });
+  const episode = createEpisode({ production_id: production.id, access_group: 'free' });
+  const user = createUser();
+  const token = createAccessToken(user);
+
+  await apiRequest('/api/ratings', {
+    method: 'POST',
+    token,
+    body: { target_type: 'episode', target_id: episode.id, score: 3 },
+  });
+
+  const del = await apiRequest(`/api/ratings/episode/${episode.id}`, {
+    method: 'DELETE',
+    token,
+  });
+  assert.equal(del.response.status, 200);
+  assert.equal(del.data.success, true);
+
+  const row = db.prepare(
+    'SELECT * FROM ratings WHERE user_id = ? AND target_type = ? AND target_id = ?'
+  ).get(user.id, 'episode', episode.id);
+  assert.equal(row, undefined);
+});
+
+test('ratings: reject invalid target_type', async () => {
+  const user = createUser();
+  const token = createAccessToken(user);
+
+  const res = await apiRequest('/api/ratings', {
+    method: 'POST',
+    token,
+    body: { target_type: 'invalid', target_id: 1, score: 3 },
+  });
+  assert.equal(res.response.status, 400);
+});
+
+test('ratings: reject invalid score (out of range)', async () => {
+  const user = createUser();
+  const token = createAccessToken(user);
+
+  const tooHigh = await apiRequest('/api/ratings', {
+    method: 'POST',
+    token,
+    body: { target_type: 'episode', target_id: 1, score: 6 },
+  });
+  assert.equal(tooHigh.response.status, 400);
+
+  const tooLow = await apiRequest('/api/ratings', {
+    method: 'POST',
+    token,
+    body: { target_type: 'episode', target_id: 1, score: 0 },
+  });
+  assert.equal(tooLow.response.status, 400);
+
+  const notInt = await apiRequest('/api/ratings', {
+    method: 'POST',
+    token,
+    body: { target_type: 'episode', target_id: 1, score: 3.5 },
+  });
+  assert.equal(notInt.response.status, 400);
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PROMOTIONS
+// ═══════════════════════════════════════════════════════════════════════════
+
+test('promotions: admin creates a promotion', async () => {
+  const admin = createUser({ role: 'admin' });
+  const adminToken = createAccessToken(admin);
+
+  const res = await apiRequest('/api/promotions/admin', {
+    method: 'POST',
+    token: adminToken,
+    body: {
+      name: 'Summer Sale',
+      description: 'Big summer discount',
+      type: 'flash_sale',
+      discount_type: 'percent',
+      discount_value: 20,
+      applies_to: 'all',
+    },
+  });
+  assert.equal(res.response.status, 201);
+  assert.equal(res.data.success, true);
+  assert.ok(res.data.id);
+
+  const row = db.prepare('SELECT * FROM promotions WHERE id = ?').get(res.data.id);
+  assert.equal(row.name, 'Summer Sale');
+  assert.equal(row.discount_value, 20);
+});
+
+test('promotions: admin lists promotions', async () => {
+  const admin = createUser({ role: 'admin' });
+  const adminToken = createAccessToken(admin);
+
+  await apiRequest('/api/promotions/admin', {
+    method: 'POST',
+    token: adminToken,
+    body: { name: 'Promo A', type: 'seasonal', discount_type: 'percent', discount_value: 10 },
+  });
+  await apiRequest('/api/promotions/admin', {
+    method: 'POST',
+    token: adminToken,
+    body: { name: 'Promo B', type: 'loyalty', discount_type: 'fixed', discount_value: 5 },
+  });
+
+  const res = await apiRequest('/api/promotions/admin', { token: adminToken });
+  assert.equal(res.response.status, 200);
+  assert.ok(Array.isArray(res.data.items));
+  assert.equal(res.data.items.length, 2);
+});
+
+test('promotions: admin updates a promotion', async () => {
+  const admin = createUser({ role: 'admin' });
+  const adminToken = createAccessToken(admin);
+
+  const created = await apiRequest('/api/promotions/admin', {
+    method: 'POST',
+    token: adminToken,
+    body: { name: 'Old Name', type: 'flash_sale', discount_type: 'percent', discount_value: 15 },
+  });
+
+  const updated = await apiRequest(`/api/promotions/admin/${created.data.id}`, {
+    method: 'PUT',
+    token: adminToken,
+    body: { name: 'New Name', discount_value: 25 },
+  });
+  assert.equal(updated.response.status, 200);
+  assert.equal(updated.data.success, true);
+
+  const row = db.prepare('SELECT * FROM promotions WHERE id = ?').get(created.data.id);
+  assert.equal(row.name, 'New Name');
+  assert.equal(row.discount_value, 25);
+});
+
+test('promotions: admin deletes a promotion', async () => {
+  const admin = createUser({ role: 'admin' });
+  const adminToken = createAccessToken(admin);
+
+  const created = await apiRequest('/api/promotions/admin', {
+    method: 'POST',
+    token: adminToken,
+    body: { name: 'To Delete', type: 'flash_sale', discount_type: 'percent', discount_value: 10 },
+  });
+
+  const del = await apiRequest(`/api/promotions/admin/${created.data.id}`, {
+    method: 'DELETE',
+    token: adminToken,
+  });
+  assert.equal(del.response.status, 200);
+  assert.equal(del.data.success, true);
+
+  const row = db.prepare('SELECT * FROM promotions WHERE id = ?').get(created.data.id);
+  assert.equal(row, undefined);
+});
+
+test('promotions: non-admin can GET /api/promotions/active', async () => {
+  const admin = createUser({ role: 'admin' });
+  const adminToken = createAccessToken(admin);
+  const user = createUser();
+  const userToken = createAccessToken(user);
+
+  // Create an active promotion (no start/end constraints)
+  await apiRequest('/api/promotions/admin', {
+    method: 'POST',
+    token: adminToken,
+    body: {
+      name: 'Active Promo',
+      type: 'flash_sale',
+      discount_type: 'percent',
+      discount_value: 10,
+      applies_to: 'all',
+    },
+  });
+
+  const res = await apiRequest('/api/promotions/active', { token: userToken });
+  assert.equal(res.response.status, 200);
+  assert.ok(Array.isArray(res.data));
+});
+
+test('promotions: non-admin cannot access admin endpoints', async () => {
+  const user = createUser();
+  const userToken = createAccessToken(user);
+
+  const list = await apiRequest('/api/promotions/admin', { token: userToken });
+  assert.equal(list.response.status, 403);
+
+  const create = await apiRequest('/api/promotions/admin', {
+    method: 'POST',
+    token: userToken,
+    body: { name: 'Hack', type: 'flash_sale', discount_type: 'percent', discount_value: 99 },
+  });
+  assert.equal(create.response.status, 403);
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PURCHASE WISHLIST
+// ═══════════════════════════════════════════════════════════════════════════
+
+test('wishlist: add item to wishlist', async () => {
+  const production = createProduction({ purchase_mode: 'production', purchase_price: 20 });
+  const user = createUser();
+  const token = createAccessToken(user);
+
+  const res = await apiRequest('/api/wishlist', {
+    method: 'POST',
+    token,
+    body: { target_type: 'production', target_id: production.id },
+  });
+  assert.equal(res.response.status, 201);
+  assert.equal(res.data.success, true);
+});
+
+test('wishlist: list wishlist items', async () => {
+  const production = createProduction({ purchase_mode: 'production', purchase_price: 20 });
+  const user = createUser();
+  const token = createAccessToken(user);
+
+  await apiRequest('/api/wishlist', {
+    method: 'POST',
+    token,
+    body: { target_type: 'production', target_id: production.id },
+  });
+
+  const res = await apiRequest('/api/wishlist', { token });
+  assert.equal(res.response.status, 200);
+  assert.ok(Array.isArray(res.data));
+  assert.equal(res.data.length, 1);
+  assert.equal(res.data[0].target_type, 'production');
+  assert.equal(Number(res.data[0].target_id), Number(production.id));
+});
+
+test('wishlist: remove from wishlist', async () => {
+  const production = createProduction({ purchase_mode: 'production', purchase_price: 20 });
+  const user = createUser();
+  const token = createAccessToken(user);
+
+  await apiRequest('/api/wishlist', {
+    method: 'POST',
+    token,
+    body: { target_type: 'production', target_id: production.id },
+  });
+
+  const del = await apiRequest(`/api/wishlist/production/${production.id}`, {
+    method: 'DELETE',
+    token,
+  });
+  assert.equal(del.response.status, 200);
+  assert.equal(del.data.success, true);
+
+  const list = await apiRequest('/api/wishlist', { token });
+  assert.equal(list.data.length, 0);
+});
+
+test('wishlist: reject duplicate addition (returns already_exists)', async () => {
+  const production = createProduction({ purchase_mode: 'production', purchase_price: 20 });
+  const user = createUser();
+  const token = createAccessToken(user);
+
+  await apiRequest('/api/wishlist', {
+    method: 'POST',
+    token,
+    body: { target_type: 'production', target_id: production.id },
+  });
+
+  const dup = await apiRequest('/api/wishlist', {
+    method: 'POST',
+    token,
+    body: { target_type: 'production', target_id: production.id },
+  });
+  assert.equal(dup.response.status, 200);
+  assert.equal(dup.data.already_exists, true);
+});
+
+test('wishlist: require auth', async () => {
+  const res = await apiRequest('/api/wishlist');
+  assert.equal(res.response.status, 401);
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// GIFTS
+// ═══════════════════════════════════════════════════════════════════════════
+
+test('gifts: create a gift for an episode', async () => {
+  const production = createProduction({ access_group: 'free' });
+  const episode = createEpisode({ production_id: production.id, access_group: 'free' });
+  const sender = createUser();
+  const senderToken = createAccessToken(sender);
+
+  const res = await apiRequest('/api/gifts/create', {
+    method: 'POST',
+    token: senderToken,
+    body: { gift_type: 'episode', target_id: episode.id, message: 'Enjoy!' },
+  });
+  assert.equal(res.response.status, 200);
+  assert.equal(res.data.success, true);
+  assert.ok(res.data.code);
+  assert.match(res.data.code, /^GIFT-/);
+  assert.equal(res.data.gift_type, 'episode');
+});
+
+test('gifts: redeem a gift code creates entitlement', async () => {
+  const production = createProduction({ access_group: 'free' });
+  const episode = createEpisode({ production_id: production.id, access_group: 'free' });
+  const sender = createUser();
+  const senderToken = createAccessToken(sender);
+  const recipient = createUser();
+  const recipientToken = createAccessToken(recipient);
+
+  const created = await apiRequest('/api/gifts/create', {
+    method: 'POST',
+    token: senderToken,
+    body: { gift_type: 'episode', target_id: episode.id },
+  });
+
+  const redeemed = await apiRequest('/api/gifts/redeem', {
+    method: 'POST',
+    token: recipientToken,
+    body: { code: created.data.code },
+  });
+  assert.equal(redeemed.response.status, 200);
+  assert.equal(redeemed.data.success, true);
+  assert.equal(redeemed.data.gift_type, 'episode');
+
+  const entitlement = db.prepare(
+    'SELECT * FROM content_entitlements WHERE user_id = ? AND target_type = ? AND target_id = ?'
+  ).get(recipient.id, 'episode', episode.id);
+  assert.ok(entitlement);
+});
+
+test('gifts: list sent gifts', async () => {
+  const production = createProduction({ access_group: 'free' });
+  const episode = createEpisode({ production_id: production.id, access_group: 'free' });
+  const sender = createUser();
+  const senderToken = createAccessToken(sender);
+
+  await apiRequest('/api/gifts/create', {
+    method: 'POST',
+    token: senderToken,
+    body: { gift_type: 'episode', target_id: episode.id },
+  });
+
+  const res = await apiRequest('/api/gifts/sent', { token: senderToken });
+  assert.equal(res.response.status, 200);
+  assert.ok(Array.isArray(res.data));
+  assert.equal(res.data.length, 1);
+  assert.equal(res.data[0].gift_type, 'episode');
+});
+
+test('gifts: list received gifts', async () => {
+  const production = createProduction({ access_group: 'free' });
+  const episode = createEpisode({ production_id: production.id, access_group: 'free' });
+  const sender = createUser();
+  const senderToken = createAccessToken(sender);
+  const recipient = createUser();
+  const recipientToken = createAccessToken(recipient);
+
+  const created = await apiRequest('/api/gifts/create', {
+    method: 'POST',
+    token: senderToken,
+    body: { gift_type: 'episode', target_id: episode.id },
+  });
+
+  await apiRequest('/api/gifts/redeem', {
+    method: 'POST',
+    token: recipientToken,
+    body: { code: created.data.code },
+  });
+
+  const res = await apiRequest('/api/gifts/received', { token: recipientToken });
+  assert.equal(res.response.status, 200);
+  assert.ok(Array.isArray(res.data));
+  assert.equal(res.data.length, 1);
+});
+
+test('gifts: reject expired gift code', async () => {
+  const production = createProduction({ access_group: 'free' });
+  const episode = createEpisode({ production_id: production.id, access_group: 'free' });
+  const sender = createUser();
+  const senderToken = createAccessToken(sender);
+  const recipient = createUser();
+  const recipientToken = createAccessToken(recipient);
+
+  const created = await apiRequest('/api/gifts/create', {
+    method: 'POST',
+    token: senderToken,
+    body: { gift_type: 'episode', target_id: episode.id },
+  });
+
+  // Manually expire the gift code in the database
+  db.prepare("UPDATE gift_codes SET expires_at = datetime('now', '-1 day') WHERE code = ?")
+    .run(created.data.code);
+
+  const redeemed = await apiRequest('/api/gifts/redeem', {
+    method: 'POST',
+    token: recipientToken,
+    body: { code: created.data.code },
+  });
+  assert.equal(redeemed.response.status, 404);
+});
+
+test('gifts: reject already-redeemed gift code', async () => {
+  const production = createProduction({ access_group: 'free' });
+  const episode = createEpisode({ production_id: production.id, access_group: 'free' });
+  const sender = createUser();
+  const senderToken = createAccessToken(sender);
+  const recipient1 = createUser();
+  const recipient1Token = createAccessToken(recipient1);
+  const recipient2 = createUser();
+  const recipient2Token = createAccessToken(recipient2);
+
+  const created = await apiRequest('/api/gifts/create', {
+    method: 'POST',
+    token: senderToken,
+    body: { gift_type: 'episode', target_id: episode.id },
+  });
+
+  await apiRequest('/api/gifts/redeem', {
+    method: 'POST',
+    token: recipient1Token,
+    body: { code: created.data.code },
+  });
+
+  const second = await apiRequest('/api/gifts/redeem', {
+    method: 'POST',
+    token: recipient2Token,
+    body: { code: created.data.code },
+  });
+  assert.equal(second.response.status, 404);
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// BUNDLES
+// ═══════════════════════════════════════════════════════════════════════════
+
+test('bundles: admin creates a bundle', async () => {
+  const admin = createUser({ role: 'admin' });
+  const adminToken = createAccessToken(admin);
+
+  const res = await apiRequest('/api/bundles/admin', {
+    method: 'POST',
+    token: adminToken,
+    body: {
+      name: 'Buy 3 Pay 2',
+      bundle_type: 'quantity',
+      buy_count: 3,
+      pay_count: 2,
+    },
+  });
+  assert.equal(res.response.status, 201);
+  assert.equal(res.data.success, true);
+  assert.ok(res.data.id);
+
+  const row = db.prepare('SELECT * FROM bundles WHERE id = ?').get(res.data.id);
+  assert.equal(row.name, 'Buy 3 Pay 2');
+  assert.equal(row.bundle_type, 'quantity');
+});
+
+test('bundles: user lists available bundles', async () => {
+  const admin = createUser({ role: 'admin' });
+  const adminToken = createAccessToken(admin);
+  const user = createUser();
+  const userToken = createAccessToken(user);
+
+  await apiRequest('/api/bundles/admin', {
+    method: 'POST',
+    token: adminToken,
+    body: { name: 'Available Bundle', bundle_type: 'quantity', buy_count: 3, pay_count: 2 },
+  });
+
+  const res = await apiRequest('/api/bundles/available', { token: userToken });
+  assert.equal(res.response.status, 200);
+  assert.ok(Array.isArray(res.data));
+  assert.ok(res.data.length >= 1);
+  assert.equal(res.data[0].name, 'Available Bundle');
+});
+
+test('bundles: admin deletes a bundle', async () => {
+  const admin = createUser({ role: 'admin' });
+  const adminToken = createAccessToken(admin);
+
+  const created = await apiRequest('/api/bundles/admin', {
+    method: 'POST',
+    token: adminToken,
+    body: { name: 'To Delete Bundle', bundle_type: 'quantity', buy_count: 3, pay_count: 2 },
+  });
+
+  const del = await apiRequest(`/api/bundles/admin/${created.data.id}`, {
+    method: 'DELETE',
+    token: adminToken,
+  });
+  assert.equal(del.response.status, 200);
+  assert.equal(del.data.success, true);
+
+  const row = db.prepare('SELECT * FROM bundles WHERE id = ?').get(created.data.id);
+  assert.equal(row, undefined);
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// WATCH PARTY
+// ═══════════════════════════════════════════════════════════════════════════
+
+test('watch party: create a watch party', async () => {
+  const production = createProduction({ access_group: 'free' });
+  const episode = createEpisode({ production_id: production.id, access_group: 'free' });
+  const host = createUser();
+  const hostToken = createAccessToken(host);
+
+  const res = await apiRequest('/api/watch-party/create', {
+    method: 'POST',
+    token: hostToken,
+    body: { episode_id: episode.id, max_participants: 5 },
+  });
+  assert.equal(res.response.status, 201);
+  assert.equal(res.data.success, true);
+  assert.ok(res.data.party_id);
+  assert.ok(res.data.invite_code);
+  assert.equal(res.data.episode_title, episode.title);
+});
+
+test('watch party: join a watch party', async () => {
+  const production = createProduction({ access_group: 'free' });
+  const episode = createEpisode({ production_id: production.id, access_group: 'free' });
+  const host = createUser();
+  const hostToken = createAccessToken(host);
+  const guest = createUser();
+  const guestToken = createAccessToken(guest);
+
+  const created = await apiRequest('/api/watch-party/create', {
+    method: 'POST',
+    token: hostToken,
+    body: { episode_id: episode.id },
+  });
+
+  const joined = await apiRequest(`/api/watch-party/${created.data.invite_code}/join`, {
+    method: 'POST',
+    token: guestToken,
+  });
+  assert.equal(joined.response.status, 200);
+  assert.equal(joined.data.success, true);
+  assert.equal(joined.data.party_id, created.data.party_id);
+});
+
+test('watch party: send messages', async () => {
+  const production = createProduction({ access_group: 'free' });
+  const episode = createEpisode({ production_id: production.id, access_group: 'free' });
+  const host = createUser();
+  const hostToken = createAccessToken(host);
+
+  const created = await apiRequest('/api/watch-party/create', {
+    method: 'POST',
+    token: hostToken,
+    body: { episode_id: episode.id },
+  });
+
+  const msg = await apiRequest(`/api/watch-party/${created.data.invite_code}/message`, {
+    method: 'POST',
+    token: hostToken,
+    body: { message: 'Hello everyone!' },
+  });
+  assert.equal(msg.response.status, 201);
+  assert.equal(msg.data.success, true);
+  assert.equal(msg.data.message, 'Hello everyone!');
+  assert.ok(msg.data.message_id);
+});
+
+test('watch party: leave party', async () => {
+  const production = createProduction({ access_group: 'free' });
+  const episode = createEpisode({ production_id: production.id, access_group: 'free' });
+  const host = createUser();
+  const hostToken = createAccessToken(host);
+  const guest = createUser();
+  const guestToken = createAccessToken(guest);
+
+  const created = await apiRequest('/api/watch-party/create', {
+    method: 'POST',
+    token: hostToken,
+    body: { episode_id: episode.id },
+  });
+
+  await apiRequest(`/api/watch-party/${created.data.invite_code}/join`, {
+    method: 'POST',
+    token: guestToken,
+  });
+
+  const left = await apiRequest(`/api/watch-party/${created.data.invite_code}/leave`, {
+    method: 'POST',
+    token: guestToken,
+  });
+  assert.equal(left.response.status, 200);
+  assert.equal(left.data.success, true);
+
+  // Verify participant has left_at set
+  const participant = db.prepare(
+    'SELECT * FROM watch_party_participants WHERE party_id = ? AND user_id = ?'
+  ).get(created.data.party_id, guest.id);
+  assert.ok(participant.left_at);
+});
+
+test('watch party: end party (host only)', async () => {
+  const production = createProduction({ access_group: 'free' });
+  const episode = createEpisode({ production_id: production.id, access_group: 'free' });
+  const host = createUser();
+  const hostToken = createAccessToken(host);
+  const guest = createUser();
+  const guestToken = createAccessToken(guest);
+
+  const created = await apiRequest('/api/watch-party/create', {
+    method: 'POST',
+    token: hostToken,
+    body: { episode_id: episode.id },
+  });
+
+  // Non-host cannot end
+  const nonHostEnd = await apiRequest(`/api/watch-party/${created.data.invite_code}/end`, {
+    method: 'PUT',
+    token: guestToken,
+  });
+  assert.equal(nonHostEnd.response.status, 403);
+
+  // Host can end
+  const hostEnd = await apiRequest(`/api/watch-party/${created.data.invite_code}/end`, {
+    method: 'PUT',
+    token: hostToken,
+  });
+  assert.equal(hostEnd.response.status, 200);
+  assert.equal(hostEnd.data.success, true);
+
+  const party = db.prepare('SELECT * FROM watch_parties WHERE id = ?').get(created.data.party_id);
+  assert.equal(party.status, 'ended');
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TIME-LIMITED CONTENT
+// ═══════════════════════════════════════════════════════════════════════════
+
+test('time-limited: episode with available_from in the future is inaccessible', async () => {
+  const production = createProduction({ access_group: 'free' });
+  const episode = createEpisode({ production_id: production.id, access_group: 'free' });
+  const user = createUser();
+  const token = createAccessToken(user);
+
+  // Set available_from to far in the future
+  db.prepare("UPDATE episodes SET available_from = datetime('now', '+30 days') WHERE id = ?")
+    .run(episode.id);
+
+  const res = await apiRequest(`/api/episodes/${episode.id}`, { token });
+  assert.equal(res.response.status, 200);
+  assert.equal(res.data.has_access, false);
+  // youtube_video_id should be hidden when access is denied
+  assert.equal(res.data.youtube_video_id, undefined);
+});
+
+test('time-limited: episode with available_until in the past is inaccessible', async () => {
+  const production = createProduction({ access_group: 'free' });
+  const episode = createEpisode({ production_id: production.id, access_group: 'free' });
+  const user = createUser();
+  const token = createAccessToken(user);
+
+  // Set available_until to the past
+  db.prepare("UPDATE episodes SET available_until = datetime('now', '-1 day') WHERE id = ?")
+    .run(episode.id);
+
+  const res = await apiRequest(`/api/episodes/${episode.id}`, { token });
+  assert.equal(res.response.status, 200);
+  assert.equal(res.data.has_access, false);
+  assert.equal(res.data.youtube_video_id, undefined);
+});
+
+test('time-limited: episode within the availability window is accessible', async () => {
+  const production = createProduction({ access_group: 'free' });
+  const episode = createEpisode({ production_id: production.id, access_group: 'free' });
+  const user = createUser();
+  const token = createAccessToken(user);
+
+  // Set a window that includes now
+  db.prepare(
+    "UPDATE episodes SET available_from = datetime('now', '-1 day'), available_until = datetime('now', '+30 days') WHERE id = ?"
+  ).run(episode.id);
+
+  const res = await apiRequest(`/api/episodes/${episode.id}`, { token });
+  assert.equal(res.response.status, 200);
+  assert.equal(res.data.has_access, true);
+  assert.ok(res.data.youtube_video_id);
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// DASHBOARD NEW ENDPOINTS
+// ═══════════════════════════════════════════════════════════════════════════
+
+test('dashboard: admin can access /api/admin/dashboard/revenue', async () => {
+  const admin = createUser({ role: 'admin' });
+  const adminToken = createAccessToken(admin);
+
+  const res = await apiRequest('/api/admin/dashboard/revenue', { token: adminToken });
+  assert.equal(res.response.status, 200);
+  assert.ok(res.data.subscriptions !== undefined);
+  assert.ok(res.data.purchases !== undefined);
+});
+
+test('dashboard: admin can access /api/admin/dashboard/retention', async () => {
+  const admin = createUser({ role: 'admin' });
+  const adminToken = createAccessToken(admin);
+
+  const res = await apiRequest('/api/admin/dashboard/retention', { token: adminToken });
+  assert.equal(res.response.status, 200);
+  assert.ok('total_ever_subscribed' in res.data);
+  assert.ok('renewals' in res.data);
+  assert.ok('renewal_rate' in res.data);
+  assert.ok('active_subscribers' in res.data);
+  assert.ok('churned' in res.data);
+});
+
+test('dashboard: admin can access /api/admin/dashboard/top-content', async () => {
+  const admin = createUser({ role: 'admin' });
+  const adminToken = createAccessToken(admin);
+
+  const res = await apiRequest('/api/admin/dashboard/top-content', { token: adminToken });
+  assert.equal(res.response.status, 200);
+  assert.ok(Array.isArray(res.data.episodes));
+  assert.ok(Array.isArray(res.data.productions));
+});
+
+test('dashboard: admin can access /api/admin/dashboard/conversion', async () => {
+  const admin = createUser({ role: 'admin' });
+  const adminToken = createAccessToken(admin);
+
+  const res = await apiRequest('/api/admin/dashboard/conversion', { token: adminToken });
+  assert.equal(res.response.status, 200);
+  assert.ok('total_users' in res.data);
+  assert.ok('free_only' in res.data);
+  assert.ok('ever_subscribed' in res.data);
+  assert.ok('ever_purchased' in res.data);
+  assert.ok('subscription_rate' in res.data);
+});
+
+test('dashboard: non-admin is blocked from /api/admin/dashboard/revenue', async () => {
+  const user = createUser();
+  const userToken = createAccessToken(user);
+
+  const res = await apiRequest('/api/admin/dashboard/revenue', { token: userToken });
+  assert.equal(res.response.status, 403);
+});
+
+test('dashboard: non-admin is blocked from /api/admin/dashboard/retention', async () => {
+  const user = createUser();
+  const userToken = createAccessToken(user);
+
+  const res = await apiRequest('/api/admin/dashboard/retention', { token: userToken });
+  assert.equal(res.response.status, 403);
+});
+
+test('dashboard: non-admin is blocked from /api/admin/dashboard/top-content', async () => {
+  const user = createUser();
+  const userToken = createAccessToken(user);
+
+  const res = await apiRequest('/api/admin/dashboard/top-content', { token: userToken });
+  assert.equal(res.response.status, 403);
+});
+
+test('dashboard: non-admin is blocked from /api/admin/dashboard/conversion', async () => {
+  const user = createUser();
+  const userToken = createAccessToken(user);
+
+  const res = await apiRequest('/api/admin/dashboard/conversion', { token: userToken });
+  assert.equal(res.response.status, 403);
 });

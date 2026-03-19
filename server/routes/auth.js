@@ -170,15 +170,21 @@ router.get('/discord', (req, res) => {
     return redirectWithError(res, 'oauth_not_configured');
   }
 
-  const state = crypto.randomBytes(24).toString('hex');
-  res.cookie(OAUTH_STATE_COOKIE, state, oauthCookieOptions(OAUTH_STATE_TTL_MS));
+  const csrfToken = crypto.randomBytes(24).toString('hex');
+  res.cookie(OAUTH_STATE_COOKIE, csrfToken, oauthCookieOptions(OAUTH_STATE_TTL_MS));
+
+  // Encode optional referral code alongside the CSRF token in state
+  const ref = String(req.query.ref || '').trim();
+  const statePayload = ref
+    ? Buffer.from(JSON.stringify({ csrf: csrfToken, ref })).toString('base64url')
+    : csrfToken;
 
   const params = new URLSearchParams({
     client_id: process.env.DISCORD_CLIENT_ID,
     redirect_uri: process.env.DISCORD_REDIRECT_URI,
     response_type: 'code',
     scope: 'identify',
-    state,
+    state: statePayload,
   });
 
   res.redirect(`https://discord.com/api/oauth2/authorize?${params}`);
@@ -195,7 +201,21 @@ router.get('/discord/callback', async (req, res) => {
   if (!code) {
     return redirectWithError(res, 'no_code');
   }
-  if (!state || !expectedState || String(state) !== String(expectedState)) {
+
+  // Parse state: may be a plain CSRF token or a base64url-encoded JSON { csrf, ref }
+  let csrfFromState = String(state || '');
+  let referralCode = '';
+  try {
+    const parsed = JSON.parse(Buffer.from(csrfFromState, 'base64url').toString());
+    if (parsed && typeof parsed.csrf === 'string') {
+      csrfFromState = parsed.csrf;
+      referralCode = String(parsed.ref || '').trim();
+    }
+  } catch {
+    // Not JSON — plain CSRF token, keep as-is
+  }
+
+  if (!state || !expectedState || csrfFromState !== String(expectedState)) {
     return redirectWithError(res, 'invalid_state');
   }
 
@@ -244,6 +264,29 @@ router.get('/discord/callback', async (req, res) => {
       `).run(discordUser.id, discordUser.username, avatar, role);
 
       user = db.prepare('SELECT * FROM users WHERE id = ?').get(result.lastInsertRowid);
+
+      // Process referral if a valid referral code was provided
+      if (referralCode) {
+        try {
+          const referrer = db.prepare(
+            'SELECT id FROM users WHERE referral_code = ?'
+          ).get(referralCode);
+
+          if (referrer && referrer.id !== user.id) {
+            db.prepare(
+              'UPDATE users SET referred_by = ? WHERE id = ?'
+            ).run(referrer.id, user.id);
+
+            db.prepare(`
+              INSERT INTO referral_rewards (referrer_id, referred_id, reward_type, reward_value, applied)
+              VALUES (?, ?, 'bonus_days', 7, 0)
+            `).run(referrer.id, user.id);
+          }
+        } catch (refErr) {
+          console.error('Referral processing error:', refErr);
+          // Non-fatal — user creation succeeded, continue login flow
+        }
+      }
     } else {
       const avatar = discordUser.avatar
         ? `https://cdn.discordapp.com/avatars/${discordUser.id}/${discordUser.avatar}.png`
