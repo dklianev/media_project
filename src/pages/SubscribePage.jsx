@@ -216,9 +216,17 @@ export default function SubscribePage() {
                 const active = String(plan.id) === selectedPlanId;
                 const isPopular = !!plan.is_popular;
                 return (
-                  <motion.button
+                  <motion.div
                     key={plan.id}
+                    role="button"
+                    tabIndex={0}
                     onClick={() => handlePlanSelect(plan.id)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        handlePlanSelect(plan.id);
+                      }
+                    }}
                     className={`relative text-left rounded-2xl border p-5 transition-all duration-500 ${active
                       ? 'border-[var(--accent-gold)]/55 bg-[var(--accent-gold)]/12 glow-pulse animated-border shadow-[0_10px_30px_rgba(212,175,55,0.15)]'
                       : 'border-[var(--border)] bg-[var(--bg-card)] hover:border-[var(--border-light)] hover:shadow-lg'
@@ -266,7 +274,7 @@ export default function SubscribePage() {
                       <Gift className="w-3.5 h-3.5" />
                       Подари този план
                     </button>
-                  </motion.button>
+                  </motion.div>
                 );
               })}
             </div>
