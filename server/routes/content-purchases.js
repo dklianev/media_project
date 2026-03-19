@@ -9,6 +9,7 @@ import { createNotification } from '../utils/notifications.js';
 import { getCurrentSofiaDbTimestamp } from '../utils/sofiaTime.js';
 import {
   evaluateEpisodeAccess,
+  evaluateProductionAccess,
   getEpisodePurchaseConfig,
   getProductionPurchaseConfig,
   getUserPurchaseState,
@@ -127,7 +128,9 @@ function getPurchasableProduction(productionId) {
       p.purchase_mode,
       p.purchase_price,
       p.required_tier,
-      p.access_group
+      p.access_group,
+      p.available_from,
+      p.available_until
     FROM productions p
     WHERE p.id = ?
       AND p.is_active = 1
@@ -145,6 +148,8 @@ function getPurchasableEpisode(episodeId) {
       e.purchase_enabled,
       e.purchase_price,
       e.access_group,
+      e.available_from,
+      e.available_until,
       p.title as production_title,
       p.slug as production_slug,
       p.purchase_mode as production_purchase_mode,
@@ -180,8 +185,13 @@ function resolveCreateTarget(targetType, targetId, user) {
     }
 
     const purchaseConfig = getProductionPurchaseConfig(production);
+    const access = evaluateProductionAccess(production, user, purchaseState);
     if (!purchaseConfig.isEnabled) {
       return { error: 'Продукцията не може да се закупи отделно.', status: 400 };
+    }
+
+    if (!access.isAvailable) {
+      return { error: '??????????? ? ???????? ? ?????????? ?? ???? ?? ?????? ? ??????.', status: 400 };
     }
 
     if (hasProductionEntitlement(purchaseState, production.id)) {
@@ -222,6 +232,10 @@ function resolveCreateTarget(targetType, targetId, user) {
 
     if (!purchaseConfig.isEnabled) {
       return { error: 'Епизодът не може да се закупи отделно.', status: 400 };
+    }
+
+    if (!access.isAvailable) {
+      return { error: '???????? ?? ? ???????? ? ?????????? ?? ???? ?? ?????? ? ??????.', status: 400 };
     }
 
     if (access.isPurchased) {

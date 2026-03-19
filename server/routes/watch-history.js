@@ -25,6 +25,8 @@ function validateEpisodeAccess(episodeId, user) {
     SELECT e.id,
            e.production_id,
            e.access_group as episode_access_group,
+           e.available_from,
+           e.available_until,
            p.required_tier,
            p.access_group as production_access_group,
            p.available_from as production_available_from,
@@ -45,6 +47,8 @@ function validateEpisodeAccess(episodeId, user) {
     id: episode.id,
     production_id: episode.production_id,
     access_group: episode.episode_access_group,
+    available_from: episode.available_from,
+    available_until: episode.available_until,
     required_tier: episode.required_tier,
     production_access_group: episode.production_access_group,
     production_available_from: episode.production_available_from,
@@ -72,7 +76,8 @@ router.get('/', requireAuth, (req, res) => {
 
   const statement = db.prepare(`
     SELECT wh.episode_id, wh.progress_seconds, wh.last_watched_at,
-           e.title, e.thumbnail_url, e.episode_number, e.access_group, e.published_at,
+           e.id, e.title, e.thumbnail_url, e.episode_number, e.access_group, e.published_at,
+           e.available_from, e.available_until,
            p.id as production_id, p.title as production_title, p.slug as production_slug,
            p.required_tier, p.access_group as production_access_group,
            p.available_from as production_available_from,

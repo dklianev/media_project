@@ -5,7 +5,12 @@ import db from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
 import { createNotification } from '../utils/notifications.js';
 import { getCurrentSofiaDbTimestamp, getShiftedSofiaDbTimestamp } from '../utils/sofiaTime.js';
-import { getEpisodePurchaseConfig, getProductionPurchaseConfig } from '../utils/contentPurchases.js';
+import {
+  evaluateEpisodeAccess,
+  evaluateProductionAccess,
+  getEpisodePurchaseConfig,
+  getProductionPurchaseConfig,
+} from '../utils/contentPurchases.js';
 
 const router = Router();
 
@@ -54,18 +59,30 @@ router.post('/create', requireAuth, giftLimiter, (req, res) => {
 
     if (gift_type === 'episode') {
       if (!target_id) return res.status(400).json({ error: 'Моля посочете епизод.' });
+      const currentTimestamp = getCurrentSofiaDbTimestamp();
       const episode = db.prepare(`
         SELECT e.id, e.title, e.episode_number, e.purchase_price, e.purchase_enabled,
+               e.access_group, e.available_from, e.available_until,
                p.title as production_title, p.slug as production_slug,
-               p.purchase_mode as production_purchase_mode
+               p.purchase_mode as production_purchase_mode,
+               p.purchase_price as production_purchase_price,
+               p.required_tier,
+               p.access_group as production_access_group,
+               p.available_from as production_available_from,
+               p.available_until as production_available_until
         FROM episodes e
         JOIN productions p ON p.id = e.production_id
         WHERE e.id = ? AND e.is_active = 1 AND p.is_active = 1
-      `).get(target_id);
+          AND (e.published_at IS NULL OR e.published_at <= ?)
+      `).get(target_id, currentTimestamp);
       if (!episode) return res.status(404).json({ error: 'Епизодът не е намерен или не е активен.' });
       const epPurchase = getEpisodePurchaseConfig(episode, { purchase_mode: episode.production_purchase_mode });
       if (!epPurchase.isEnabled) {
         return res.status(400).json({ error: 'Този епизод не може да бъде закупен индивидуално и не може да бъде подарен.' });
+      }
+      const episodeAccess = evaluateEpisodeAccess(episode, req.user);
+      if (!episodeAccess.isAvailable) {
+        return res.status(400).json({ error: '???? ?????? ? ???????? ? ?????????? ?? ????? ?? ???? ?? ?????? ? ??????.' });
       }
       resolvedTargetId = episode.id;
       price = episode.purchase_price;
@@ -76,13 +93,18 @@ router.post('/create', requireAuth, giftLimiter, (req, res) => {
     } else if (gift_type === 'production') {
       if (!target_id) return res.status(400).json({ error: 'Моля посочете продукция.' });
       const production = db.prepare(`
-        SELECT id, title, slug, purchase_price, purchase_mode
+        SELECT id, title, slug, purchase_price, purchase_mode,
+               required_tier, access_group, available_from, available_until
         FROM productions WHERE id = ? AND is_active = 1
       `).get(target_id);
       if (!production) return res.status(404).json({ error: 'Продукцията не е намерена или не е активна.' });
       const prodPurchase = getProductionPurchaseConfig(production);
       if (!prodPurchase.isEnabled) {
         return res.status(400).json({ error: 'Тази продукция не може да бъде закупена и не може да бъде подарена.' });
+      }
+      const productionAccess = evaluateProductionAccess(production, req.user);
+      if (!productionAccess.isAvailable) {
+        return res.status(400).json({ error: '???? ????????? ? ???????? ? ?????????? ?? ????? ?? ???? ?? ?????? ? ??????.' });
       }
       resolvedTargetId = production.id;
       price = production.purchase_price;
@@ -120,6 +142,7 @@ router.post('/create', requireAuth, giftLimiter, (req, res) => {
 
       let referenceCode = null;
       let requestId = null;
+      let hasPendingRequestConflict = false;
 
       for (let attempt = 0; attempt < 15; attempt++) {
         referenceCode = generateReferenceCode(gift_type === 'episode' ? 'EPI' : 'PRO');
@@ -139,11 +162,22 @@ router.post('/create', requireAuth, giftLimiter, (req, res) => {
           requestId = result.lastInsertRowid;
           break;
         } catch (err) {
+          if (
+            err.message?.includes('idx_content_purchase_requests_pending_target')
+            || err.message?.includes('content_purchase_requests.user_id, content_purchase_requests.target_type, content_purchase_requests.target_id')
+          ) {
+            hasPendingRequestConflict = true;
+            break;
+          }
           if (err.code === 'SQLITE_CONSTRAINT_UNIQUE' || err.message?.includes('UNIQUE')) {
             continue;
           }
           throw err;
         }
+      }
+
+      if (hasPendingRequestConflict) {
+        return res.status(409).json({ error: 'Вече има активна заявка за подарък или покупка за това съдържание.' });
       }
 
       if (!requestId) {

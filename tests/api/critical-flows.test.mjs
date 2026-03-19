@@ -376,6 +376,56 @@ test('content purchase request creates pending production request and blocks dup
   assert.equal(Number(duplicate.data?.request?.target_id), Number(production.id));
 });
 
+test('content purchase request blocks unavailable production and episode targets', async () => {
+  const viewer = createUser({ character_name: 'Unavailable Purchase Viewer' });
+  const viewerToken = createAccessToken(viewer);
+  const production = createProduction({
+    title: 'Unavailable Purchase Production',
+    slug: 'unavailable-purchase-production',
+    access_group: 'free',
+    purchase_mode: 'production',
+    purchase_price: 22,
+    is_active: 1,
+  });
+  db.prepare("UPDATE productions SET available_from = datetime('now', '+5 days') WHERE id = ?")
+    .run(production.id);
+
+  const episodeProduction = createProduction({
+    title: 'Unavailable Episode Purchase Production',
+    slug: 'unavailable-episode-purchase-production',
+    access_group: 'free',
+    purchase_mode: 'episodes',
+    is_active: 1,
+  });
+  const episode = createEpisode({
+    production_id: episodeProduction.id,
+    title: 'Future Purchase Episode',
+    access_group: 'inherit',
+    purchase_enabled: 1,
+    purchase_price: 9.99,
+    is_active: 1,
+  });
+  db.prepare("UPDATE episodes SET available_from = datetime('now', '+5 days') WHERE id = ?")
+    .run(episode.id);
+
+  const blockedProduction = await apiRequest('/api/content-purchases', {
+    method: 'POST',
+    token: viewerToken,
+    body: { target_type: 'production', target_id: production.id },
+  });
+  assert.equal(blockedProduction.response.status, 400);
+
+  const blockedEpisode = await apiRequest('/api/content-purchases', {
+    method: 'POST',
+    token: viewerToken,
+    body: { target_type: 'episode', target_id: episode.id },
+  });
+  assert.equal(blockedEpisode.response.status, 400);
+
+  const purchaseCount = db.prepare('SELECT COUNT(*) as count FROM content_purchase_requests').get().count;
+  assert.equal(purchaseCount, 0);
+});
+
 test('production purchase confirm grants production entitlement, cancels covered episode requests and unlocks episode features', async () => {
   const production = createProduction({
     title: 'Feature Unlock Production',
@@ -876,6 +926,45 @@ test('watch-history update блокира заключен епизод и до�
   assert.equal(allowed.data?.success, true);
 });
 
+test('watch-history list keeps individually purchased locked episodes visible', async () => {
+  const production = createProduction({
+    title: 'Purchased History Production',
+    slug: 'purchased-history-production',
+    required_tier: 2,
+    access_group: 'subscription',
+    purchase_mode: 'episodes',
+    is_active: 1,
+  });
+  const episode = createEpisode({
+    production_id: production.id,
+    title: 'Purchased History Episode',
+    access_group: 'inherit',
+    purchase_enabled: 1,
+    purchase_price: 11,
+    is_active: 1,
+  });
+  const viewer = createUser({ character_name: 'Purchased History Viewer' });
+  const viewerToken = createAccessToken(viewer);
+
+  db.prepare(`
+    INSERT INTO content_entitlements (user_id, target_type, target_id)
+    VALUES (?, 'episode', ?)
+  `).run(viewer.id, episode.id);
+  db.prepare(`
+    INSERT INTO watch_history (user_id, episode_id, progress_seconds, last_watched_at)
+    VALUES (?, ?, ?, datetime('now'))
+  `).run(viewer.id, episode.id, 133);
+
+  const res = await apiRequest('/api/watch-history', {
+    method: 'GET',
+    token: viewerToken,
+  });
+  assert.equal(res.response.status, 200);
+  assert.equal(res.data?.length, 1);
+  assert.equal(Number(res.data?.[0]?.episode_id), Number(episode.id));
+  assert.equal(Number(res.data?.[0]?.progress_seconds), 133);
+});
+
 test('admin plan create валидира цена, ниво и продължителност', async () => {
   const admin = createUser({ role: 'admin', character_name: 'План Админ' });
   const adminToken = createAccessToken(admin);
@@ -1197,6 +1286,45 @@ test('comments routes изискват достъп до епизода', async 
   assert.equal(allowedGet.response.status, 200);
   assert.equal(allowedGet.data?.length, 1);
   assert.equal(allowedGet.data?.[0]?.content, 'Имам достъп');
+});
+
+test('secondary episode guards respect episode availability windows', async () => {
+  const viewer = createUser({ character_name: 'Availability Guard Viewer' });
+  const viewerToken = createAccessToken(viewer);
+  const production = createProduction({
+    title: 'Availability Guard Production',
+    slug: 'availability-guard-production',
+    access_group: 'free',
+    is_active: 1,
+  });
+  const episode = createEpisode({
+    production_id: production.id,
+    title: 'Availability Guard Episode',
+    access_group: 'free',
+    is_active: 1,
+  });
+  db.prepare("UPDATE episodes SET available_from = datetime('now', '+3 days') WHERE id = ?")
+    .run(episode.id);
+
+  const commentsRes = await apiRequest(`/api/comments/episode/${episode.id}`, {
+    method: 'GET',
+    token: viewerToken,
+  });
+  assert.equal(commentsRes.response.status, 403);
+
+  const reactionRes = await apiRequest(`/api/episodes/${episode.id}/react`, {
+    method: 'POST',
+    token: viewerToken,
+    body: { reaction_type: 'like' },
+  });
+  assert.equal(reactionRes.response.status, 403);
+
+  const historyRes = await apiRequest(`/api/watch-history/${episode.id}`, {
+    method: 'PUT',
+    token: viewerToken,
+    body: { progress_seconds: 45 },
+  });
+  assert.equal(historyRes.response.status, 403);
 });
 
 test('admin settings приема и публикува новите community keys', async () => {
@@ -2536,6 +2664,79 @@ test('gifts: create a gift for an episode creates pending purchase request', asy
   const pr = db.prepare('SELECT * FROM content_purchase_requests WHERE id = ?').get(gift.source_request_id);
   assert.equal(pr.status, 'pending');
   assert.equal(pr.final_price, 15);
+});
+
+test('gifts: create returns 409 when a pending request for the same target already exists', async () => {
+  const production = createProduction({ access_group: 'free', purchase_mode: 'episodes' });
+  const episode = createEpisode({ production_id: production.id, access_group: 'free', purchase_enabled: 1, purchase_price: 12 });
+  const sender = createUser();
+  const senderToken = createAccessToken(sender);
+
+  const first = await apiRequest('/api/gifts/create', {
+    method: 'POST',
+    token: senderToken,
+    body: { gift_type: 'episode', target_id: episode.id },
+  });
+  assert.equal(first.response.status, 201);
+
+  const second = await apiRequest('/api/gifts/create', {
+    method: 'POST',
+    token: senderToken,
+    body: { gift_type: 'episode', target_id: episode.id },
+  });
+  assert.equal(second.response.status, 409);
+  assert.match(second.data?.error || '', /активна заявка/i);
+});
+
+test('gifts: create blocks unpublished or unavailable targets', async () => {
+  const sender = createUser({ character_name: 'Gift Availability Sender' });
+  const senderToken = createAccessToken(sender);
+
+  const episodeProduction = createProduction({
+    title: 'Gift Future Episode Production',
+    slug: 'gift-future-episode-production',
+    access_group: 'free',
+    purchase_mode: 'episodes',
+    is_active: 1,
+  });
+  const futureEpisode = createEpisode({
+    production_id: episodeProduction.id,
+    title: 'Gift Future Episode',
+    access_group: 'inherit',
+    purchase_enabled: 1,
+    purchase_price: 7,
+    is_active: 1,
+  });
+  db.prepare("UPDATE episodes SET published_at = datetime('now', '+2 days') WHERE id = ?")
+    .run(futureEpisode.id);
+
+  const unavailableProduction = createProduction({
+    title: 'Gift Unavailable Production',
+    slug: 'gift-unavailable-production',
+    access_group: 'free',
+    purchase_mode: 'production',
+    purchase_price: 29,
+    is_active: 1,
+  });
+  db.prepare("UPDATE productions SET available_until = datetime('now', '-1 day') WHERE id = ?")
+    .run(unavailableProduction.id);
+
+  const futureEpisodeGift = await apiRequest('/api/gifts/create', {
+    method: 'POST',
+    token: senderToken,
+    body: { gift_type: 'episode', target_id: futureEpisode.id },
+  });
+  assert.equal(futureEpisodeGift.response.status, 404);
+
+  const unavailableProductionGift = await apiRequest('/api/gifts/create', {
+    method: 'POST',
+    token: senderToken,
+    body: { gift_type: 'production', target_id: unavailableProduction.id },
+  });
+  assert.equal(unavailableProductionGift.response.status, 400);
+
+  const giftCount = db.prepare('SELECT COUNT(*) as count FROM gift_codes').get().count;
+  assert.equal(giftCount, 0);
 });
 
 test('gifts: redeem requires payment confirmation', async () => {
