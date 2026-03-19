@@ -507,12 +507,7 @@ function confirmPurchase(req, res) {
         throw new Error('Съдържанието вече е отключено за този потребител.');
       }
 
-      db.prepare(`
-        INSERT INTO content_entitlements (user_id, target_type, target_id, source_request_id)
-        VALUES (?, ?, ?, ?)
-      `).run(request.user_id, request.target_type, request.target_id, request.id);
-
-      db.prepare(`
+      const updateResult = db.prepare(`
         UPDATE content_purchase_requests
         SET status = 'confirmed',
             confirmed_by = ?,
@@ -525,6 +520,15 @@ function confirmPurchase(req, res) {
         WHERE id = ?
           AND status = 'pending'
       `).run(req.user.id, getCurrentSofiaDbTimestamp(), request.id);
+
+      if (updateResult.changes === 0) {
+        throw new Error('Заявката вече е била обработена.');
+      }
+
+      db.prepare(`
+        INSERT INTO content_entitlements (user_id, target_type, target_id, source_request_id)
+        VALUES (?, ?, ?, ?)
+      `).run(request.user_id, request.target_type, request.target_id, request.id);
 
       if (request.target_type === 'production') {
         cancelCoveredEpisodeRequests(request.user_id, request.target_id, request.id);
@@ -545,7 +549,8 @@ function confirmPurchase(req, res) {
     });
     return res.json({ success: true });
   } catch (err) {
-    if (err.message === 'Съдържанието вече е отключено за този потребител.') {
+    if (err.message === 'Съдържанието вече е отключено за този потребител.'
+        || err.message === 'Заявката вече е била обработена.') {
       return res.status(400).json({ error: err.message });
     }
     return res.status(400).json({ error: 'Заявката не можа да бъде потвърдена.' });

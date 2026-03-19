@@ -1334,7 +1334,6 @@ router.delete('/admin/:id', requireAdmin, (req, res) => {
     db.prepare('DELETE FROM reactions WHERE episode_id = ?').run(episodeId);
     db.prepare('DELETE FROM watch_history WHERE episode_id = ?').run(episodeId);
     db.prepare("DELETE FROM content_entitlements WHERE target_type = 'episode' AND target_id = ?").run(episodeId);
-    db.prepare("DELETE FROM content_purchase_requests WHERE target_type = 'episode' AND target_id = ?").run(episodeId);
     db.prepare('DELETE FROM episodes WHERE id = ?').run(episodeId);
   });
   remove(req.params.id);
