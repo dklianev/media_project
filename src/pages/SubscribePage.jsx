@@ -8,6 +8,7 @@ import {
   Clock,
   Copy,
   Crown,
+  Gift,
   Sparkles,
   Tag,
   XCircle,
@@ -18,6 +19,7 @@ import { formatMoney } from '../utils/formatters';
 import { useToastContext } from '../context/ToastContext';
 import ScrollReveal from '../components/ScrollReveal';
 import ConfirmActionModal from '../components/ConfirmActionModal';
+import GiftModal from '../components/GiftModal';
 import PageBackground from '../components/PageBackground';
 
 function statusMeta(status) {
@@ -48,6 +50,7 @@ export default function SubscribePage() {
   const [cancellingId, setCancellingId] = useState(null);
   const [cancelModal, setCancelModal] = useState({ open: false, paymentId: null });
   const [currentStep, setCurrentStep] = useState(1);
+  const [giftModal, setGiftModal] = useState(null);
   const { showToast } = useToastContext();
 
   const refreshPayments = async () => {
@@ -255,6 +258,14 @@ export default function SubscribePage() {
                         ))}
                       </ul>
                     )}
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); setGiftModal({ planId: plan.id, targetTitle: plan.name, price: plan.price }); }}
+                      className="mt-4 w-full inline-flex items-center justify-center gap-2 rounded-xl border border-[var(--accent-gold)]/30 bg-[var(--accent-gold)]/8 px-3 py-2 text-xs font-medium text-[var(--accent-gold-light)] hover:bg-[var(--accent-gold)]/15 transition-colors"
+                    >
+                      <Gift className="w-3.5 h-3.5" />
+                      Подари този план
+                    </button>
                   </motion.button>
                 );
               })}
@@ -520,6 +531,17 @@ export default function SubscribePage() {
         onClose={() => setCancelModal({ open: false, paymentId: null })}
         onConfirm={cancelPayment}
       />
+
+      {giftModal && (
+        <GiftModal
+          open
+          onClose={() => setGiftModal(null)}
+          giftType="subscription"
+          planId={giftModal.planId}
+          targetTitle={giftModal.targetTitle}
+          price={giftModal.price}
+        />
+      )}
     </div >
   );
 }

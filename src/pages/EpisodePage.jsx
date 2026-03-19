@@ -8,6 +8,7 @@ import {
   Clock3,
   Crown,
   Eye,
+  Gift,
   Lock,
   ShoppingCart,
   SkipForward,
@@ -19,6 +20,7 @@ import { useAuth } from '../context/AuthContext';
 import AdBanner from '../components/AdBanner';
 import CommentsSection from '../components/CommentsSection';
 import ContentPurchaseModal from '../components/ContentPurchaseModal';
+import GiftModal from '../components/GiftModal';
 import EpisodeCard from '../components/EpisodeCard';
 import ReactionBar from '../components/ReactionBar';
 import ScrollReveal from '../components/ScrollReveal';
@@ -144,6 +146,8 @@ export default function EpisodePage() {
       cancelled = true;
     };
   }, [episode?.has_access, episode?.id]);
+
+  const [giftModal, setGiftModal] = useState(null);
 
   const isLocked = Boolean(episode && episode.has_access === false);
   const isLocalReady =
@@ -348,6 +352,16 @@ export default function EpisodePage() {
                             : `Купи продукцията${episode.production_purchase_price ? ` за ${formatMoney(episode.production_purchase_price)}` : ''}`}
                         </button>
                       )}
+                      {showEpisodePurchaseOffer && !episode.is_purchased_episode && !episode.has_pending_purchase && (
+                        <button
+                          type="button"
+                          onClick={() => setGiftModal({ giftType: 'episode', targetId: episode.id, targetTitle: `${episode.production_title} - ${episode.title}`, price: episode.purchase_price })}
+                          className="btn-outline inline-flex items-center gap-2"
+                        >
+                          <Gift className="w-4 h-4" />
+                          Подари епизода
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -517,6 +531,17 @@ export default function EpisodePage() {
         request={modalRequest}
         onClose={closePurchaseModal}
       />
+
+      {giftModal && (
+        <GiftModal
+          open
+          onClose={() => setGiftModal(null)}
+          giftType={giftModal.giftType}
+          targetId={giftModal.targetId}
+          targetTitle={giftModal.targetTitle}
+          price={giftModal.price}
+        />
+      )}
     </div>
   );
 }

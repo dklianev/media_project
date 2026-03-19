@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   Clapperboard,
   Clock3,
+  Gift,
   Lock,
   Play,
   ShoppingCart,
@@ -15,6 +16,7 @@ import {
 import { api } from '../utils/api';
 import AccessGate from '../components/AccessGate';
 import ContentPurchaseModal from '../components/ContentPurchaseModal';
+import GiftModal from '../components/GiftModal';
 import ScrollReveal from '../components/ScrollReveal';
 import { StaggerContainer, StaggerItem } from '../components/StaggerContainer';
 import PageBackground from '../components/PageBackground';
@@ -95,6 +97,8 @@ export default function ProductionPage() {
   } = useContentPurchaseFlow({
     onResolved: loadProduction,
   });
+
+  const [giftModal, setGiftModal] = useState(null);
 
   const hasAnyAccessibleEpisode = useMemo(
     () => (production?.episodes || []).some((episode) => episode.has_access),
@@ -273,6 +277,17 @@ export default function ProductionPage() {
                     </button>
                   )}
 
+                  {!production.is_purchased && !production.has_pending_purchase && production.purchase_price > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setGiftModal({ giftType: 'production', targetId: production.id, targetTitle: production.title, price: production.purchase_price })}
+                      className="btn-outline inline-flex items-center gap-2"
+                    >
+                      <Gift className="w-4 h-4" />
+                      Подари
+                    </button>
+                  )}
+
                   {production.has_pending_purchase && !production.is_purchased && (
                     <span className="text-sm text-[var(--text-secondary)]">
                       Има чакаща заявка за тази продукция.
@@ -397,6 +412,17 @@ export default function ProductionPage() {
         request={modalRequest}
         onClose={closePurchaseModal}
       />
+
+      {giftModal && (
+        <GiftModal
+          open
+          onClose={() => setGiftModal(null)}
+          giftType={giftModal.giftType}
+          targetId={giftModal.targetId}
+          targetTitle={giftModal.targetTitle}
+          price={giftModal.price}
+        />
+      )}
     </div>
   );
 }
