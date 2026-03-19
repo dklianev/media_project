@@ -9,6 +9,7 @@ import { useToastContext } from '../../context/ToastContext';
 import { useUploadActivity } from '../../context/UploadActivityContext';
 import { getProductionAccessGroup } from '../../utils/accessGroups';
 import { useUnsavedChanges } from '../../hooks/useUnsavedChanges';
+import { formatMoney } from '../../utils/formatters';
 
 const ACCESS_OPTIONS = [
   { value: 'free', label: 'Безплатно' },
@@ -18,6 +19,17 @@ const ACCESS_OPTIONS = [
 
 function accessLabel(value) {
   return ACCESS_OPTIONS.find((item) => item.value === value)?.label || 'С абонамент';
+}
+
+const PURCHASE_MODE_OPTIONS = [
+  { value: 'none', label: 'Без продажба' },
+  { value: 'production', label: 'Цяла продукция' },
+  { value: 'episodes', label: 'По епизоди' },
+  { value: 'both', label: 'И двете' },
+];
+
+function purchaseModeLabel(value) {
+  return PURCHASE_MODE_OPTIONS.find((item) => item.value === value)?.label || 'Без продажба';
 }
 
 export default function ManageProductions() {
@@ -47,6 +59,8 @@ export default function ManageProductions() {
     genres: '',
     access_group: 'free',
     required_tier: '1',
+    purchase_mode: 'none',
+    purchase_price: '',
     sort_order: '0',
     is_active: true,
     thumbnail_url: '',
@@ -115,6 +129,8 @@ export default function ManageProductions() {
       genres: '',
       access_group: 'free',
       required_tier: '1',
+      purchase_mode: 'none',
+      purchase_price: '',
       sort_order: '0',
       is_active: true,
       thumbnail_url: '',
@@ -144,6 +160,8 @@ export default function ManageProductions() {
       })(),
       access_group: getProductionAccessGroup(production),
       required_tier: String(production.required_tier || 1),
+      purchase_mode: production.purchase_mode || 'none',
+      purchase_price: production.purchase_price ? String(production.purchase_price) : '',
       sort_order: String(production.sort_order || 0),
       is_active: !!production.is_active,
       thumbnail_url: production.thumbnail_url || '',
@@ -164,6 +182,8 @@ export default function ManageProductions() {
     fd.append('description', form.description);
     fd.append('access_group', form.access_group);
     fd.append('required_tier', form.access_group === 'subscription' ? form.required_tier : '0');
+    fd.append('purchase_mode', form.purchase_mode);
+    fd.append('purchase_price', form.purchase_price);
     fd.append('sort_order', form.sort_order);
     fd.append('is_active', String(form.is_active));
     fd.append('thumbnail_url', form.thumbnail_url || '');
@@ -276,6 +296,31 @@ export default function ManageProductions() {
               type="number"
               min="1"
               disabled={form.access_group !== 'subscription'}
+              className="input-dark disabled:opacity-55"
+            />
+          </div>
+          <div>
+            <label className="text-sm text-[var(--text-muted)] block mb-1">Режим на покупка</label>
+            <select
+              value={form.purchase_mode}
+              onChange={(e) => setForm({ ...form, purchase_mode: e.target.value })}
+              className="input-dark"
+            >
+              {PURCHASE_MODE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="text-sm text-[var(--text-muted)] block mb-1">Цена за цяла продукция <span className="text-xs opacity-70">(по желание)</span></label>
+            <input
+              value={form.purchase_price}
+              onChange={(e) => setForm({ ...form, purchase_price: e.target.value })}
+              placeholder="напр. 19.99"
+              type="number"
+              min="0"
+              step="0.01"
+              disabled={!['production', 'both'].includes(form.purchase_mode)}
               className="input-dark disabled:opacity-55"
             />
           </div>
@@ -513,6 +558,12 @@ export default function ManageProductions() {
                   )}
                   {!production.is_active && <span className="badge bg-[var(--danger)]/10 text-[var(--danger)] border border-[var(--danger)]/30 text-[10px]">Скрита</span>}
                 </div>
+                {production.purchase_mode !== 'none' && (
+                  <p className="text-xs text-[var(--accent-primary)] mt-1">
+                    {purchaseModeLabel(production.purchase_mode)}
+                    {production.purchase_price ? ` • ${formatMoney(production.purchase_price)}` : ''}
+                  </p>
+                )}
                 <p className="text-xs text-[var(--text-muted)]">/{production.slug}</p>
               </div>
               <div className="flex items-center gap-1">

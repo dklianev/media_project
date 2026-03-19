@@ -5,13 +5,9 @@ import { logAdminAction } from '../utils/audit.js';
 import { buildPageResult, parsePagination, toInt } from '../utils/pagination.js';
 import { getCurrentSofiaDbTimestamp } from '../utils/sofiaTime.js';
 import {
-  normalizeEpisodeGroup,
-  normalizeProductionGroup,
-  resolveProductionGroup,
-  hasGroupAccess,
-  resolveEffectiveGroup,
   isUserAdmin,
 } from '../utils/access.js';
+import { evaluateEpisodeAccess, getUserPurchaseState } from '../utils/contentPurchases.js';
 
 const router = Router();
 const COMMENT_STATUSES = new Set(['published', 'hidden', 'deleted']);
@@ -47,6 +43,7 @@ function validateEpisodeAccess(episodeId, user) {
   const statement = db.prepare(`
     SELECT
       e.id,
+      e.production_id,
       e.access_group as episode_access_group,
       e.published_at,
       e.is_active,
@@ -65,18 +62,15 @@ function validateEpisodeAccess(episodeId, user) {
     return { ok: false, status: 404, error: 'Епизодът не е намерен' };
   }
 
-  const effectiveGroup = resolveEffectiveGroup(
-    normalizeEpisodeGroup(episode.episode_access_group),
-    resolveProductionGroup(episode.production_access_group, episode.required_tier)
-  );
-  const hasAccess = hasGroupAccess(
-    effectiveGroup,
-    user?.tier_level || 0,
-    admin,
-    episode.required_tier || 0
-  );
+  const access = evaluateEpisodeAccess({
+    id: episode.id,
+    production_id: episode.production_id,
+    access_group: episode.episode_access_group,
+    required_tier: episode.required_tier,
+    production_access_group: episode.production_access_group,
+  }, user, getUserPurchaseState(user?.id));
 
-  if (!hasAccess) {
+  if (!access.hasAccess) {
     return {
       ok: false,
       status: 403,

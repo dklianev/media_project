@@ -7,9 +7,16 @@ import { logAdminAction } from '../utils/audit.js';
 import { normalizeManagedMediaUrl, registerUploadedMedia } from '../utils/mediaLibrary.js';
 import { getCurrentSofiaDbTimestamp } from '../utils/sofiaTime.js';
 import {
-  normalizeEpisodeGroup, normalizeProductionGroup, resolveProductionGroup,
-  hasGroupAccess, isUserAdmin,
+  normalizeProductionGroup,
+  resolveProductionGroup,
 } from '../utils/access.js';
+import {
+  enrichEpisodeForUser,
+  enrichProductionForUser,
+  getUserPurchaseState,
+  normalizePurchaseMode,
+  normalizePurchasePrice,
+} from '../utils/contentPurchases.js';
 
 const router = Router();
 const PROD_SORT_MAP = {
@@ -34,14 +41,12 @@ router.get('/', requireAuth, (req, res) => {
 
   const productions = db.prepare(`
     SELECT id, title, slug, description, thumbnail_url, cover_image_url,
-           required_tier, access_group, sort_order, created_at, genres
+           required_tier, access_group, sort_order, purchase_mode, purchase_price, created_at, genres
     FROM productions
     WHERE is_active = 1
     ORDER BY ${orderBy}
   `).all();
-
-  const userTier = req.user.tier_level || 0;
-  const isAdmin = req.user.role === 'admin' || req.user.role === 'superadmin';
+  const purchaseState = getUserPurchaseState(req.user.id);
 
   const result = productions.filter(item => {
     if (!genreFilter) return true;
@@ -54,12 +59,11 @@ router.get('/', requireAuth, (req, res) => {
     let parsedGenres = [];
     try { parsedGenres = JSON.parse(item.genres || '[]'); } catch { }
 
-    return {
+    return enrichProductionForUser({
       ...item,
       genres: parsedGenres,
       access_group: group,
-      has_access: hasGroupAccess(group, userTier, isAdmin, item.required_tier || 0),
-    };
+    }, req.user, purchaseState);
   });
 
   res.set('Cache-Control', 'private, max-age=15');
@@ -74,42 +78,39 @@ router.get('/:slug', requireAuth, (req, res) => {
     return res.status(404).json({ error: 'Продукцията не е намерена' });
   }
 
-  const userTier = req.user.tier_level || 0;
   const isAdmin = req.user.role === 'admin' || req.user.role === 'superadmin';
-  const productionGroup = resolveProductionGroup(production.access_group, production.required_tier);
-  const hasProductionAccess = hasGroupAccess(
-    productionGroup,
-    userTier,
-    isAdmin,
-    production.required_tier || 0
-  );
+  const purchaseState = getUserPurchaseState(req.user.id);
 
   const currentTimestamp = getCurrentSofiaDbTimestamp();
   const publishedFilter = isAdmin ? '' : 'AND (published_at IS NULL OR published_at <= ?)';
   const statement = db.prepare(`
-    SELECT id, title, description, thumbnail_url, episode_number,
-           access_group, published_at, created_at, ${isAdmin ? 'view_count,' : ''} is_active
+    SELECT episodes.id, episodes.title, episodes.description, episodes.thumbnail_url, episodes.episode_number,
+           episodes.access_group, episodes.purchase_enabled, episodes.purchase_price,
+           episodes.published_at, episodes.created_at,
+           p.purchase_mode as production_purchase_mode,
+           p.purchase_price as production_purchase_price,
+           ${isAdmin ? 'episodes.view_count as view_count,' : ''} episodes.is_active as is_active
     FROM episodes
-    WHERE production_id = ? AND is_active = 1 ${publishedFilter}
-    ORDER BY episode_number ASC, created_at ASC
+    JOIN productions p ON p.id = episodes.production_id
+    WHERE production_id = ? AND episodes.is_active = 1 ${publishedFilter}
+    ORDER BY episodes.episode_number ASC, episodes.created_at ASC
   `);
-  const episodes = (isAdmin ? statement.all(production.id) : statement.all(production.id, currentTimestamp)).map((episode) => {
-    const episodeGroupRaw = normalizeEpisodeGroup(episode.access_group);
-    const effectiveGroup = episodeGroupRaw === 'inherit' ? productionGroup : episodeGroupRaw;
-    return {
-      ...episode,
-      access_group: episodeGroupRaw,
-      effective_access_group: effectiveGroup,
-      has_access: hasGroupAccess(effectiveGroup, userTier, isAdmin, production.required_tier || 0),
-    };
-  });
-
-  res.json({
+  const baseProduction = {
     ...production,
-    access_group: productionGroup,
-    has_access: hasProductionAccess,
-    episodes,
-  });
+    purchase_mode: normalizePurchaseMode(production.purchase_mode),
+    purchase_price: normalizePurchasePrice(production.purchase_price, null),
+  };
+  const enrichedProduction = enrichProductionForUser(baseProduction, req.user, purchaseState);
+  const episodes = (isAdmin ? statement.all(production.id) : statement.all(production.id, currentTimestamp)).map((episode) => (
+    enrichEpisodeForUser({
+      ...episode,
+      production_id: production.id,
+      required_tier: production.required_tier,
+      production_access_group: production.access_group,
+    }, req.user, purchaseState)
+  ));
+
+  res.json({ ...enrichedProduction, episodes });
 });
 
 router.get('/admin/all', requireAdmin, (req, res) => {
@@ -151,6 +152,8 @@ router.get('/admin/all', requireAdmin, (req, res) => {
   `).all(...params, pageSize, offset).map((item) => ({
     ...item,
     access_group: resolveProductionGroup(item.access_group, item.required_tier),
+    purchase_mode: normalizePurchaseMode(item.purchase_mode),
+    purchase_price: normalizePurchasePrice(item.purchase_price, null),
   }));
 
   res.json(
@@ -177,6 +180,8 @@ router.post(
       description,
       required_tier,
       access_group,
+      purchase_mode,
+      purchase_price,
       sort_order,
       is_active,
       genres,
@@ -217,13 +222,22 @@ router.post(
 
     const group = resolveProductionGroup(access_group, required_tier);
     const tier = group === 'subscription' ? toInt(required_tier, 1) : 0;
+    const normalizedPurchaseMode = normalizePurchaseMode(purchase_mode);
+    const normalizedPurchasePrice =
+      normalizedPurchaseMode === 'production' || normalizedPurchaseMode === 'both'
+        ? normalizePurchasePrice(purchase_price, null)
+        : null;
+
+    if ((normalizedPurchaseMode === 'production' || normalizedPurchaseMode === 'both') && normalizedPurchasePrice === null) {
+      return res.status(400).json({ error: 'Посочете валидна цена за покупка на продукцията.' });
+    }
 
     const result = db.prepare(`
       INSERT INTO productions (
         title, slug, description, thumbnail_url, cover_image_url,
-        required_tier, access_group, sort_order, is_active, genres
+        required_tier, access_group, sort_order, purchase_mode, purchase_price, is_active, genres
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       title.trim(),
       slug,
@@ -233,6 +247,8 @@ router.post(
       tier,
       group,
       toInt(sort_order, 0),
+      normalizedPurchaseMode,
+      normalizedPurchasePrice,
       is_active === 'false' ? 0 : 1,
       genres || '[]'
     );
@@ -248,11 +264,18 @@ router.post(
         slug: production.slug,
         required_tier: production.required_tier,
         access_group: production.access_group,
+        purchase_mode: production.purchase_mode,
+        purchase_price: production.purchase_price,
         is_active: production.is_active,
         sort_order: production.sort_order,
       },
     });
-    res.status(201).json({ ...production, access_group: normalizeGroup(production.access_group) });
+    res.status(201).json({
+      ...production,
+      access_group: normalizeGroup(production.access_group),
+      purchase_mode: normalizePurchaseMode(production.purchase_mode),
+      purchase_price: normalizePurchasePrice(production.purchase_price, null),
+    });
     } catch (err) {
       next(err);
     }
@@ -280,6 +303,8 @@ router.put(
       description,
       required_tier,
       access_group,
+      purchase_mode,
+      purchase_price,
       sort_order,
       is_active,
       genres,
@@ -323,6 +348,20 @@ router.put(
       group === 'subscription'
         ? toInt(required_tier, existing.required_tier || 1)
         : 0;
+    const nextPurchaseMode = Object.prototype.hasOwnProperty.call(req.body || {}, 'purchase_mode')
+      ? normalizePurchaseMode(purchase_mode)
+      : normalizePurchaseMode(existing.purchase_mode);
+    const incomingPurchasePrice = Object.prototype.hasOwnProperty.call(req.body || {}, 'purchase_price')
+      ? normalizePurchasePrice(purchase_price, null)
+      : normalizePurchasePrice(existing.purchase_price, null);
+    const nextPurchasePrice =
+      nextPurchaseMode === 'production' || nextPurchaseMode === 'both'
+        ? incomingPurchasePrice
+        : null;
+
+    if ((nextPurchaseMode === 'production' || nextPurchaseMode === 'both') && nextPurchasePrice === null) {
+      return res.status(400).json({ error: 'Посочете валидна цена за покупка на продукцията.' });
+    }
 
     db.prepare(`
       UPDATE productions SET
@@ -333,6 +372,8 @@ router.put(
         required_tier = ?,
         access_group = ?,
         sort_order = ?,
+        purchase_mode = ?,
+        purchase_price = ?,
         is_active = ?,
         genres = ?,
         updated_at = datetime('now')
@@ -345,6 +386,8 @@ router.put(
       tier,
       group,
       toInt(sort_order, existing.sort_order),
+      nextPurchaseMode,
+      nextPurchasePrice,
       is_active === undefined ? existing.is_active : (is_active === 'false' ? 0 : 1),
       genres ?? existing.genres,
       req.params.id
@@ -362,6 +405,8 @@ router.put(
           slug: existing.slug,
           required_tier: existing.required_tier,
           access_group: resolveProductionGroup(existing.access_group, existing.required_tier),
+          purchase_mode: normalizePurchaseMode(existing.purchase_mode),
+          purchase_price: normalizePurchasePrice(existing.purchase_price, null),
           is_active: existing.is_active,
           sort_order: existing.sort_order,
         },
@@ -370,12 +415,19 @@ router.put(
           slug: updated.slug,
           required_tier: updated.required_tier,
           access_group: resolveProductionGroup(updated.access_group, updated.required_tier),
+          purchase_mode: normalizePurchaseMode(updated.purchase_mode),
+          purchase_price: normalizePurchasePrice(updated.purchase_price, null),
           is_active: updated.is_active,
           sort_order: updated.sort_order,
         },
       },
     });
-    res.json({ ...updated, access_group: resolveProductionGroup(updated.access_group, updated.required_tier) });
+    res.json({
+      ...updated,
+      access_group: resolveProductionGroup(updated.access_group, updated.required_tier),
+      purchase_mode: normalizePurchaseMode(updated.purchase_mode),
+      purchase_price: normalizePurchasePrice(updated.purchase_price, null),
+    });
     } catch (err) {
       next(err);
     }

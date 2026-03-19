@@ -38,6 +38,7 @@ const ManageProductions = lazy(() => import('./pages/admin/ManageProductions'));
 const ManageEpisodes = lazy(() => import('./pages/admin/ManageEpisodes'));
 const ManagePromoCodes = lazy(() => import('./pages/admin/ManagePromoCodes'));
 const ManagePayments = lazy(() => import('./pages/admin/ManagePayments'));
+const ManageContentPurchases = lazy(() => import('./pages/admin/ManageContentPurchases'));
 const ManageSettings = lazy(() => import('./pages/admin/ManageSettings'));
 const ManageAuditLogs = lazy(() => import('./pages/admin/ManageAuditLogs'));
 const ManageSupport = lazy(() => import('./pages/admin/ManageSupport'));
@@ -247,6 +248,7 @@ export default function App() {
                   <Route path="episodes" element={<ManageEpisodes />} />
                   <Route path="promo-codes" element={<ManagePromoCodes />} />
                   <Route path="payments" element={<ManagePayments />} />
+                  <Route path="content-purchases" element={<ManageContentPurchases />} />
                   <Route path="media" element={<ManageMediaLibrary />} />
                   <Route path="settings" element={<ManageSettings />} />
                   <Route path="audit" element={<ManageAuditLogs />} />

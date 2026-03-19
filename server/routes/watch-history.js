@@ -3,10 +3,7 @@ import rateLimit from 'express-rate-limit';
 import db from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
 import { getCurrentSofiaDbTimestamp } from '../utils/sofiaTime.js';
-import {
-  normalizeEpisodeGroup, normalizeProductionGroup, resolveProductionGroup,
-  hasGroupAccess,
-} from '../utils/access.js';
+import { evaluateEpisodeAccess, getUserPurchaseState } from '../utils/contentPurchases.js';
 
 const router = Router();
 
@@ -28,6 +25,7 @@ function validateEpisodeAccess(episodeId, user) {
 
   const statement = db.prepare(`
     SELECT e.id,
+           e.production_id,
            e.access_group as episode_access_group,
            p.required_tier,
            p.access_group as production_access_group
@@ -45,12 +43,15 @@ function validateEpisodeAccess(episodeId, user) {
     return { ok: false, status: 404, error: 'Епизодът не е намерен' };
   }
 
-  const prodGroup = resolveProductionGroup(episode.production_access_group, episode.required_tier);
-  const epGroup = normalizeEpisodeGroup(episode.episode_access_group);
-  const effectiveGroup = epGroup === 'inherit' ? prodGroup : epGroup;
-  const userTier = user.tier_level || 0;
+  const access = evaluateEpisodeAccess({
+    id: episode.id,
+    production_id: episode.production_id,
+    access_group: episode.episode_access_group,
+    required_tier: episode.required_tier,
+    production_access_group: episode.production_access_group,
+  }, user, getUserPurchaseState(user?.id));
 
-  if (!hasGroupAccess(effectiveGroup, userTier, isAdmin, episode.required_tier || 0)) {
+  if (!access.hasAccess) {
     return {
       ok: false,
       status: 403,
@@ -64,9 +65,9 @@ function validateEpisodeAccess(episodeId, user) {
 // GET /api/watch-history — Get continue watching list
 router.get('/', requireAuth, (req, res) => {
   const limit = Math.min(Math.max(1, Number(req.query.limit) || 12), 30);
-  const userTier = req.user.tier_level || 0;
   const isAdmin = req.user.role === 'admin' || req.user.role === 'superadmin';
   const currentTimestamp = getCurrentSofiaDbTimestamp();
+  const purchaseState = getUserPurchaseState(req.user.id);
   const publishedFilter = isAdmin ? '' : 'AND (e.published_at IS NULL OR e.published_at <= ?)';
 
   const statement = db.prepare(`
@@ -88,10 +89,8 @@ router.get('/', requireAuth, (req, res) => {
 
   const result = rows
     .filter((row) => {
-      const prodGroup = resolveProductionGroup(row.production_access_group, row.required_tier);
-      const epGroup = normalizeEpisodeGroup(row.access_group);
-      const effectiveGroup = epGroup === 'inherit' ? prodGroup : epGroup;
-      return hasGroupAccess(effectiveGroup, userTier, isAdmin, row.required_tier || 0);
+      const access = evaluateEpisodeAccess(row, req.user, purchaseState);
+      return access.hasAccess;
     })
     .slice(0, limit)
     .map((row) => ({

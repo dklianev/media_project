@@ -20,6 +20,7 @@ import episodeRoutes from './routes/episodes.js';
 import reactionRoutes from './routes/reactions.js';
 import planRoutes from './routes/plans.js';
 import paymentRoutes from './routes/payments.js';
+import contentPurchaseRoutes from './routes/content-purchases.js';
 import promoRoutes from './routes/promo.js';
 import userSelfRoutes from './routes/user-self.js';
 import userRoutes from './routes/users.js';
@@ -220,6 +221,7 @@ export function createApp() {
   app.use('/api/episodes', reactionRoutes);
   app.use('/api/plans', planRoutes);
   app.use('/api/payments', paymentRoutes);
+  app.use('/api/content-purchases', contentPurchaseRoutes);
   // Compatibility aliases:
   // /api/subscribe, /api/my-payments, /api/promo/validate, /api/admin/payments
   app.use('/api', paymentRoutes);

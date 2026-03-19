@@ -25,6 +25,7 @@ import MediaPickerModal from '../../components/MediaPickerModal';
 import { useToastContext } from '../../context/ToastContext';
 import { useUploadActivity } from '../../context/UploadActivityContext';
 import {
+  formatMoney,
   formatSofiaLocalDateTime,
   isFutureSofiaLocalDateTime,
   toSofiaLocalDateTimeInputValue,
@@ -82,6 +83,8 @@ export default function ManageEpisodes() {
     side_text: '',
     ad_banner_link: '',
     access_group: 'inherit',
+    purchase_enabled: false,
+    purchase_price: '',
     episode_number: '1',
     duration_seconds: '',
     is_active: true,
@@ -135,6 +138,9 @@ export default function ManageEpisodes() {
   const adBannerPreviewSrc = adBannerUploadPreview || form.ad_banner_url || null;
   const sideImagePreviewSources = sideImageUploadPreviews.length > 0 ? sideImageUploadPreviews : selectedSideImages;
   const isActionLocked = saving || workingId !== null || isUploading;
+  const selectedProduction = productions.find((item) => String(item.id) === String(form.production_id));
+  const productionPurchaseMode = selectedProduction?.purchase_mode || 'none';
+  const productionAllowsEpisodePurchases = ['episodes', 'both'].includes(productionPurchaseMode);
 
   const fetchProductions = async () => {
     try {
@@ -193,6 +199,8 @@ export default function ManageEpisodes() {
       side_text: '',
       ad_banner_link: '',
       access_group: 'inherit',
+      purchase_enabled: false,
+      purchase_price: '',
       episode_number: '1',
       duration_seconds: '',
       is_active: true,
@@ -226,6 +234,8 @@ export default function ManageEpisodes() {
       side_text: episode.side_text || '',
       ad_banner_link: episode.ad_banner_link || '',
       access_group: episode.access_group || 'inherit',
+      purchase_enabled: !!episode.purchase_enabled,
+      purchase_price: episode.purchase_price ? String(episode.purchase_price) : '',
       episode_number: String(episode.episode_number || 1),
       duration_seconds: episode.duration_seconds ? String(episode.duration_seconds) : '',
       is_active: !!episode.is_active,
@@ -277,6 +287,8 @@ export default function ManageEpisodes() {
     fd.append('side_text', form.side_text);
     fd.append('ad_banner_link', form.ad_banner_link);
     fd.append('access_group', form.access_group);
+    fd.append('purchase_enabled', String(form.purchase_enabled));
+    fd.append('purchase_price', form.purchase_price);
     fd.append('episode_number', form.episode_number);
     fd.append('is_active', String(form.is_active));
     fd.append('thumbnail_url', form.thumbnail_url || '');
@@ -364,7 +376,20 @@ export default function ManageEpisodes() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div>
             <label className="text-sm text-[var(--text-muted)] block mb-1">Продукция</label>
-            <select value={form.production_id} onChange={(e) => setForm({ ...form, production_id: e.target.value })} className="input-dark">
+            <select
+              value={form.production_id}
+              onChange={(e) => {
+                const nextProduction = productions.find((item) => String(item.id) === e.target.value);
+                const allowsEpisodePurchases = ['episodes', 'both'].includes(nextProduction?.purchase_mode || 'none');
+                setForm((current) => ({
+                  ...current,
+                  production_id: e.target.value,
+                  purchase_enabled: allowsEpisodePurchases ? current.purchase_enabled : false,
+                  purchase_price: allowsEpisodePurchases ? current.purchase_price : '',
+                }));
+              }}
+              className="input-dark"
+            >
               <option value="">-- Изберете продукция --</option>
               {productions.map((production) => <option key={production.id} value={production.id}>{production.title}</option>)}
             </select>
@@ -399,6 +424,43 @@ export default function ManageEpisodes() {
               placeholder="Въведете заглавие"
               className="input-dark"
             />
+          </div>
+          <div>
+            <label className="text-sm text-[var(--text-muted)] block mb-1">Цена за епизода <span className="text-xs opacity-70">(по желание)</span></label>
+            <input
+              value={form.purchase_price}
+              onChange={(e) => setForm({ ...form, purchase_price: e.target.value })}
+              placeholder="Напр. 4.99"
+              type="number"
+              min="0"
+              step="0.01"
+              disabled={!form.purchase_enabled}
+              className="input-dark disabled:opacity-55"
+            />
+          </div>
+          <div className="md:col-span-2">
+            <label className="text-sm text-[var(--text-muted)] block mb-1">Покупка на епизод</label>
+            <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] px-3 py-2.5">
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={form.purchase_enabled}
+                  disabled={!productionAllowsEpisodePurchases && !form.purchase_enabled}
+                  onChange={(e) => setForm((current) => ({
+                    ...current,
+                    purchase_enabled: e.target.checked,
+                  }))}
+                />
+                Разреши еднократна покупка за този епизод
+              </label>
+              <p className="text-[11px] text-[var(--text-muted)] mt-2">
+                {form.production_id
+                  ? productionAllowsEpisodePurchases
+                    ? 'Тази продукция позволява продажба по епизод.'
+                    : 'Включи режим "episodes" или "both" в продукцията.'
+                  : 'Избери продукция, за да активираш покупка по епизод.'}
+              </p>
+            </div>
           </div>
           <div className="md:col-span-2">
             <label className="text-sm text-[var(--text-muted)] block mb-1">Източник на видео</label>
@@ -812,6 +874,11 @@ export default function ManageEpisodes() {
                   <h3 className="font-semibold truncate">{episode.title}</h3>
                   <span className="text-xs text-[var(--text-muted)]">Еп. {episode.episode_number}</span>
                   <span className="badge badge-gold text-[10px]">{accessLabel(episode.access_group)}</span>
+                  {episode.purchase_enabled && episode.purchase_price && (
+                    <span className="badge bg-[var(--accent-primary)]/15 text-[var(--accent-primary)] border border-[var(--accent-primary)]/30 text-[10px]">
+                      Купи: {formatMoney(episode.purchase_price)}
+                    </span>
+                  )}
                   {episode.access_group === 'inherit' && (
                     <span className="text-[10px] uppercase tracking-[0.12em] text-[var(--text-muted)]">
                       {accessLabel(episode.production_access_group)}

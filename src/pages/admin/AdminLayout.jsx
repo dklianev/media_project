@@ -4,6 +4,7 @@ import {
   ArrowLeft,
   CreditCard,
   Film,
+  Headphones,
   History,
   Images,
   LayoutDashboard,
@@ -14,16 +15,15 @@ import {
   Ticket,
   Tv,
   Users,
-  Headphones,
 } from 'lucide-react';
 import PageBackground from '../../components/PageBackground';
 
 const linkGroups = [
   {
-    title: 'Основно',
+    title: 'Обзор',
     links: [
       { to: '/admin', icon: LayoutDashboard, label: 'Табло', exact: true },
-    ]
+    ],
   },
   {
     title: 'Каталог',
@@ -31,15 +31,15 @@ const linkGroups = [
       { to: '/admin/productions', icon: Film, label: 'Продукции' },
       { to: '/admin/episodes', icon: Tv, label: 'Епизоди' },
       { to: '/admin/media', icon: Images, label: 'Media Library' },
-    ]
+    ],
   },
   {
     title: 'Общност',
     links: [
       { to: '/admin/users', icon: Users, label: 'Потребители' },
       { to: '/admin/comments', icon: MessageSquare, label: 'Коментари' },
-      { to: '/admin/support', icon: Headphones, label: 'Запитвания' },
-    ]
+      { to: '/admin/support', icon: Headphones, label: 'Поддръжка' },
+    ],
   },
   {
     title: 'Монетизация',
@@ -47,19 +47,19 @@ const linkGroups = [
       { to: '/admin/plans', icon: Tags, label: 'Планове' },
       { to: '/admin/promo-codes', icon: Ticket, label: 'Промо кодове' },
       { to: '/admin/payments', icon: CreditCard, label: 'Плащания' },
-    ]
+      { to: '/admin/content-purchases', icon: CreditCard, label: 'Content Purchases' },
+    ],
   },
   {
     title: 'Система',
     links: [
       { to: '/admin/audit', icon: History, label: 'Одит лог' },
       { to: '/admin/settings', icon: Settings, label: 'Настройки' },
-    ]
-  }
+    ],
+  },
 ];
 
-const allLinks = linkGroups.flatMap(g => g.links);
-
+const allLinks = linkGroups.flatMap((group) => group.links);
 const ease = [0.16, 1, 0.3, 1];
 
 export default function AdminLayout() {
@@ -92,16 +92,18 @@ export default function AdminLayout() {
           <div className="mb-4">
             <div className="pill-chip mb-3 w-fit">
               <ShieldCheck className="w-3.5 h-3.5" />
-              Админ зона
+              Admin Panel
             </div>
-            <h2 className="text-lg font-semibold text-[var(--accent-gold-light)]">Админ панел</h2>
-            <p className="text-xs text-[var(--text-muted)] mt-1">Управление на съдържание и абонаменти</p>
+            <h2 className="text-lg font-semibold text-[var(--accent-gold-light)]">Управление</h2>
+            <p className="text-xs text-[var(--text-muted)] mt-1">Съдържание, покупки и настройки</p>
           </div>
 
           <nav className="hidden xl:flex flex-col gap-5 mt-4">
-            {linkGroups.map((group, groupIdx) => (
+            {linkGroups.map((group) => (
               <div key={group.title}>
-                <p className="text-[10px] uppercase tracking-widest text-[var(--text-muted)] mt-1 mb-2 px-3 font-semibold">{group.title}</p>
+                <p className="text-[10px] uppercase tracking-widest text-[var(--text-muted)] mt-1 mb-2 px-3 font-semibold">
+                  {group.title}
+                </p>
                 <div className="flex flex-col gap-1.5">
                   {group.links.map((link, index) => {
                     const Icon = link.icon;
@@ -115,10 +117,11 @@ export default function AdminLayout() {
                       >
                         <Link
                           to={link.to}
-                          className={`no-underline flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-medium transition-all ${active
-                            ? 'border border-[var(--border-light)] bg-[linear-gradient(135deg,var(--accent-gold-light)_0%,var(--accent-gold)_100%)]/10 text-[var(--accent-gold-light)] shadow-sm'
-                            : 'text-[var(--text-secondary)] border border-transparent hover:text-[var(--text-primary)] hover:bg-white/5 hover:translate-x-1'
-                            }`}
+                          className={`no-underline flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-medium transition-all ${
+                            active
+                              ? 'border border-[var(--border-light)] bg-[linear-gradient(135deg,var(--accent-gold-light)_0%,var(--accent-gold)_100%)]/10 text-[var(--accent-gold-light)] shadow-sm'
+                              : 'text-[var(--text-secondary)] border border-transparent hover:text-[var(--text-primary)] hover:bg-white/5 hover:translate-x-1'
+                          }`}
                         >
                           <Icon className={`w-4 h-4 ${active ? 'text-[var(--accent-gold-light)]' : ''}`} />
                           {link.label}
@@ -141,10 +144,11 @@ export default function AdminLayout() {
                   <Link
                     key={link.to}
                     to={link.to}
-                    className={`snap-start no-underline inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-[13px] font-medium whitespace-nowrap transition-colors ${active
-                      ? 'bg-[var(--accent-gold)]/10 text-[var(--accent-gold-light)] border border-[var(--accent-gold)]/30'
-                      : 'bg-[var(--bg-tertiary)] text-[var(--text-secondary)] border border-[var(--border)] hover:text-[var(--text-primary)]'
-                      }`}
+                    className={`snap-start no-underline inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-[13px] font-medium whitespace-nowrap transition-colors ${
+                      active
+                        ? 'bg-[var(--accent-gold)]/10 text-[var(--accent-gold-light)] border border-[var(--accent-gold)]/30'
+                        : 'bg-[var(--bg-tertiary)] text-[var(--text-secondary)] border border-[var(--border)] hover:text-[var(--text-primary)]'
+                    }`}
                   >
                     <Icon className={`w-3.5 h-3.5 ${active ? 'text-[var(--accent-gold)]' : 'text-[var(--text-muted)]'}`} />
                     {link.label}

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import db from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
-import { hasGroupAccess, isUserAdmin, resolveProductionGroup } from '../utils/access.js';
+import { enrichProductionForUser, getUserPurchaseState } from '../utils/contentPurchases.js';
 
 const router = Router();
 
@@ -30,6 +30,8 @@ router.get('/items', requireAuth, (req, res) => {
       p.cover_image_url,
       p.required_tier,
       p.access_group,
+      p.purchase_mode,
+      p.purchase_price,
       p.sort_order,
       p.created_at,
       p.genres,
@@ -40,8 +42,7 @@ router.get('/items', requireAuth, (req, res) => {
     ORDER BY w.created_at DESC
   `).all(req.user.id);
 
-  const userTier = req.user.tier_level || 0;
-  const admin = isUserAdmin(req.user);
+  const purchaseState = getUserPurchaseState(req.user.id);
 
   res.json(rows.map((row) => {
     let genres = [];
@@ -51,14 +52,10 @@ router.get('/items', requireAuth, (req, res) => {
       genres = [];
     }
 
-    const group = resolveProductionGroup(row.access_group, row.required_tier);
-
-    return {
+    return enrichProductionForUser({
       ...row,
       genres,
-      access_group: group,
-      has_access: hasGroupAccess(group, userTier, admin, row.required_tier || 0),
-    };
+    }, req.user, purchaseState);
   }));
 });
 

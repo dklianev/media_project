@@ -67,6 +67,8 @@ db.exec(`
     access_group TEXT DEFAULT 'subscription',
     is_active INTEGER DEFAULT 1,
     sort_order INTEGER DEFAULT 0,
+    purchase_mode TEXT DEFAULT 'none',
+    purchase_price REAL,
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now'))
   );
@@ -83,6 +85,8 @@ db.exec(`
     ad_banner_url TEXT,
     ad_banner_link TEXT,
     access_group TEXT DEFAULT 'inherit',
+    purchase_enabled INTEGER DEFAULT 0,
+    purchase_price REAL,
     episode_number INTEGER,
     view_count INTEGER DEFAULT 0,
     is_active INTEGER DEFAULT 1,
@@ -123,6 +127,40 @@ db.exec(`
     FOREIGN KEY (user_id) REFERENCES users(id),
     FOREIGN KEY (plan_id) REFERENCES subscription_plans(id),
     FOREIGN KEY (promo_code_id) REFERENCES promo_codes(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS content_purchase_requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    target_type TEXT NOT NULL,
+    target_id INTEGER NOT NULL,
+    reference_code TEXT UNIQUE NOT NULL,
+    original_price REAL NOT NULL,
+    final_price REAL NOT NULL,
+    status TEXT DEFAULT 'pending',
+    confirmed_by INTEGER,
+    confirmed_at TEXT,
+    rejected_by INTEGER,
+    rejected_at TEXT,
+    rejection_reason TEXT,
+    cancelled_at TEXT,
+    cancelled_reason TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (user_id) REFERENCES users(id),
+    FOREIGN KEY (confirmed_by) REFERENCES users(id),
+    FOREIGN KEY (rejected_by) REFERENCES users(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS content_entitlements (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    target_type TEXT NOT NULL,
+    target_id INTEGER NOT NULL,
+    source_request_id INTEGER,
+    created_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(user_id, target_type, target_id),
+    FOREIGN KEY (user_id) REFERENCES users(id),
+    FOREIGN KEY (source_request_id) REFERENCES content_purchase_requests(id)
   );
 
   CREATE TABLE IF NOT EXISTS refresh_tokens (
@@ -261,8 +299,20 @@ function hasColumn(table, column) {
 if (!hasColumn('productions', 'access_group')) {
   db.exec(`ALTER TABLE productions ADD COLUMN access_group TEXT DEFAULT 'subscription'`);
 }
+if (!hasColumn('productions', 'purchase_mode')) {
+  db.exec(`ALTER TABLE productions ADD COLUMN purchase_mode TEXT DEFAULT 'none'`);
+}
+if (!hasColumn('productions', 'purchase_price')) {
+  db.exec(`ALTER TABLE productions ADD COLUMN purchase_price REAL`);
+}
 if (!hasColumn('episodes', 'access_group')) {
   db.exec(`ALTER TABLE episodes ADD COLUMN access_group TEXT DEFAULT 'inherit'`);
+}
+if (!hasColumn('episodes', 'purchase_enabled')) {
+  db.exec(`ALTER TABLE episodes ADD COLUMN purchase_enabled INTEGER DEFAULT 0`);
+}
+if (!hasColumn('episodes', 'purchase_price')) {
+  db.exec(`ALTER TABLE episodes ADD COLUMN purchase_price REAL`);
 }
 if (!hasColumn('payment_references', 'rejected_by')) {
   db.exec(`ALTER TABLE payment_references ADD COLUMN rejected_by INTEGER`);
@@ -347,6 +397,31 @@ db.exec(`
 `);
 
 db.exec(`
+  UPDATE productions
+  SET purchase_mode = 'none'
+  WHERE purchase_mode IS NULL OR trim(purchase_mode) = ''
+`);
+
+db.exec(`
+  UPDATE episodes
+  SET purchase_enabled = COALESCE(purchase_enabled, 0)
+`);
+
+db.exec(`
+  UPDATE productions
+  SET purchase_price = NULL
+  WHERE purchase_price IS NOT NULL
+    AND CAST(purchase_price AS REAL) <= 0
+`);
+
+db.exec(`
+  UPDATE episodes
+  SET purchase_price = NULL
+  WHERE purchase_price IS NOT NULL
+    AND CAST(purchase_price AS REAL) <= 0
+`);
+
+db.exec(`
   UPDATE promo_codes
   SET updated_at = COALESCE(updated_at, created_at, datetime('now'))
 `);
@@ -407,6 +482,12 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_payments_created ON payment_references(created_at);
   CREATE INDEX IF NOT EXISTS idx_payments_user_status ON payment_references(user_id, status, created_at);
   CREATE INDEX IF NOT EXISTS idx_payments_status_created ON payment_references(status, created_at);
+  CREATE INDEX IF NOT EXISTS idx_content_purchase_requests_created ON content_purchase_requests(created_at);
+  CREATE INDEX IF NOT EXISTS idx_content_purchase_requests_user_status ON content_purchase_requests(user_id, status, created_at);
+  CREATE INDEX IF NOT EXISTS idx_content_purchase_requests_status_created ON content_purchase_requests(status, created_at);
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_content_purchase_requests_pending_target ON content_purchase_requests(user_id, target_type, target_id) WHERE status = 'pending';
+  CREATE INDEX IF NOT EXISTS idx_content_entitlements_user_target ON content_entitlements(user_id, target_type, target_id);
+  CREATE INDEX IF NOT EXISTS idx_content_entitlements_request ON content_entitlements(source_request_id);
   CREATE INDEX IF NOT EXISTS idx_tokens_user ON refresh_tokens(user_id, expires_at);
   CREATE INDEX IF NOT EXISTS idx_tokens_user_jti ON refresh_tokens(user_id, jti);
   CREATE INDEX IF NOT EXISTS idx_tokens_jti ON refresh_tokens(jti);

@@ -3,9 +3,7 @@ import rateLimit from 'express-rate-limit';
 import db from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
 import { getCurrentSofiaDbTimestamp } from '../utils/sofiaTime.js';
-import {
-  normalizeEpisodeGroup, resolveProductionGroup, hasGroupAccess,
-} from '../utils/access.js';
+import { evaluateEpisodeAccess, getUserPurchaseState } from '../utils/contentPurchases.js';
 
 const router = Router();
 
@@ -28,6 +26,7 @@ function validateEpisodeAccess(episodeId, user) {
 
   const episode = db.prepare(`
     SELECT e.id,
+           e.production_id,
            e.access_group as episode_access_group,
            p.required_tier,
            p.access_group as production_access_group
@@ -43,12 +42,15 @@ function validateEpisodeAccess(episodeId, user) {
     return { ok: false, status: 404, error: 'Епизодът не е намерен' };
   }
 
-  const userTier = user.tier_level || 0;
-  const productionGroup = resolveProductionGroup(episode.production_access_group, episode.required_tier);
-  const episodeGroup = normalizeEpisodeGroup(episode.episode_access_group);
-  const effectiveGroup = episodeGroup === 'inherit' ? productionGroup : episodeGroup;
+  const access = evaluateEpisodeAccess({
+    id: episode.id,
+    production_id: episode.production_id,
+    access_group: episode.episode_access_group,
+    required_tier: episode.required_tier,
+    production_access_group: episode.production_access_group,
+  }, user, getUserPurchaseState(user?.id));
 
-  if (!hasGroupAccess(effectiveGroup, userTier, isAdmin, episode.required_tier || 0)) {
+  if (!access.hasAccess) {
     return {
       ok: false,
       status: 403,

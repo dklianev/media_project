@@ -27,9 +27,16 @@ import {
   normalizePublishedAtToSofia,
 } from '../utils/sofiaTime.js';
 import {
-  normalizeEpisodeGroup, normalizeProductionGroup, resolveProductionGroup,
-  hasGroupAccess, resolveEffectiveGroup, isUserAdmin,
+  normalizeEpisodeGroup,
+  resolveProductionGroup,
+  isUserAdmin,
 } from '../utils/access.js';
+import {
+  enrichEpisodeForUser,
+  evaluateEpisodeAccess,
+  getUserPurchaseState,
+  normalizePurchasePrice,
+} from '../utils/contentPurchases.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const uploadsDir = pathResolve(__dirname, '..', '..', 'public', 'uploads');
@@ -64,6 +71,15 @@ function escapeHtml(value) {
 function isValidYouTubeId(value) {
   const normalized = String(value || '').trim();
   return normalized === '' || YOUTUBE_ID_REGEX.test(normalized);
+}
+
+function isEnabledFlag(value, fallback = false) {
+  if (value === undefined || value === null || value === '') {
+    return fallback;
+  }
+
+  const normalized = String(value).trim().toLowerCase();
+  return normalized === 'true' || normalized === '1' || normalized === 'on';
 }
 
 function normalizeLocalVideoUrl(value) {
@@ -168,7 +184,9 @@ function getEpisodeWithProduction(id, { includeUnpublished = false, currentTimes
   const statement = db.prepare(`
     SELECT e.*, p.title as production_title, p.slug as production_slug,
            p.required_tier, p.access_group as production_access_group,
-           p.thumbnail_url as production_thumbnail
+           p.thumbnail_url as production_thumbnail,
+           p.purchase_mode as production_purchase_mode,
+           p.purchase_price as production_purchase_price
     FROM episodes e
     JOIN productions p ON e.production_id = p.id
     WHERE e.id = ? AND e.is_active = 1 AND p.is_active = 1
@@ -238,22 +256,7 @@ function getPlaybackUser(userId) {
 }
 
 function resolveEpisodeAccess(episode, user) {
-  const productionGroup = resolveProductionGroup(episode.production_access_group, episode.required_tier);
-  const episodeGroup = normalizeEpisodeGroup(episode.access_group);
-  const effectiveGroup = resolveEffectiveGroup(episodeGroup, productionGroup);
-  const hasAccess = hasGroupAccess(
-    effectiveGroup,
-    user?.tier_level || 0,
-    isUserAdmin(user),
-    episode.required_tier || 0
-  );
-
-  return {
-    productionGroup,
-    episodeGroup,
-    effectiveGroup,
-    hasAccess,
-  };
+  return evaluateEpisodeAccess(episode, user, getUserPurchaseState(user?.id));
 }
 
 function createPlaybackToken(episodeId, userId, userAgent, options = {}) {
@@ -346,15 +349,15 @@ router.get('/latest', requireAuth, (req, res) => {
   const limit = Math.max(1, Math.min(30, requestedLimit));
   const fetchSize = Math.max(40, Math.min(220, limit * 6));
   const currentTimestamp = getCurrentSofiaDbTimestamp();
-
-  const userTier = req.user.tier_level || 0;
-  const isAdmin = req.user.role === 'admin' || req.user.role === 'superadmin';
+  const purchaseState = getUserPurchaseState(req.user.id);
 
   const rawEpisodes = db.prepare(`
     SELECT e.id, e.title, e.thumbnail_url, e.episode_number, e.created_at,
-           e.access_group,
+           e.access_group, e.purchase_enabled, e.purchase_price,
            p.title as production_title, p.slug as production_slug,
-           p.required_tier, p.access_group as production_access_group
+           p.required_tier, p.access_group as production_access_group,
+           p.purchase_mode as production_purchase_mode,
+           p.purchase_price as production_purchase_price
     FROM episodes e
     JOIN productions p ON e.production_id = p.id
     WHERE e.is_active = 1 AND p.is_active = 1
@@ -364,24 +367,7 @@ router.get('/latest', requireAuth, (req, res) => {
   `).all(currentTimestamp, fetchSize);
 
   const episodes = rawEpisodes
-    .map((episode) => {
-      const productionGroup = resolveProductionGroup(episode.production_access_group, episode.required_tier);
-      const episodeGroup = normalizeEpisodeGroup(episode.access_group);
-      const effectiveGroup = resolveEffectiveGroup(episodeGroup, productionGroup);
-      const hasAccess = hasGroupAccess(
-        effectiveGroup,
-        userTier,
-        isAdmin,
-        episode.required_tier || 0
-      );
-
-      return {
-        ...episode,
-        access_group: episodeGroup,
-        effective_access_group: effectiveGroup,
-        has_access: hasAccess,
-      };
-    })
+    .map((episode) => enrichEpisodeForUser(episode, req.user, purchaseState))
     .filter((episode) => episode.has_access)
     .slice(0, limit);
 
@@ -393,12 +379,15 @@ router.get('/calendar', requireAuth, (req, res) => {
   const admin = isUserAdmin(req.user);
   const fromTimestamp = getShiftedSofiaDbTimestamp(-14);
   const toTimestamp = getShiftedSofiaDbTimestamp(60);
+  const purchaseState = getUserPurchaseState(req.user.id);
 
   const rawEpisodes = db.prepare(`
     SELECT e.id, e.title, e.thumbnail_url, e.episode_number, e.published_at, e.created_at, e.is_active,
-           e.access_group,
+           e.access_group, e.purchase_enabled, e.purchase_price,
            p.title as production_title, p.slug as production_slug,
-           p.required_tier, p.access_group as production_access_group
+           p.required_tier, p.access_group as production_access_group,
+           p.purchase_mode as production_purchase_mode,
+           p.purchase_price as production_purchase_price
     FROM episodes e
     JOIN productions p ON e.production_id = p.id
     WHERE e.published_at IS NOT NULL
@@ -408,24 +397,7 @@ router.get('/calendar', requireAuth, (req, res) => {
     ORDER BY e.published_at ASC
   `).all(fromTimestamp, toTimestamp);
 
-  const episodes = rawEpisodes.map((episode) => {
-    const productionGroup = resolveProductionGroup(episode.production_access_group, episode.required_tier);
-    const episodeGroup = normalizeEpisodeGroup(episode.access_group);
-    const effectiveGroup = resolveEffectiveGroup(episodeGroup, productionGroup);
-    const hasAccess = hasGroupAccess(
-      effectiveGroup,
-      req.user.tier_level || 0,
-      admin,
-      episode.required_tier || 0
-    );
-
-    return {
-      ...episode,
-      access_group: episodeGroup,
-      effective_access_group: effectiveGroup,
-      has_access: hasAccess,
-    };
-  });
+  const episodes = rawEpisodes.map((episode) => enrichEpisodeForUser(episode, req.user, purchaseState));
 
   res.set('Cache-Control', 'private, max-age=60');
   res.json(episodes);
@@ -580,7 +552,8 @@ router.get('/:id', requireAuth, (req, res) => {
     return res.status(404).json({ error: 'Епизодът не е намерен' });
   }
 
-  const access = resolveEpisodeAccess(episode, req.user);
+  const purchaseState = getUserPurchaseState(req.user.id);
+  const access = evaluateEpisodeAccess(episode, req.user, purchaseState);
 
   let sideImages = [];
   try {
@@ -637,6 +610,18 @@ router.get('/:id', requireAuth, (req, res) => {
     latest_episodes: [],
     required_tier: episode.required_tier || 0,
     has_access: access.hasAccess,
+    purchase_enabled: access.episodePurchaseEnabled,
+    purchase_price: access.episodePurchasePrice,
+    can_purchase_episode: access.canPurchaseEpisode,
+    can_purchase_production: access.canPurchaseProduction,
+    is_purchased: access.isPurchased,
+    purchase_source: access.purchaseSource,
+    is_purchased_episode: access.isEpisodePurchased,
+    has_pending_purchase: access.hasPendingEpisodePurchase,
+    production_purchase_mode: access.productionPurchaseMode,
+    production_purchase_price: access.productionPurchasePrice,
+    production_is_purchased: access.isProductionPurchased,
+    production_has_pending_purchase: access.hasPendingProductionPurchase,
     next_episode_id: nextEpisode?.id || null,
     previous_episode_id: previousEpisode?.id || null,
     next_episode: nextEpisode ? {
@@ -734,7 +719,10 @@ router.get('/admin/all', requireAdmin, (req, res) => {
   `).get(...params)?.count || 0;
 
   const episodes = db.prepare(`
-    SELECT e.*, p.title as production_title, p.access_group as production_access_group
+    SELECT e.*, p.title as production_title,
+           p.access_group as production_access_group,
+           p.purchase_mode as production_purchase_mode,
+           p.purchase_price as production_purchase_price
     ${baseFrom}
     ${whereSql}
     ORDER BY ${sortColumn} ${sortDir}, e.id DESC
@@ -743,6 +731,10 @@ router.get('/admin/all', requireAdmin, (req, res) => {
     ...episode,
     access_group: normalizeEpisodeGroup(episode.access_group),
     production_access_group: resolveProductionGroup(episode.production_access_group, episode.required_tier),
+    purchase_enabled: Number(episode.purchase_enabled || 0) === 1,
+    purchase_price: normalizePurchasePrice(episode.purchase_price, null),
+    production_purchase_mode: episode.production_purchase_mode,
+    production_purchase_price: normalizePurchasePrice(episode.production_purchase_price, null),
   }));
 
   const totalViews = db.prepare(`
@@ -785,6 +777,8 @@ router.post(
         ad_banner_link,
         episode_number,
         access_group,
+        purchase_enabled,
+        purchase_price,
         is_active,
         published_at,
         thumbnail_url,
@@ -795,7 +789,7 @@ router.post(
       } = req.body;
       const uploadedVideo = req.files?.video_file?.[0] || null;
 
-      const prod = db.prepare('SELECT id, title FROM productions WHERE id = ?').get(production_id);
+      const prod = db.prepare('SELECT id, title, purchase_mode FROM productions WHERE id = ?').get(production_id);
       if (!prod) return rejectEpisodeUploadRequest(req, res, 404, 'Продукцията не е намерена');
       if (!title || String(title).trim().length < 2) {
         return rejectEpisodeUploadRequest(req, res, 400, 'Заглавието е задължително');
@@ -865,6 +859,11 @@ router.post(
         : JSON.stringify(selectedSideImages.urls);
 
       const group = normalizeEpisodeGroup(access_group);
+      const normalizedPurchaseEnabled = isEnabledFlag(purchase_enabled, false);
+      const normalizedEpisodePurchasePrice = normalizePurchasePrice(purchase_price, null);
+      if (normalizedPurchaseEnabled && normalizedEpisodePurchasePrice === null) {
+        return rejectEpisodeUploadRequest(req, res, 400, 'Посочете валидна цена за покупка на епизода.');
+      }
       const hasPublishedAt = published_at !== undefined && String(published_at).trim() !== '';
       const publishedAtValue = hasPublishedAt ? normalizePublishedAtToSofia(published_at) : null;
       if (hasPublishedAt && !publishedAtValue) {
@@ -875,10 +874,10 @@ router.post(
       INSERT INTO episodes (
         production_id, title, description, youtube_video_id, thumbnail_url,
         side_images, side_text, ad_banner_url, ad_banner_link,
-        access_group, episode_number, is_active, published_at,
+        access_group, purchase_enabled, purchase_price, episode_number, is_active, published_at,
         video_source, local_video_url, transcoding_status
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
         production_id,
         String(title).trim(),
@@ -890,6 +889,8 @@ router.post(
         adBannerUrl,
         ad_banner_link || '',
         group,
+        normalizedPurchaseEnabled ? 1 : 0,
+        normalizedEpisodePurchasePrice,
         toInt(episode_number, 1),
         is_active === 'false' ? 0 : 1,
         publishedAtValue,
@@ -937,12 +938,19 @@ router.post(
           title: episode.title,
           episode_number: episode.episode_number,
           access_group: episode.access_group,
+          purchase_enabled: Number(episode.purchase_enabled || 0) === 1,
+          purchase_price: normalizePurchasePrice(episode.purchase_price, null),
           is_active: episode.is_active,
           video_source: resolvedVideoSource,
           video_processing_plan: uploadedVideoPlan?.decision || null,
         },
       });
-      res.status(201).json({ ...episode, access_group: normalizeEpisodeGroup(episode.access_group) });
+      res.status(201).json({
+        ...episode,
+        access_group: normalizeEpisodeGroup(episode.access_group),
+        purchase_enabled: Number(episode.purchase_enabled || 0) === 1,
+        purchase_price: normalizePurchasePrice(episode.purchase_price, null),
+      });
     } catch (err) {
       next(err);
     }
@@ -977,6 +985,8 @@ router.put(
         ad_banner_link,
         episode_number,
         access_group,
+        purchase_enabled,
+        purchase_price,
         is_active,
         published_at,
         thumbnail_url,
@@ -1098,6 +1108,15 @@ router.put(
           }
         }
       }
+      const nextPurchaseEnabled = Object.prototype.hasOwnProperty.call(req.body || {}, 'purchase_enabled')
+        ? isEnabledFlag(purchase_enabled, false)
+        : Number(existing.purchase_enabled || 0) === 1;
+      const incomingEpisodePurchasePrice = Object.prototype.hasOwnProperty.call(req.body || {}, 'purchase_price')
+        ? normalizePurchasePrice(purchase_price, null)
+        : normalizePurchasePrice(existing.purchase_price, null);
+      if (nextPurchaseEnabled && incomingEpisodePurchasePrice === null) {
+        return rejectEpisodeUploadRequest(req, res, 400, 'Посочете валидна цена за покупка на епизода.');
+      }
 
       db.prepare(`
       UPDATE episodes SET
@@ -1111,6 +1130,8 @@ router.put(
         ad_banner_url = ?,
         ad_banner_link = ?,
         access_group = ?,
+        purchase_enabled = ?,
+        purchase_price = ?,
         episode_number = ?,
         is_active = ?,
         published_at = ?,
@@ -1130,6 +1151,8 @@ router.put(
         adBannerUrl,
         ad_banner_link ?? existing.ad_banner_link,
         normalizeEpisodeGroup(access_group, normalizeEpisodeGroup(existing.access_group)),
+        nextPurchaseEnabled ? 1 : 0,
+        incomingEpisodePurchasePrice,
         toInt(episode_number, existing.episode_number),
         is_active === undefined ? existing.is_active : (is_active === 'false' ? 0 : 1),
         publishedAtValue,
@@ -1160,6 +1183,8 @@ router.put(
             title: existing.title,
             episode_number: existing.episode_number,
             access_group: normalizeEpisodeGroup(existing.access_group),
+            purchase_enabled: Number(existing.purchase_enabled || 0) === 1,
+            purchase_price: normalizePurchasePrice(existing.purchase_price, null),
             is_active: existing.is_active,
           },
           next: {
@@ -1167,12 +1192,19 @@ router.put(
             title: updated.title,
             episode_number: updated.episode_number,
             access_group: normalizeEpisodeGroup(updated.access_group),
+            purchase_enabled: Number(updated.purchase_enabled || 0) === 1,
+            purchase_price: normalizePurchasePrice(updated.purchase_price, null),
             is_active: updated.is_active,
             video_processing_plan: uploadedVideoPlan?.decision || null,
           },
         },
       });
-      res.json({ ...updated, access_group: normalizeEpisodeGroup(updated.access_group) });
+      res.json({
+        ...updated,
+        access_group: normalizeEpisodeGroup(updated.access_group),
+        purchase_enabled: Number(updated.purchase_enabled || 0) === 1,
+        purchase_price: normalizePurchasePrice(updated.purchase_price, null),
+      });
     } catch (err) {
       next(err);
     }

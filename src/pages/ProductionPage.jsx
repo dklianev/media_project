@@ -1,19 +1,61 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { motion, useScroll, useTransform } from 'framer-motion';
-import { ArrowLeft, Clapperboard, Lock, Play, Sparkles } from 'lucide-react';
+import {
+  ArrowLeft,
+  CheckCircle2,
+  Clapperboard,
+  Clock3,
+  Lock,
+  Play,
+  ShoppingCart,
+  Sparkles,
+} from 'lucide-react';
 import { api } from '../utils/api';
 import AccessGate from '../components/AccessGate';
+import ContentPurchaseModal from '../components/ContentPurchaseModal';
 import ScrollReveal from '../components/ScrollReveal';
 import { StaggerContainer, StaggerItem } from '../components/StaggerContainer';
 import PageBackground from '../components/PageBackground';
+import { useContentPurchaseFlow } from '../hooks/useContentPurchaseFlow';
 import { getProductionAccessGroup } from '../utils/accessGroups';
+import { formatMoney } from '../utils/formatters';
 
 const ACCESS_LABEL = {
   free: 'Безплатно',
   trailer: 'Трейлър',
   subscription: 'Абонамент',
 };
+
+function getEpisodeLockedLabel(episode) {
+  if (episode.has_pending_purchase || episode.production_has_pending_purchase) {
+    return 'Отвори плащането';
+  }
+  if (episode.can_purchase_episode && episode.can_purchase_production) {
+    return 'Купи епизод или продукция';
+  }
+  if (episode.can_purchase_episode) {
+    return episode.purchase_price ? `Купи за ${formatMoney(episode.purchase_price)}` : 'Купи епизода';
+  }
+  if (episode.can_purchase_production) {
+    return episode.production_purchase_price
+      ? `Купи продукцията за ${formatMoney(episode.production_purchase_price)}`
+      : 'Купи продукцията';
+  }
+  return 'Изисква абонамент';
+}
+
+function getEpisodeLockedHref(episode) {
+  if (
+    episode.can_purchase_episode
+    || episode.can_purchase_production
+    || episode.has_pending_purchase
+    || episode.production_has_pending_purchase
+  ) {
+    return `/episodes/${episode.id}`;
+  }
+  return '/subscribe';
+}
 
 export default function ProductionPage() {
   const { slug } = useParams();
@@ -25,20 +67,33 @@ export default function ProductionPage() {
   const coverY = useTransform(scrollY, [0, 400], [0, 80]);
   const coverScale = useTransform(scrollY, [0, 400], [1, 1.08]);
 
-  useEffect(() => {
+  const loadProduction = async () => {
     setLoading(true);
     setFetchStatus(null);
-    api.get(`/productions/${slug}`)
-      .then((data) => {
-        setProduction(data);
-        setFetchStatus(null);
-      })
-      .catch((err) => {
-        setProduction(null);
-        setFetchStatus(err?.status || 500);
-      })
-      .finally(() => setLoading(false));
+    try {
+      const data = await api.get(`/productions/${slug}`);
+      setProduction(data);
+      setFetchStatus(null);
+    } catch (err) {
+      setProduction(null);
+      setFetchStatus(err?.status || 500);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadProduction();
   }, [slug]);
+
+  const {
+    modalRequest,
+    closePurchaseModal,
+    requestPurchase,
+    activeKey,
+  } = useContentPurchaseFlow({
+    onResolved: loadProduction,
+  });
 
   const hasAnyAccessibleEpisode = useMemo(
     () => (production?.episodes || []).some((episode) => episode.has_access),
@@ -68,7 +123,7 @@ export default function ProductionPage() {
             {fetchStatus === 404 ? 'Продукцията не е намерена' : 'Възникна проблем при зареждането'}
           </h1>
           {fetchStatus !== 404 && (
-            <p className="text-[var(--text-secondary)] mb-4">Моля, опитай отново след малко.</p>
+            <p className="text-[var(--text-secondary)] mb-4">Опитай отново след малко.</p>
           )}
           <Link to="/productions" className="btn-outline no-underline inline-flex items-center gap-2">
             <ArrowLeft className="w-4 h-4" />
@@ -80,6 +135,14 @@ export default function ProductionPage() {
   }
 
   const productionGroup = getProductionAccessGroup(production);
+  const directProductionPurchaseAvailable =
+    ['production', 'both'].includes(production.purchase_mode) && Boolean(production.purchase_price);
+  const episodePurchasesAvailable = ['episodes', 'both'].includes(production.purchase_mode);
+  const showProductionPurchaseCard =
+    directProductionPurchaseAvailable || production.has_pending_purchase || production.is_purchased;
+  const purchasableEpisodeCount = (production.episodes || []).filter(
+    (episode) => episode.can_purchase_episode || episode.has_pending_purchase || episode.is_purchased_episode
+  ).length;
 
   return (
     <div className="relative max-w-7xl mx-auto px-4 py-8 overflow-hidden">
@@ -95,11 +158,10 @@ export default function ProductionPage() {
           className="relative inline-flex items-center gap-2 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] no-underline mb-5"
         >
           <ArrowLeft className="w-4 h-4" />
-          Назад към каталог
+          Назад към каталога
         </Link>
       </motion.div>
 
-      {/* Hero cover with parallax */}
       <ScrollReveal variant="fadeUp">
         <section className="relative premium-panel overflow-hidden p-3 sm:p-4 mb-8">
           <div className="pill-chip mb-3 w-fit">
@@ -111,7 +173,7 @@ export default function ProductionPage() {
             {production.cover_image_url ? (
               <motion.img
                 src={production.cover_image_url}
-                alt={production.title || 'Корица на продукция'}
+                alt={production.title || 'Корицата на продукцията'}
                 loading="lazy"
                 decoding="async"
                 className="absolute inset-0 h-full w-full object-cover"
@@ -129,20 +191,115 @@ export default function ProductionPage() {
                 transition={{ delay: 0.2, duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
               >
                 <div className="flex flex-wrap items-center gap-2 mb-3">
-                  <span className="badge badge-gold">{ACCESS_LABEL[productionGroup] || 'Абонамент'}</span>
+                  <span className="badge badge-gold">{ACCESS_LABEL[productionGroup] || 'Достъп'}</span>
                   {productionGroup === 'subscription' && (
                     <span className="rounded-full border border-white/20 bg-black/40 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-white/90">
-                      Ниво {production.required_tier}
+                      Tier {production.required_tier}
+                    </span>
+                  )}
+                  {directProductionPurchaseAvailable && (
+                    <span className="rounded-full border border-white/20 bg-black/40 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-white/90">
+                      Купи {formatMoney(production.purchase_price)}
+                    </span>
+                  )}
+                  {episodePurchasesAvailable && (
+                    <span className="rounded-full border border-white/20 bg-black/40 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-white/90">
+                      По епизод
                     </span>
                   )}
                 </div>
                 <h1 className="text-3xl sm:text-4xl font-bold mb-3">{production.title}</h1>
-                {production.description && <p className="text-[var(--text-secondary)] max-w-2xl">{production.description}</p>}
+                {production.description && (
+                  <p className="text-[var(--text-secondary)] max-w-2xl">{production.description}</p>
+                )}
               </motion.div>
             </div>
           </div>
         </section>
       </ScrollReveal>
+
+      {(showProductionPurchaseCard || episodePurchasesAvailable) && (
+        <ScrollReveal variant="fadeUp" delay={0.08}>
+          <section className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-8">
+            {showProductionPurchaseCard && (
+              <article className="glass-card p-5 border border-[var(--accent-gold)]/20">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="text-[10px] uppercase tracking-[0.18em] text-[var(--accent-gold-light)] mb-2">
+                      Покупка на продукция
+                    </p>
+                    <h2 className="text-xl font-semibold">Купи цялата продукция</h2>
+                    <p className="text-sm text-[var(--text-secondary)] mt-2 max-w-xl">
+                      Еднократната покупка отключва продукцията и всички епизоди към нея.
+                    </p>
+                  </div>
+                  {production.purchase_price && (
+                    <div className="text-right">
+                      <p className="text-xs text-[var(--text-muted)]">Цена</p>
+                      <p className="text-2xl font-bold text-[var(--accent-gold-light)]">
+                        {formatMoney(production.purchase_price)}
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-4 flex flex-wrap items-center gap-3">
+                  {production.is_purchased ? (
+                    <span className="inline-flex items-center gap-2 rounded-full border border-green-500/30 bg-green-500/10 px-3 py-2 text-sm text-green-400">
+                      <CheckCircle2 className="w-4 h-4" />
+                      Купено завинаги
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={activeKey === `production:${production.id}`}
+                      onClick={() => requestPurchase('production', production.id, {
+                        target_type: 'production',
+                        target_id: production.id,
+                        target_title: production.title,
+                        production_title: production.title,
+                        production_slug: production.slug,
+                        final_price: production.purchase_price,
+                      })}
+                      className="btn-gold inline-flex items-center gap-2 disabled:opacity-50"
+                    >
+                      {production.has_pending_purchase ? (
+                        <Clock3 className="w-4 h-4" />
+                      ) : (
+                        <ShoppingCart className="w-4 h-4" />
+                      )}
+                      {production.has_pending_purchase ? 'Виж плащането' : 'Купи продукцията'}
+                    </button>
+                  )}
+
+                  {production.has_pending_purchase && !production.is_purchased && (
+                    <span className="text-sm text-[var(--text-secondary)]">
+                      Има чакаща заявка за тази продукция.
+                    </span>
+                  )}
+                </div>
+              </article>
+            )}
+
+            {episodePurchasesAvailable && (
+              <article className="glass-card p-5">
+                <p className="text-[10px] uppercase tracking-[0.18em] text-[var(--text-muted)] mb-2">
+                  Покупка по епизод
+                </p>
+                <h2 className="text-xl font-semibold">Купувай и епизод по епизод</h2>
+                <p className="text-sm text-[var(--text-secondary)] mt-2">
+                  Отвори конкретен заключен епизод и ще видиш отделната му цена и бутон за покупка.
+                </p>
+                <p className="text-sm text-[var(--accent-gold-light)] mt-4">
+                  {purchasableEpisodeCount > 0
+                    ? `${purchasableEpisodeCount} епизода в тази продукция вече могат да се купуват поотделно.`
+                    : 'Цените по епизод се настройват отделно за всеки епизод.'}
+                </p>
+              </article>
+            )}
+          </section>
+        </ScrollReveal>
+      )}
 
       {!production.has_access && !hasAnyAccessibleEpisode && (
         <ScrollReveal variant="fadeUp" delay={0.1}>
@@ -152,12 +309,11 @@ export default function ProductionPage() {
         </ScrollReveal>
       )}
 
-      {/* Episodes */}
       <ScrollReveal variant="fadeUp" delay={0.15}>
         <section>
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-2xl font-semibold">Епизоди</h2>
-            <span className="text-sm text-[var(--text-secondary)]">{(production.episodes || []).length} налични</span>
+            <span className="text-sm text-[var(--text-secondary)]">{(production.episodes || []).length} епизода</span>
           </div>
 
           {production.episodes?.length > 0 ? (
@@ -168,7 +324,7 @@ export default function ProductionPage() {
                 return (
                   <StaggerItem key={episode.id}>
                     <Link
-                      to={locked ? '/subscribe' : `/episodes/${episode.id}`}
+                      to={locked ? getEpisodeLockedHref(episode) : `/episodes/${episode.id}`}
                       className="no-underline"
                     >
                       <motion.article
@@ -181,7 +337,7 @@ export default function ProductionPage() {
                           {episode.thumbnail_url ? (
                             <img
                               src={episode.thumbnail_url}
-                              alt={episode.title || 'Кадър от епизод'}
+                              alt={episode.title || 'Миниатюра на епизода'}
                               loading="lazy"
                               decoding="async"
                               className="h-full w-full object-cover transition duration-500 group-hover:scale-105"
@@ -196,11 +352,10 @@ export default function ProductionPage() {
                           {locked && (
                             <div className="absolute top-2 left-2 inline-flex items-center gap-1 rounded-full border border-white/20 bg-black/45 px-2 py-1 text-[11px] font-semibold">
                               <Lock className="w-3 h-3" />
-                              Заключено
+                              Заключен
                             </div>
                           )}
 
-                          {/* Play button on hover */}
                           {!locked && (
                             <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300">
                               <div className="w-12 h-12 rounded-full border border-[var(--accent-gold)]/50 bg-[var(--accent-gold)]/20 backdrop-blur-sm flex items-center justify-center shadow-[0_0_24px_rgba(212,175,55,0.25)]">
@@ -213,13 +368,13 @@ export default function ProductionPage() {
                           <div className="flex items-center justify-between gap-2 mb-1">
                             <p className="text-xs text-[var(--text-muted)]">Епизод {episode.episode_number}</p>
                             <span className="text-[10px] uppercase tracking-[0.12em] text-[var(--text-muted)]">
-                              {ACCESS_LABEL[episodeGroup] || 'Абонамент'}
+                              {ACCESS_LABEL[episodeGroup] || 'Достъп'}
                             </span>
                           </div>
                           <h3 className="font-semibold mb-2 line-clamp-2">{episode.title}</h3>
                           <span className="inline-flex items-center gap-1 text-sm text-[var(--accent-gold-light)]">
                             {locked ? <Lock className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-                            {locked ? 'Отключи достъп' : 'Отвори'}
+                            {locked ? getEpisodeLockedLabel(episode) : 'Гледай'}
                           </span>
                         </div>
                       </motion.article>
@@ -230,11 +385,17 @@ export default function ProductionPage() {
             </StaggerContainer>
           ) : (
             <div className="glass-card p-8 text-center">
-              <p className="text-[var(--text-secondary)]">Все още няма публикувани епизоди за тази продукция.</p>
+              <p className="text-[var(--text-secondary)]">Още няма публикувани епизоди за тази продукция.</p>
             </div>
           )}
         </section>
       </ScrollReveal>
+
+      <ContentPurchaseModal
+        open={Boolean(modalRequest)}
+        request={modalRequest}
+        onClose={closePurchaseModal}
+      />
     </div>
   );
 }

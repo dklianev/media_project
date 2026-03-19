@@ -130,9 +130,9 @@ function createProduction(overrides = {}) {
   const result = db.prepare(`
     INSERT INTO productions (
       title, slug, description, thumbnail_url, cover_image_url,
-      required_tier, access_group, is_active, sort_order
+      required_tier, access_group, is_active, sort_order, purchase_mode, purchase_price
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     overrides.title || `Продукция ${idSuffix}`,
     overrides.slug || `production-${idSuffix}`,
@@ -142,7 +142,9 @@ function createProduction(overrides = {}) {
     overrides.required_tier ?? 0,
     overrides.access_group || 'subscription',
     overrides.is_active ?? 1,
-    overrides.sort_order ?? 0
+    overrides.sort_order ?? 0,
+    overrides.purchase_mode || 'none',
+    overrides.purchase_price ?? null
   );
 
   return db.prepare('SELECT * FROM productions WHERE id = ?').get(result.lastInsertRowid);
@@ -153,9 +155,9 @@ function createEpisode(overrides = {}) {
     INSERT INTO episodes (
       production_id, title, description, youtube_video_id, thumbnail_url,
       side_images, side_text, ad_banner_url, ad_banner_link,
-      access_group, episode_number, view_count, is_active
+      access_group, purchase_enabled, purchase_price, episode_number, view_count, is_active
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     overrides.production_id,
     overrides.title || 'Епизод',
@@ -167,6 +169,8 @@ function createEpisode(overrides = {}) {
     overrides.ad_banner_url || null,
     overrides.ad_banner_link || null,
     overrides.access_group || 'inherit',
+    overrides.purchase_enabled ?? 0,
+    overrides.purchase_price ?? null,
     overrides.episode_number ?? 1,
     overrides.view_count ?? 0,
     overrides.is_active ?? 1
@@ -243,6 +247,8 @@ function resetDatabase() {
     'notifications',
     'support_ticket_messages',
     'support_tickets',
+    'content_entitlements',
+    'content_purchase_requests',
     'reactions',
     'comments',
     'watch_history',
@@ -310,6 +316,260 @@ after(async () => {
 
 beforeEach(() => {
   resetDatabase();
+});
+
+test('content purchase request creates pending production request and blocks duplicate pending request', async () => {
+  const production = createProduction({
+    title: 'One Time Production',
+    slug: 'one-time-production',
+    required_tier: 2,
+    access_group: 'subscription',
+    purchase_mode: 'production',
+    purchase_price: 34.5,
+    is_active: 1,
+  });
+  const viewer = createUser({ character_name: 'Purchase Viewer' });
+  const viewerToken = createAccessToken(viewer);
+
+  const created = await apiRequest('/api/content-purchases', {
+    method: 'POST',
+    token: viewerToken,
+    body: { target_type: 'production', target_id: production.id },
+  });
+
+  assert.equal(created.response.status, 201);
+  assert.equal(created.data?.target_type, 'production');
+  assert.equal(Number(created.data?.target_id), Number(production.id));
+  assert.equal(created.data?.target_title, production.title);
+  assert.equal(created.data?.final_price, 34.5);
+  assert.match(created.data?.reference_code || '', /^BUY-PRO-/);
+
+  const stored = db.prepare(`
+    SELECT status, target_type, target_id, final_price
+    FROM content_purchase_requests
+    WHERE user_id = ?
+  `).get(viewer.id);
+  assert.equal(stored.status, 'pending');
+  assert.equal(stored.target_type, 'production');
+  assert.equal(Number(stored.target_id), Number(production.id));
+  assert.equal(stored.final_price, 34.5);
+
+  const duplicate = await apiRequest('/api/content-purchases', {
+    method: 'POST',
+    token: viewerToken,
+    body: { target_type: 'production', target_id: production.id },
+  });
+
+  assert.equal(duplicate.response.status, 409);
+  assert.equal(duplicate.data?.request?.status, 'pending');
+  assert.equal(duplicate.data?.request?.target_type, 'production');
+  assert.equal(Number(duplicate.data?.request?.target_id), Number(production.id));
+});
+
+test('production purchase confirm grants production entitlement, cancels covered episode requests and unlocks episode features', async () => {
+  const production = createProduction({
+    title: 'Feature Unlock Production',
+    slug: 'feature-unlock-production',
+    required_tier: 2,
+    access_group: 'subscription',
+    purchase_mode: 'both',
+    purchase_price: 59.9,
+    is_active: 1,
+  });
+  const episodeOne = createEpisode({
+    production_id: production.id,
+    title: 'Episode Purchase 1',
+    access_group: 'inherit',
+    purchase_enabled: 1,
+    purchase_price: 8.5,
+    youtube_video_id: 'dQw4w9WgXcQ',
+  });
+  const episodeTwo = createEpisode({
+    production_id: production.id,
+    title: 'Episode Purchase 2',
+    access_group: 'inherit',
+    purchase_enabled: 1,
+    purchase_price: 9.5,
+    episode_number: 2,
+    youtube_video_id: 'dQw4w9WgXcQ',
+  });
+  const viewer = createUser({ character_name: 'Feature Viewer' });
+  const admin = createUser({ role: 'admin', character_name: 'Purchase Admin' });
+  const viewerToken = createAccessToken(viewer);
+  const adminToken = createAccessToken(admin);
+
+  const productionRequest = await apiRequest('/api/content-purchases', {
+    method: 'POST',
+    token: viewerToken,
+    body: { target_type: 'production', target_id: production.id },
+  });
+  assert.equal(productionRequest.response.status, 201);
+
+  const episodeRequest = await apiRequest('/api/content-purchases', {
+    method: 'POST',
+    token: viewerToken,
+    body: { target_type: 'episode', target_id: episodeTwo.id },
+  });
+  assert.equal(episodeRequest.response.status, 201);
+
+  const confirm = await apiRequest(`/api/content-purchases/admin/${productionRequest.data.request_id}/confirm`, {
+    method: 'PUT',
+    token: adminToken,
+  });
+  assert.equal(confirm.response.status, 200);
+  assert.equal(confirm.data?.success, true);
+
+  const productionEntitlement = db.prepare(`
+    SELECT target_type, target_id, source_request_id
+    FROM content_entitlements
+    WHERE user_id = ?
+  `).get(viewer.id);
+  assert.equal(productionEntitlement.target_type, 'production');
+  assert.equal(Number(productionEntitlement.target_id), Number(production.id));
+  assert.equal(Number(productionEntitlement.source_request_id), Number(productionRequest.data.request_id));
+
+  const cancelledEpisodeRequest = db.prepare(`
+    SELECT status, cancelled_reason
+    FROM content_purchase_requests
+    WHERE id = ?
+  `).get(episodeRequest.data.request_id);
+  assert.equal(cancelledEpisodeRequest.status, 'cancelled');
+  assert.match(cancelledEpisodeRequest.cancelled_reason || '', /production|продукц/i);
+
+  const productionPage = await apiRequest(`/api/productions/${production.slug}`, {
+    method: 'GET',
+    token: viewerToken,
+  });
+  assert.equal(productionPage.response.status, 200);
+  assert.equal(productionPage.data?.has_access, true);
+  assert.equal(productionPage.data?.is_purchased, true);
+
+  const unlockedEpisode = await apiRequest(`/api/episodes/${episodeOne.id}`, {
+    method: 'GET',
+    token: viewerToken,
+  });
+  assert.equal(unlockedEpisode.response.status, 200);
+  assert.equal(unlockedEpisode.data?.has_access, true);
+  assert.equal(unlockedEpisode.data?.purchase_source, 'production');
+
+  const comment = await apiRequest('/api/comments', {
+    method: 'POST',
+    token: viewerToken,
+    body: {
+      episode_id: episodeOne.id,
+      content: 'Unlocked through production purchase',
+    },
+  });
+  assert.equal(comment.response.status, 201);
+
+  const reaction = await apiRequest(`/api/episodes/${episodeOne.id}/react`, {
+    method: 'POST',
+    token: viewerToken,
+    body: { reaction_type: 'like' },
+  });
+  assert.equal(reaction.response.status, 200);
+  assert.equal(reaction.data?.user_reaction, 'like');
+
+  const watchHistory = await apiRequest(`/api/watch-history/${episodeOne.id}`, {
+    method: 'PUT',
+    token: viewerToken,
+    body: { progress_seconds: 245 },
+  });
+  assert.equal(watchHistory.response.status, 200);
+  assert.equal(watchHistory.data?.success, true);
+
+  const audit = db.prepare(`
+    SELECT action, entity_type, entity_id, admin_user_id
+    FROM admin_audit_logs
+    WHERE action = 'content_purchase.confirm'
+    ORDER BY id DESC
+    LIMIT 1
+  `).get();
+  assert.ok(audit);
+  assert.equal(audit.entity_type, 'content_purchase_request');
+  assert.equal(Number(audit.entity_id), Number(productionRequest.data.request_id));
+  assert.equal(audit.admin_user_id, admin.id);
+});
+
+test('episode purchase confirm unlocks only the bought episode and keeps the production locked', async () => {
+  const production = createProduction({
+    title: 'Episode Unlock Production',
+    slug: 'episode-unlock-production',
+    required_tier: 2,
+    access_group: 'subscription',
+    purchase_mode: 'both',
+    purchase_price: 49.9,
+    is_active: 1,
+  });
+  const episodeOne = createEpisode({
+    production_id: production.id,
+    title: 'Single Episode Unlock',
+    access_group: 'inherit',
+    purchase_enabled: 1,
+    purchase_price: 4.5,
+    youtube_video_id: 'dQw4w9WgXcQ',
+  });
+  const episodeTwo = createEpisode({
+    production_id: production.id,
+    title: 'Still Locked Episode',
+    access_group: 'inherit',
+    purchase_enabled: 1,
+    purchase_price: 5.5,
+    episode_number: 2,
+    youtube_video_id: 'dQw4w9WgXcQ',
+  });
+  const viewer = createUser({ character_name: 'Episode Buyer' });
+  const admin = createUser({ role: 'admin', character_name: 'Episode Admin' });
+  const viewerToken = createAccessToken(viewer);
+  const adminToken = createAccessToken(admin);
+
+  const request = await apiRequest('/api/content-purchases', {
+    method: 'POST',
+    token: viewerToken,
+    body: { target_type: 'episode', target_id: episodeOne.id },
+  });
+  assert.equal(request.response.status, 201);
+
+  const confirm = await apiRequest(`/api/content-purchases/admin/${request.data.request_id}/confirm`, {
+    method: 'PUT',
+    token: adminToken,
+  });
+  assert.equal(confirm.response.status, 200);
+
+  const unlockedEpisode = await apiRequest(`/api/episodes/${episodeOne.id}`, {
+    method: 'GET',
+    token: viewerToken,
+  });
+  assert.equal(unlockedEpisode.response.status, 200);
+  assert.equal(unlockedEpisode.data?.has_access, true);
+  assert.equal(unlockedEpisode.data?.is_purchased_episode, true);
+  assert.equal(unlockedEpisode.data?.purchase_source, 'episode');
+
+  const stillLockedEpisode = await apiRequest(`/api/episodes/${episodeTwo.id}`, {
+    method: 'GET',
+    token: viewerToken,
+  });
+  assert.equal(stillLockedEpisode.response.status, 200);
+  assert.equal(stillLockedEpisode.data?.has_access, false);
+
+  const productionPage = await apiRequest(`/api/productions/${production.slug}`, {
+    method: 'GET',
+    token: viewerToken,
+  });
+  assert.equal(productionPage.response.status, 200);
+  assert.equal(productionPage.data?.has_access, false);
+  const listedEpisodeOne = productionPage.data?.episodes?.find((item) => Number(item.id) === Number(episodeOne.id));
+  const listedEpisodeTwo = productionPage.data?.episodes?.find((item) => Number(item.id) === Number(episodeTwo.id));
+  assert.equal(listedEpisodeOne?.has_access, true);
+  assert.equal(listedEpisodeTwo?.has_access, false);
+
+  const repeatRequest = await apiRequest('/api/content-purchases', {
+    method: 'POST',
+    token: viewerToken,
+    body: { target_type: 'episode', target_id: episodeOne.id },
+  });
+  assert.equal(repeatRequest.response.status, 409);
+  assert.match(repeatRequest.data?.error || '', /купен|purchase/i);
 });
 
 test('auth refresh ротира токена и блокира повторна употреба на стария', async () => {
