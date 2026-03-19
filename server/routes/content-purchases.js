@@ -492,6 +492,31 @@ function cancelCoveredEpisodeRequests(userId, productionId, sourceRequestId) {
   `).run(getCurrentSofiaDbTimestamp(), userId, sourceRequestId, productionId);
 }
 
+function ensureConfirmableTargetExists(request) {
+  if (request.target_type === 'production') {
+    const production = db.prepare(`
+      SELECT id
+      FROM productions
+      WHERE id = ?
+    `).get(request.target_id);
+
+    if (!production) {
+      throw new Error('Съдържанието вече не съществува.');
+    }
+    return;
+  }
+
+  const episode = db.prepare(`
+    SELECT id
+    FROM episodes
+    WHERE id = ?
+  `).get(request.target_id);
+
+  if (!episode) {
+    throw new Error('Съдържанието вече не съществува.');
+  }
+}
+
 function confirmPurchase(req, res) {
   const request = getPurchaseRequestById(req.params.id);
   if (!request) {
@@ -503,6 +528,8 @@ function confirmPurchase(req, res) {
 
   try {
     const apply = db.transaction(() => {
+      ensureConfirmableTargetExists(request);
+
       if (hasGrantedOwnership(request)) {
         throw new Error('Съдържанието вече е отключено за този потребител.');
       }
@@ -550,6 +577,7 @@ function confirmPurchase(req, res) {
     return res.json({ success: true });
   } catch (err) {
     if (err.message === 'Съдържанието вече е отключено за този потребител.'
+        || err.message === 'Съдържанието вече не съществува.'
         || err.message === 'Заявката вече е била обработена.') {
       return res.status(400).json({ error: err.message });
     }

@@ -2021,3 +2021,60 @@ test('CSV export не оставя spreadsheet formulas изпълними', asy
   assert.equal(exported.response.status, 200);
   assert.match(exported.text, /'=2\+5/);
 });
+
+test('episode purchase confirm rejects requests for deleted episode targets', async () => {
+  const production = createProduction({
+    title: 'Deleted Episode Purchase Production',
+    slug: 'deleted-episode-purchase-production',
+    required_tier: 2,
+    access_group: 'subscription',
+    purchase_mode: 'episodes',
+    is_active: 1,
+  });
+  const episode = createEpisode({
+    production_id: production.id,
+    title: 'Deleted Episode Purchase',
+    access_group: 'inherit',
+    purchase_enabled: 1,
+    purchase_price: 6.5,
+    youtube_video_id: 'dQw4w9WgXcQ',
+  });
+  const viewer = createUser({ character_name: 'Deleted Episode Viewer' });
+  const admin = createUser({ role: 'admin', character_name: 'Deleted Episode Admin' });
+  const viewerToken = createAccessToken(viewer);
+  const adminToken = createAccessToken(admin);
+
+  const request = await apiRequest('/api/content-purchases', {
+    method: 'POST',
+    token: viewerToken,
+    body: { target_type: 'episode', target_id: episode.id },
+  });
+  assert.equal(request.response.status, 201);
+
+  const deleted = await apiRequest(`/api/episodes/admin/${episode.id}`, {
+    method: 'DELETE',
+    token: adminToken,
+  });
+  assert.equal(deleted.response.status, 200);
+  assert.equal(deleted.data?.success, true);
+
+  const confirm = await apiRequest(`/api/content-purchases/admin/${request.data.request_id}/confirm`, {
+    method: 'PUT',
+    token: adminToken,
+  });
+  assert.equal(confirm.response.status, 400);
+
+  const requestAfterConfirm = db.prepare(`
+    SELECT status
+    FROM content_purchase_requests
+    WHERE id = ?
+  `).get(request.data.request_id);
+  assert.equal(requestAfterConfirm.status, 'pending');
+
+  const entitlementCount = db.prepare(`
+    SELECT COUNT(*) as count
+    FROM content_entitlements
+    WHERE source_request_id = ?
+  `).get(request.data.request_id).count;
+  assert.equal(entitlementCount, 0);
+});
