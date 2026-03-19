@@ -26,7 +26,9 @@ function validateEpisodeAccess(episodeId, user) {
            e.production_id,
            e.access_group as episode_access_group,
            p.required_tier,
-           p.access_group as production_access_group
+           p.access_group as production_access_group,
+           p.available_from as production_available_from,
+           p.available_until as production_available_until
     FROM episodes e
     JOIN productions p ON p.id = e.production_id
     WHERE e.id = ?
@@ -45,6 +47,8 @@ function validateEpisodeAccess(episodeId, user) {
     access_group: episode.episode_access_group,
     required_tier: episode.required_tier,
     production_access_group: episode.production_access_group,
+    production_available_from: episode.production_available_from,
+    production_available_until: episode.production_available_until,
   }, user, getUserPurchaseState(user?.id));
 
   if (!access.hasAccess) {
@@ -70,7 +74,9 @@ router.get('/', requireAuth, (req, res) => {
     SELECT wh.episode_id, wh.progress_seconds, wh.last_watched_at,
            e.title, e.thumbnail_url, e.episode_number, e.access_group, e.published_at,
            p.id as production_id, p.title as production_title, p.slug as production_slug,
-           p.required_tier, p.access_group as production_access_group
+           p.required_tier, p.access_group as production_access_group,
+           p.available_from as production_available_from,
+           p.available_until as production_available_until
     FROM watch_history wh
     JOIN episodes e ON e.id = wh.episode_id AND e.is_active = 1 ${publishedFilter}
     JOIN productions p ON p.id = e.production_id AND p.is_active = 1

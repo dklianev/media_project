@@ -5,6 +5,7 @@ import db from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
 import { createNotification } from '../utils/notifications.js';
 import { getCurrentSofiaDbTimestamp, getShiftedSofiaDbTimestamp } from '../utils/sofiaTime.js';
+import { getEpisodePurchaseConfig, getProductionPurchaseConfig } from '../utils/contentPurchases.js';
 
 const router = Router();
 
@@ -54,15 +55,17 @@ router.post('/create', requireAuth, giftLimiter, (req, res) => {
     if (gift_type === 'episode') {
       if (!target_id) return res.status(400).json({ error: 'Моля посочете епизод.' });
       const episode = db.prepare(`
-        SELECT e.id, e.title, e.episode_number, e.purchase_price,
-               p.title as production_title, p.slug as production_slug
+        SELECT e.id, e.title, e.episode_number, e.purchase_price, e.purchase_enabled,
+               p.title as production_title, p.slug as production_slug,
+               p.purchase_mode as production_purchase_mode
         FROM episodes e
         JOIN productions p ON p.id = e.production_id
         WHERE e.id = ? AND e.is_active = 1 AND p.is_active = 1
       `).get(target_id);
       if (!episode) return res.status(404).json({ error: 'Епизодът не е намерен или не е активен.' });
-      if (!episode.purchase_price || episode.purchase_price <= 0) {
-        return res.status(400).json({ error: 'Този епизод няма зададена цена и не може да бъде подарен.' });
+      const epPurchase = getEpisodePurchaseConfig(episode, { purchase_mode: episode.production_purchase_mode });
+      if (!epPurchase.isEnabled) {
+        return res.status(400).json({ error: 'Този епизод не може да бъде закупен индивидуално и не може да бъде подарен.' });
       }
       resolvedTargetId = episode.id;
       price = episode.purchase_price;
@@ -73,12 +76,13 @@ router.post('/create', requireAuth, giftLimiter, (req, res) => {
     } else if (gift_type === 'production') {
       if (!target_id) return res.status(400).json({ error: 'Моля посочете продукция.' });
       const production = db.prepare(`
-        SELECT id, title, slug, purchase_price
+        SELECT id, title, slug, purchase_price, purchase_mode
         FROM productions WHERE id = ? AND is_active = 1
       `).get(target_id);
       if (!production) return res.status(404).json({ error: 'Продукцията не е намерена или не е активна.' });
-      if (!production.purchase_price || production.purchase_price <= 0) {
-        return res.status(400).json({ error: 'Тази продукция няма зададена цена и не може да бъде подарена.' });
+      const prodPurchase = getProductionPurchaseConfig(production);
+      if (!prodPurchase.isEnabled) {
+        return res.status(400).json({ error: 'Тази продукция не може да бъде закупена и не може да бъде подарена.' });
       }
       resolvedTargetId = production.id;
       price = production.purchase_price;

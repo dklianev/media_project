@@ -187,7 +187,9 @@ function getEpisodeWithProduction(id, { includeUnpublished = false, currentTimes
            p.required_tier, p.access_group as production_access_group,
            p.thumbnail_url as production_thumbnail,
            p.purchase_mode as production_purchase_mode,
-           p.purchase_price as production_purchase_price
+           p.purchase_price as production_purchase_price,
+           p.available_from as production_available_from,
+           p.available_until as production_available_until
     FROM episodes e
     JOIN productions p ON e.production_id = p.id
     WHERE e.id = ? AND e.is_active = 1 AND p.is_active = 1
@@ -211,7 +213,9 @@ function getSiblingEpisode(productionId, episodeNumber, direction, user, { inclu
            e.production_id, e.purchase_enabled, e.purchase_price,
            p.required_tier, p.access_group as production_access_group,
            p.purchase_mode as production_purchase_mode,
-           p.purchase_price as production_purchase_price
+           p.purchase_price as production_purchase_price,
+           p.available_from as production_available_from,
+           p.available_until as production_available_until
     FROM episodes e
     JOIN productions p ON p.id = e.production_id
     WHERE e.production_id = ?
@@ -362,7 +366,9 @@ router.get('/latest', requireAuth, (req, res) => {
            p.title as production_title, p.slug as production_slug,
            p.required_tier, p.access_group as production_access_group,
            p.purchase_mode as production_purchase_mode,
-           p.purchase_price as production_purchase_price
+           p.purchase_price as production_purchase_price,
+           p.available_from as production_available_from,
+           p.available_until as production_available_until
     FROM episodes e
     JOIN productions p ON e.production_id = p.id
     WHERE e.is_active = 1 AND p.is_active = 1
@@ -392,7 +398,9 @@ router.get('/calendar', requireAuth, (req, res) => {
            p.title as production_title, p.slug as production_slug,
            p.required_tier, p.access_group as production_access_group,
            p.purchase_mode as production_purchase_mode,
-           p.purchase_price as production_purchase_price
+           p.purchase_price as production_purchase_price,
+           p.available_from as production_available_from,
+           p.available_until as production_available_until
     FROM episodes e
     JOIN productions p ON e.production_id = p.id
     WHERE e.published_at IS NOT NULL
@@ -727,7 +735,9 @@ router.get('/admin/all', requireAdmin, (req, res) => {
     SELECT e.*, p.title as production_title,
            p.access_group as production_access_group,
            p.purchase_mode as production_purchase_mode,
-           p.purchase_price as production_purchase_price
+           p.purchase_price as production_purchase_price,
+           p.available_from as production_available_from,
+           p.available_until as production_available_until
     ${baseFrom}
     ${whereSql}
     ORDER BY ${sortColumn} ${sortDir}, e.id DESC

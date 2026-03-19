@@ -29,6 +29,8 @@ function checkPartyEpisodeAccess(episodeId, user) {
            p.required_tier, p.access_group as production_access_group,
            p.purchase_mode as production_purchase_mode,
            p.purchase_price as production_purchase_price,
+           p.available_from as production_available_from,
+           p.available_until as production_available_until,
            e.purchase_enabled, e.purchase_price
     FROM episodes e
     JOIN productions p ON p.id = e.production_id
@@ -55,6 +57,8 @@ router.post('/create', requireAuth, partyLimiter, (req, res) => {
            p.required_tier, p.access_group as production_access_group,
            p.purchase_mode as production_purchase_mode,
            p.purchase_price as production_purchase_price,
+           p.available_from as production_available_from,
+           p.available_until as production_available_until,
            e.purchase_enabled, e.purchase_price
     FROM episodes e
     JOIN productions p ON p.id = e.production_id

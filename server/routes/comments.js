@@ -49,7 +49,9 @@ function validateEpisodeAccess(episodeId, user) {
       e.is_active,
       p.required_tier,
       p.access_group as production_access_group,
-      p.is_active as production_is_active
+      p.is_active as production_is_active,
+      p.available_from as production_available_from,
+      p.available_until as production_available_until
     FROM episodes e
     JOIN productions p ON e.production_id = p.id
     WHERE e.id = ?
@@ -68,6 +70,8 @@ function validateEpisodeAccess(episodeId, user) {
     access_group: episode.episode_access_group,
     required_tier: episode.required_tier,
     production_access_group: episode.production_access_group,
+    production_available_from: episode.production_available_from,
+    production_available_until: episode.production_available_until,
   }, user, getUserPurchaseState(user?.id));
 
   if (!access.hasAccess) {

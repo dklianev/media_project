@@ -194,7 +194,9 @@ export function evaluateEpisodeAccess(episode, user, purchaseState = createEmpty
   const productionPending = hasPendingProductionPurchase(purchaseState, productionId);
   const episodePending = hasPendingEpisodePurchase(purchaseState, episodeId);
   const isPurchased = productionOwned || episodeOwned;
-  const available = isWithinAvailabilityWindow(episode?.available_from, episode?.available_until);
+  const episodeAvailable = isWithinAvailabilityWindow(episode?.available_from, episode?.available_until);
+  const productionAvailable = isWithinAvailabilityWindow(episode?.production_available_from, episode?.production_available_until);
+  const available = episodeAvailable && productionAvailable;
 
   return {
     productionGroup,

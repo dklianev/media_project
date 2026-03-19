@@ -150,7 +150,9 @@ function getPurchasableEpisode(episodeId) {
       p.purchase_mode as production_purchase_mode,
       p.purchase_price as production_purchase_price,
       p.required_tier,
-      p.access_group as production_access_group
+      p.access_group as production_access_group,
+      p.available_from as production_available_from,
+      p.available_until as production_available_until
     FROM episodes e
     JOIN productions p ON p.id = e.production_id
     WHERE e.id = ?

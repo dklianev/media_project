@@ -35,7 +35,9 @@ function validateTargetAccess(targetType, targetId, user) {
     const episode = db.prepare(`
       SELECT e.id, e.production_id, e.access_group, e.published_at,
              e.available_from, e.available_until,
-             p.required_tier, p.access_group as production_access_group
+             p.required_tier, p.access_group as production_access_group,
+             p.available_from as production_available_from,
+             p.available_until as production_available_until
       FROM episodes e
       JOIN productions p ON p.id = e.production_id
       WHERE e.id = ?
