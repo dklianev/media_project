@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link, NavLink, useLocation } from 'react-router-dom';
-import { AnimatePresence, motion } from 'framer-motion';
+import { useLocation } from 'react-router-dom';
+import { Link, NavLink } from '@/components/AppLink';
+import { AnimatePresence, motion } from '@/lib/motion';
 import { Calendar as CalendarIcon, Crown, Film, Gift, Heart, Home, LogOut, Menu, Moon, Settings, ShoppingBag, Sparkles, Sun, User, Users, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';

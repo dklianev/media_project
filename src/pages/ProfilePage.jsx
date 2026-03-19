@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { useLocation } from 'react-router-dom';
+import { Link } from '@/components/AppLink';
+import { motion } from '@/lib/motion';
 import { Calendar, Shield, Sparkles, UserRound, ListVideo, Clock, PlayCircle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import SubscriptionBadge from '../components/SubscriptionBadge';

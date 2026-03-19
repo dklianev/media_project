@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { Link } from '@/components/AppLink';
+import { motion } from '@/lib/motion';
 import { Crown, Film, Heart, Home, Sparkles, HelpCircle } from 'lucide-react';
 import { getPublicSettings, subscribeToPublicSettingsUpdates } from '../utils/settings';
 

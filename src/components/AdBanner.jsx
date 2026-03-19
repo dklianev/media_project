@@ -1,4 +1,4 @@
-import { motion } from 'framer-motion';
+import { motion } from '@/lib/motion';
 
 export default function AdBanner({ imageUrl, link }) {
   if (!imageUrl) return null;

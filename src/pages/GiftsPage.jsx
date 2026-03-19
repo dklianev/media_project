@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
+import { motion } from '@/lib/motion';
 import { Gift, Send, Inbox, Copy, Check } from 'lucide-react';
 import { api } from '../utils/api';
 import { formatDate } from '../utils/formatters';

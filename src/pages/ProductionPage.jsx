@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
-import { motion, useScroll, useTransform } from 'framer-motion';
+import { useParams } from 'react-router-dom';
+import { Link } from '@/components/AppLink';
+import { motion, useScroll, useTransform } from '@/lib/motion';
 import {
   ArrowLeft,
   CheckCircle2,

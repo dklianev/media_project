@@ -1,4 +1,4 @@
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, motion } from '@/lib/motion';
 import { Copy, CreditCard, ReceiptText, X } from 'lucide-react';
 import { formatMoney } from '../utils/formatters';
 import { useToastContext } from '../context/ToastContext';

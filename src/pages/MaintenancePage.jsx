@@ -1,5 +1,5 @@
 import { Wrench } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { motion } from '@/lib/motion';
 import PageBackground from '../components/PageBackground';
 
 export default function MaintenancePage({ message }) {

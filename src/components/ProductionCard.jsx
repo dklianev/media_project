@@ -1,5 +1,5 @@
-import { Link } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { Link } from '@/components/AppLink';
+import { motion } from '@/lib/motion';
 import {
   CheckCircle2,
   Clapperboard,
@@ -68,7 +68,7 @@ export default function ProductionCard({ production, isInWatchlist, onToggleWatc
   const PurchaseBadgeIcon = purchaseBadge?.icon || null;
 
   return (
-    <Link to={`/productions/${slug}`} className="no-underline block">
+    <Link to={`/productions/${slug}`} prefetch="viewport" className="no-underline block">
       <motion.article
         className="group/card glass-card relative isolate rounded-2xl border border-[var(--border)] shadow-premium-sm transition-all duration-300 hover:border-[var(--accent-gold)]/40 hover:shadow-[0_12px_40px_rgba(212,175,55,0.15),0_0_0_1px_rgba(212,175,55,0.08)] hover:z-[60] focus-within:z-[60]"
         whileHover={{ y: -6 }}

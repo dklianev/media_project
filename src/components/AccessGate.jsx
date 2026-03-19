@@ -1,6 +1,6 @@
-import { Link } from 'react-router-dom';
+import { Link } from '@/components/AppLink';
 import { Lock, Crown } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { motion } from '@/lib/motion';
 
 const GROUP_LABELS = {
   free: 'Безплатен',

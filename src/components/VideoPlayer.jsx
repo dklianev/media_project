@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from '@/lib/motion';
 import { useNavigate } from 'react-router-dom';
 import { Info, Play, Pause, RotateCcw, RotateCw, Volume2, VolumeX, Maximize, Minimize, SkipForward, SkipBack, Settings } from 'lucide-react';
 
@@ -262,7 +262,7 @@ export default function VideoPlayer({
     if (!episode?.id) return;
     clearAutoplayTimer();
     setAutoplayCountdown(null);
-    navigate(`/episodes/${episode.id}`);
+    navigate(`/episodes/${episode.id}`, { viewTransition: true });
   };
 
   // ─── LOCAL VIDEO: adapter that wraps <video> element to match YouTube player API ───
@@ -1342,7 +1342,7 @@ export default function VideoPlayer({
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    navigate(`/episodes/${nextEpisodeId}`);
+                    navigate(`/episodes/${nextEpisodeId}`, { viewTransition: true });
                   }}
                   className="ml-1 flex items-center gap-1 opacity-70 transition-colors hover:text-white hover:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-gold)] focus-visible:ring-offset-1 focus-visible:ring-offset-black rounded-sm sm:ml-2"
                   aria-label="Следващ епизод"

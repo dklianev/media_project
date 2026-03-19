@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
-import { motion } from 'framer-motion';
+import { motion } from '@/lib/motion';
 import { TvMinimalPlay, Sparkles, ArrowRight } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link } from '@/components/AppLink';
 import { getPublicSettings } from '../utils/settings';
 import PageBackground from '../components/PageBackground';
 

@@ -1,5 +1,5 @@
-import { Link } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { Link } from '@/components/AppLink';
+import { motion } from '@/lib/motion';
 import { Ghost } from 'lucide-react';
 import PageBackground from '../components/PageBackground';
 

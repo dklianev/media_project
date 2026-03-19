@@ -1,5 +1,6 @@
-import { Link, Outlet, useLocation } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { Outlet, useLocation } from 'react-router-dom';
+import { Link } from '@/components/AppLink';
+import { motion } from '@/lib/motion';
 import {
   ArrowLeft,
   CreditCard,

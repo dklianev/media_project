@@ -6,6 +6,7 @@ import {
   Route,
   RouterProvider,
 } from 'react-router-dom';
+import { MotionProvider } from '@/lib/motion';
 import { AuthProvider } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
 import App from './App';
@@ -27,7 +28,9 @@ const router = createBrowserRouter(
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <ThemeProvider>
-      <RouterProvider router={router} />
+      <MotionProvider>
+        <RouterProvider router={router} future={{ v7_startTransition: true }} />
+      </MotionProvider>
     </ThemeProvider>
   </StrictMode>
 );

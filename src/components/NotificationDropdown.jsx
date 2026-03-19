@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from '@/lib/motion';
 import { Bell, Check, ExternalLink } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link } from '@/components/AppLink';
 import { api } from '../utils/api';
 import { useAuth } from '../context/AuthContext';
 import { getPublicSettings } from '../utils/settings';

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { motion } from 'framer-motion';
+import { motion } from '@/lib/motion';
 import { CreditCard, Crown, Download, Eye, Film, Loader2, Tv, TrendingUp, Users } from 'lucide-react';
 import { api, getTokens } from '../../utils/api';
 import { getSofiaDateKey } from '../../utils/formatters';

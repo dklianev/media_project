@@ -1,5 +1,5 @@
 import { useState, useEffect, lazy, Suspense } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from '@/lib/motion';
 import { MessageSquare, Send, Trash2, User, Smile } from 'lucide-react';
 
 const LazyEmojiPicker = lazy(() => import('emoji-picker-react'));

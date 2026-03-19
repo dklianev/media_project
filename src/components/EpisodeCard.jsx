@@ -1,5 +1,5 @@
-import { Link } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { Link } from '@/components/AppLink';
+import { motion } from '@/lib/motion';
 import { Clapperboard, Clock, Play } from 'lucide-react';
 import Tooltip from './Tooltip';
 
@@ -14,7 +14,7 @@ export default function EpisodeCard({ episode, showProgress = false, showProduct
 
     return (
         <div className={`flex-shrink-0 ${asGridItem ? 'w-full h-full' : 'min-w-[240px] sm:min-w-[265px]'}`} style={{ scrollSnapAlign: 'start' }}>
-            <Link to={href} className="no-underline group block h-full">
+            <Link to={href} prefetch="viewport" className="no-underline group block h-full">
                 <motion.article
                     whileHover={{ y: -6 }}
                     whileTap={{ scale: 0.97 }}

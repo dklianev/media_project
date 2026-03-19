@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
+import { Link } from '@/components/AppLink';
+import { motion, AnimatePresence } from '@/lib/motion';
 import { ShoppingBag, X, PackageOpen } from 'lucide-react';
 import { api } from '../utils/api';
 import { useToastContext } from '../context/ToastContext';

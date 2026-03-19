@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { motion } from 'framer-motion';
+import { motion } from '@/lib/motion';
 import { Copy, Gift, Users, CalendarCheck, Clock } from 'lucide-react';
 import { api } from '../utils/api';
 import { useToastContext } from '../context/ToastContext';

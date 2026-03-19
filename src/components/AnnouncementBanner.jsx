@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, motion } from '@/lib/motion';
 import { Info, AlertTriangle, CheckCircle2, X } from 'lucide-react';
 import { getPublicSettings, subscribeToPublicSettingsUpdates } from '../utils/settings';
 

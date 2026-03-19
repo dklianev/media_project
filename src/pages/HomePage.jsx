@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { AnimatePresence, motion } from 'framer-motion';
+import { Link } from '@/components/AppLink';
+import { AnimatePresence, motion } from '@/lib/motion';
 import {
   ArrowRight,
   Clapperboard,
