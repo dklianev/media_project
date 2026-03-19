@@ -9,6 +9,7 @@ import {
 import { MotionProvider } from '@/lib/motion';
 import { AuthProvider } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
+import { cleanupLegacyPwaState } from './utils/legacyPwaCleanup';
 import App from './App';
 import './index.css';
 
@@ -24,6 +25,8 @@ const router = createBrowserRouter(
     />
   )
 );
+
+cleanupLegacyPwaState();
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
