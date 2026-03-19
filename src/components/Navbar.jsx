@@ -58,7 +58,7 @@ function NavPill({ to, label, icon: Icon, onClick }) {
 }
 
 /* ── Profile Dropdown (desktop) ── */
-function ProfileDropdown({ links }) {
+function ProfileDropdown({ links, label }) {
   const [open, setOpen] = useState(false);
   const dropdownRef = useRef(null);
   const timeoutRef = useRef(null);
@@ -97,7 +97,7 @@ function ProfileDropdown({ links }) {
         }`}
       >
         <User className="w-4 h-4 shrink-0" />
-        <span>Профил</span>
+        <span>{label}</span>
         <ChevronDown className={`w-3 h-3 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
       </button>
 
@@ -428,7 +428,7 @@ export default function Navbar() {
               {navLinks.filter((l) => !l.extra).map((link) => (
                 <NavPill key={link.to} {...link} />
               ))}
-              <ProfileDropdown links={profileLinks} />
+              <ProfileDropdown links={profileLinks} label={profileLinks[0]?.label || 'Профил'} />
               {isAdmin && <NavPill to="/admin" label={ui.adminZoneLabel || 'Админ'} icon={Settings} />}
             </nav>
 
