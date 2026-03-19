@@ -9,6 +9,7 @@ import {
   getUserPurchaseState,
   hasPendingEpisodePurchase,
   evaluateEpisodeAccess,
+  getEpisodePurchaseConfig,
 } from '../utils/contentPurchases.js';
 
 const router = Router();
@@ -103,6 +104,15 @@ router.post('/purchase', requireAuth, (req, res) => {
   const purchaseState = getUserPurchaseState(req.user.id);
   for (const ep of episodes) {
     const access = evaluateEpisodeAccess(ep, req.user, purchaseState);
+    const purchaseConfig = getEpisodePurchaseConfig(ep, {
+      purchase_mode: ep.production_purchase_mode,
+    });
+    if (!purchaseConfig.isEnabled) {
+      return res.status(400).json({ error: `Епизод "${ep.title}" не може да бъде закупен индивидуално.` });
+    }
+    if (!access.isAvailable) {
+      return res.status(400).json({ error: `Епизод "${ep.title}" не е наличен за покупка в момента.` });
+    }
     if (access.isPurchased) {
       return res.status(409).json({ error: `Епизод "${ep.title}" вече е закупен.` });
     }

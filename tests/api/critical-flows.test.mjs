@@ -414,6 +414,7 @@ test('content purchase request blocks unavailable production and episode targets
     body: { target_type: 'production', target_id: production.id },
   });
   assert.equal(blockedProduction.response.status, 400);
+  assert.equal(blockedProduction.data?.error, 'Продукцията в момента не е налична за покупка.');
 
   const blockedEpisode = await apiRequest('/api/content-purchases', {
     method: 'POST',
@@ -421,6 +422,7 @@ test('content purchase request blocks unavailable production and episode targets
     body: { target_type: 'episode', target_id: episode.id },
   });
   assert.equal(blockedEpisode.response.status, 400);
+  assert.equal(blockedEpisode.data?.error, 'Епизодът в момента не е наличен за покупка.');
 
   const purchaseCount = db.prepare('SELECT COUNT(*) as count FROM content_purchase_requests').get().count;
   assert.equal(purchaseCount, 0);
@@ -2628,6 +2630,47 @@ test('wishlist: reject duplicate addition (returns already_exists)', async () =>
   assert.equal(dup.data.already_exists, true);
 });
 
+test('wishlist: rejects nonexistent or unsellable targets', async () => {
+  const user = createUser();
+  const token = createAccessToken(user);
+  const lockedProduction = createProduction({
+    access_group: 'free',
+    purchase_mode: 'none',
+    is_active: 1,
+  });
+  const lockedEpisode = createEpisode({
+    production_id: lockedProduction.id,
+    access_group: 'inherit',
+    purchase_enabled: 0,
+    purchase_price: null,
+    is_active: 1,
+  });
+
+  const missing = await apiRequest('/api/wishlist', {
+    method: 'POST',
+    token,
+    body: { target_type: 'production', target_id: 999999 },
+  });
+  assert.equal(missing.response.status, 404);
+
+  const unsellableProduction = await apiRequest('/api/wishlist', {
+    method: 'POST',
+    token,
+    body: { target_type: 'production', target_id: lockedProduction.id },
+  });
+  assert.equal(unsellableProduction.response.status, 400);
+
+  const unsellableEpisode = await apiRequest('/api/wishlist', {
+    method: 'POST',
+    token,
+    body: { target_type: 'episode', target_id: lockedEpisode.id },
+  });
+  assert.equal(unsellableEpisode.response.status, 400);
+
+  const count = db.prepare('SELECT COUNT(*) as count FROM purchase_wishlist WHERE user_id = ?').get(user.id).count;
+  assert.equal(count, 0);
+});
+
 test('wishlist: require auth', async () => {
   const res = await apiRequest('/api/wishlist');
   assert.equal(res.response.status, 401);
@@ -2734,9 +2777,44 @@ test('gifts: create blocks unpublished or unavailable targets', async () => {
     body: { gift_type: 'production', target_id: unavailableProduction.id },
   });
   assert.equal(unavailableProductionGift.response.status, 400);
+  assert.equal(unavailableProductionGift.data?.error, 'Тази продукция в момента не е налична и не може да бъде подарена.');
 
   const giftCount = db.prepare('SELECT COUNT(*) as count FROM gift_codes').get().count;
   assert.equal(giftCount, 0);
+});
+
+test('gifts: redeem rejects deleted gifted content', async () => {
+  const production = createProduction({ access_group: 'free', purchase_mode: 'episodes' });
+  const episode = createEpisode({ production_id: production.id, access_group: 'free', purchase_enabled: 1, purchase_price: 10 });
+  const sender = createUser();
+  const recipient = createUser();
+  const admin = createUser({ role: 'admin' });
+  const created = await apiRequest('/api/gifts/create', {
+    method: 'POST',
+    token: createAccessToken(sender),
+    body: { gift_type: 'episode', target_id: episode.id },
+  });
+  assert.equal(created.response.status, 201);
+
+  const gift = db.prepare('SELECT * FROM gift_codes WHERE code = ?').get(created.data.code);
+  const confirmed = await apiRequest(`/api/content-purchases/admin/${gift.source_request_id}/confirm`, {
+    method: 'PUT',
+    token: createAccessToken(admin),
+  });
+  assert.equal(confirmed.response.status, 200);
+
+  db.prepare('DELETE FROM episodes WHERE id = ?').run(episode.id);
+
+  const redeemed = await apiRequest('/api/gifts/redeem', {
+    method: 'POST',
+    token: createAccessToken(recipient),
+    body: { code: created.data.code },
+  });
+  assert.equal(redeemed.response.status, 400);
+  assert.equal(redeemed.data?.error, 'Подареното съдържание вече не е налично.');
+
+  const entitlementCount = db.prepare('SELECT COUNT(*) as count FROM content_entitlements WHERE user_id = ?').get(recipient.id).count;
+  assert.equal(entitlementCount, 0);
 });
 
 test('gifts: redeem requires payment confirmation', async () => {
@@ -2960,6 +3038,51 @@ test('bundles: user lists available bundles', async () => {
   assert.ok(Array.isArray(res.data));
   assert.ok(res.data.length >= 1);
   assert.equal(res.data[0].name, 'Available Bundle');
+});
+
+test('bundles: purchase rejects episodes that are not individually sellable', async () => {
+  const admin = createUser({ role: 'admin' });
+  const user = createUser();
+  const production = createProduction({
+    title: 'Bundle Locked Production',
+    slug: 'bundle-locked-production',
+    access_group: 'free',
+    purchase_mode: 'none',
+    is_active: 1,
+  });
+  const episode = createEpisode({
+    production_id: production.id,
+    title: 'Bundle Locked Episode',
+    access_group: 'inherit',
+    purchase_enabled: 0,
+    purchase_price: null,
+    is_active: 1,
+  });
+
+  const bundleCreated = await apiRequest('/api/bundles/admin', {
+    method: 'POST',
+    token: createAccessToken(admin),
+    body: {
+      name: 'Locked Bundle',
+      bundle_type: 'fixed',
+      fixed_price: 5,
+      episode_ids: [episode.id],
+    },
+  });
+  assert.equal(bundleCreated.response.status, 201);
+
+  const purchase = await apiRequest('/api/bundles/purchase', {
+    method: 'POST',
+    token: createAccessToken(user),
+    body: {
+      bundle_id: bundleCreated.data.id,
+    },
+  });
+  assert.equal(purchase.response.status, 400);
+  assert.match(purchase.data?.error || '', /не може да бъде закупен индивидуално/i);
+
+  const requestCount = db.prepare('SELECT COUNT(*) as count FROM content_purchase_requests WHERE user_id = ?').get(user.id).count;
+  assert.equal(requestCount, 0);
 });
 
 test('bundles: admin deletes a bundle', async () => {

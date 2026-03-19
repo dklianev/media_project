@@ -82,7 +82,7 @@ router.post('/create', requireAuth, giftLimiter, (req, res) => {
       }
       const episodeAccess = evaluateEpisodeAccess(episode, req.user);
       if (!episodeAccess.isAvailable) {
-        return res.status(400).json({ error: '???? ?????? ? ???????? ? ?????????? ?? ????? ?? ???? ?? ?????? ? ??????.' });
+        return res.status(400).json({ error: 'Този епизод в момента не е наличен и не може да бъде подарен.' });
       }
       resolvedTargetId = episode.id;
       price = episode.purchase_price;
@@ -104,7 +104,7 @@ router.post('/create', requireAuth, giftLimiter, (req, res) => {
       }
       const productionAccess = evaluateProductionAccess(production, req.user);
       if (!productionAccess.isAvailable) {
-        return res.status(400).json({ error: '???? ????????? ? ???????? ? ?????????? ?? ????? ?? ???? ?? ?????? ? ??????.' });
+        return res.status(400).json({ error: 'Тази продукция в момента не е налична и не може да бъде подарена.' });
       }
       resolvedTargetId = production.id;
       price = production.purchase_price;
@@ -343,6 +343,14 @@ router.post('/redeem', requireAuth, giftLimiter, (req, res) => {
     const redeem = db.transaction(() => {
       if (gift.gift_type === 'episode' || gift.gift_type === 'production') {
         const targetType = gift.gift_type;
+        const targetExists = targetType === 'episode'
+          ? db.prepare('SELECT 1 FROM episodes WHERE id = ?').get(gift.target_id)
+          : db.prepare('SELECT 1 FROM productions WHERE id = ?').get(gift.target_id);
+
+        if (!targetExists) {
+          throw new Error('Подареното съдържание вече не е налично.');
+        }
+
         const existing = db.prepare(`
           SELECT 1 FROM content_entitlements
           WHERE user_id = ? AND target_type = ? AND target_id = ?

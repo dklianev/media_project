@@ -1,9 +1,72 @@
 import { Router } from 'express';
 import db from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
+import {
+  evaluateEpisodeAccess,
+  evaluateProductionAccess,
+  getEpisodePurchaseConfig,
+  getProductionPurchaseConfig,
+  getUserPurchaseState,
+} from '../utils/contentPurchases.js';
+import { getCurrentSofiaDbTimestamp } from '../utils/sofiaTime.js';
 
 const router = Router();
 const VALID_TYPES = ['episode', 'production'];
+
+function resolveWishlistTarget(targetType, targetId, user) {
+  const purchaseState = getUserPurchaseState(user?.id);
+
+  if (targetType === 'production') {
+    const production = db.prepare(`
+      SELECT id, title, slug, purchase_mode, purchase_price, required_tier, access_group,
+             available_from, available_until
+      FROM productions
+      WHERE id = ? AND is_active = 1
+    `).get(targetId);
+
+    if (!production) {
+      return { ok: false, status: 404, error: 'Продукцията не е намерена.' };
+    }
+
+    const purchaseConfig = getProductionPurchaseConfig(production);
+    const access = evaluateProductionAccess(production, user, purchaseState);
+    if (!purchaseConfig.isEnabled || !access.canPurchase) {
+      return { ok: false, status: 400, error: 'Тази продукция не може да бъде добавена в wishlist в момента.' };
+    }
+
+    return { ok: true };
+  }
+
+  const currentTimestamp = getCurrentSofiaDbTimestamp();
+  const episode = db.prepare(`
+    SELECT e.id, e.production_id, e.purchase_enabled, e.purchase_price,
+           e.access_group, e.available_from, e.available_until,
+           p.purchase_mode as production_purchase_mode,
+           p.purchase_price as production_purchase_price,
+           p.required_tier,
+           p.access_group as production_access_group,
+           p.available_from as production_available_from,
+           p.available_until as production_available_until
+    FROM episodes e
+    JOIN productions p ON p.id = e.production_id
+    WHERE e.id = ? AND e.is_active = 1 AND p.is_active = 1
+      AND (e.published_at IS NULL OR e.published_at <= ?)
+  `).get(targetId, currentTimestamp);
+
+  if (!episode) {
+    return { ok: false, status: 404, error: 'Епизодът не е намерен.' };
+  }
+
+  const purchaseConfig = getEpisodePurchaseConfig(episode, {
+    purchase_mode: episode.production_purchase_mode,
+  });
+  const access = evaluateEpisodeAccess(episode, user, purchaseState);
+  if (!purchaseConfig.isEnabled || !access.canPurchaseEpisode) {
+    return { ok: false, status: 400, error: 'Този епизод не може да бъде добавен в wishlist в момента.' };
+  }
+
+  return { ok: true };
+}
 
 // List user's wishlist with current prices
 router.get('/', requireAuth, (req, res) => {
@@ -45,6 +108,11 @@ router.post('/', requireAuth, (req, res) => {
   const id = Number(target_id);
   if (!Number.isFinite(id) || id <= 0) {
     return res.status(400).json({ error: 'Невалиден идентификатор.' });
+  }
+
+  const target = resolveWishlistTarget(target_type, id, req.user);
+  if (!target.ok) {
+    return res.status(target.status).json({ error: target.error });
   }
 
   try {
