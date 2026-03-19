@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { Link, NavLink } from '@/components/AppLink';
 import { AnimatePresence, motion } from '@/lib/motion';
-import { Calendar as CalendarIcon, Crown, Film, Gift, Heart, Home, LogOut, Menu, Moon, Settings, ShoppingBag, Sparkles, Sun, User, Users, X } from 'lucide-react';
+import { Calendar as CalendarIcon, ChevronDown, Crown, Film, Gift, Heart, Home, LogOut, Menu, Moon, MonitorPlay, Settings, ShoppingBag, Sun, User, Users, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import SubscriptionBadge from './SubscriptionBadge';
@@ -14,14 +14,20 @@ const DEFAULT_NAV = [
   { to: '/productions', key: 'nav_label_catalog', fallback: 'Каталог', icon: Film },
   { to: '/calendar', key: 'nav_label_calendar', fallback: 'График', icon: CalendarIcon },
   { to: '/subscribe', key: 'nav_label_subscribe', fallback: 'Абонаменти', icon: Crown },
-  { to: '/profile', key: 'nav_label_profile', fallback: 'Профил', icon: User },
+  { to: '/watch-party', key: 'nav_label_watch_party', fallback: 'Watch Party', icon: MonitorPlay },
 ];
 
-const EXTRA_NAV = [
+const PROFILE_NAV = [
+  { to: '/profile', fallback: 'Профил', icon: User },
   { to: '/my-purchases', fallback: 'Покупки', icon: ShoppingBag },
   { to: '/gifts', fallback: 'Подаръци', icon: Gift },
   { to: '/wishlist', fallback: 'Желания', icon: Heart },
   { to: '/referrals', fallback: 'Покани', icon: Users },
+];
+
+const EXTRA_NAV = [
+  ...PROFILE_NAV,
+  { to: '/watch-party', fallback: 'Watch Party', icon: MonitorPlay },
 ];
 
 function NavPill({ to, label, icon: Icon, onClick }) {
@@ -49,6 +55,88 @@ function NavPill({ to, label, icon: Icon, onClick }) {
         </motion.span>
       )}
     </NavLink>
+  );
+}
+
+/* ── Profile Dropdown (desktop) ── */
+function ProfileDropdown({ links }) {
+  const [open, setOpen] = useState(false);
+  const dropdownRef = useRef(null);
+  const timeoutRef = useRef(null);
+  const location = useLocation();
+  const isChildActive = links.some((l) => location.pathname === l.to);
+
+  const scheduleClose = () => {
+    timeoutRef.current = setTimeout(() => setOpen(false), 150);
+  };
+  const cancelClose = () => {
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+  };
+  const handleEnter = () => { cancelClose(); setOpen(true); };
+  const handleLeave = () => { scheduleClose(); };
+
+  useEffect(() => {
+    setOpen(false);
+  }, [location.pathname]);
+
+  useEffect(() => () => {
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+  }, []);
+
+  return (
+    <div
+      className="relative"
+      ref={dropdownRef}
+      onMouseEnter={handleEnter}
+      onMouseLeave={handleLeave}
+    >
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className={`relative inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[13px] font-semibold whitespace-nowrap z-10 transition-colors ${isChildActive
+          ? 'text-[var(--text-primary)] border border-[var(--border-light)] bg-[linear-gradient(135deg,rgba(212,175,55,0.16),rgba(75,197,255,0.1))] shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]'
+          : 'text-[var(--text-secondary)] border border-transparent hover:text-[var(--text-primary)] hover:bg-white/5'
+        }`}
+      >
+        <User className="w-4 h-4 shrink-0" />
+        <span>Профил</span>
+        <ChevronDown className={`w-3 h-3 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
+      </button>
+
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, y: 6, scale: 0.97 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 6, scale: 0.97 }}
+            transition={{ duration: 0.15, ease: [0.16, 1, 0.3, 1] }}
+            className="absolute top-full right-0 mt-2 w-48 rounded-xl border border-[var(--glass-border)] bg-[var(--bg-secondary)]/95 backdrop-blur-xl shadow-2xl shadow-black/40 overflow-hidden z-50"
+          >
+            <div className="absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-[var(--accent-gold)]/30 to-transparent" />
+            <div className="py-1.5">
+              {links.map((link) => {
+                const Icon = link.icon;
+                return (
+                  <NavLink
+                    key={link.to}
+                    to={link.to}
+                    end
+                    className={({ isActive }) =>
+                      `flex items-center gap-2.5 px-4 py-2.5 text-[13px] font-medium transition-colors ${isActive
+                        ? 'text-[var(--accent-gold-light)] bg-[var(--accent-gold)]/10'
+                        : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-white/5'
+                      }`
+                    }
+                  >
+                    <Icon className="w-4 h-4 shrink-0" />
+                    {link.label}
+                  </NavLink>
+                );
+              })}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
   );
 }
 
@@ -236,6 +324,9 @@ export default function Navbar() {
     ...DEFAULT_NAV.map((n) => ({ to: n.to, label: n.fallback, icon: n.icon })),
     ...EXTRA_NAV.map((n) => ({ to: n.to, label: n.fallback, icon: n.icon, extra: true })),
   ]);
+  const [profileLinks, setProfileLinks] = useState(
+    PROFILE_NAV.map((n) => ({ to: n.to, label: n.fallback, icon: n.icon })),
+  );
 
   useEffect(() => {
     const loadSettings = (force = false) => {
@@ -262,6 +353,9 @@ export default function Navbar() {
               extra: true,
             })),
           ]);
+          setProfileLinks(
+            PROFILE_NAV.map((n) => ({ to: n.to, label: n.fallback, icon: n.icon })),
+          );
         })
         .catch((err) => { console.error('Navbar settings load failed:', err); });
     };
@@ -335,6 +429,7 @@ export default function Navbar() {
               {navLinks.filter((l) => !l.extra).map((link) => (
                 <NavPill key={link.to} {...link} />
               ))}
+              <ProfileDropdown links={profileLinks} />
               {isAdmin && <NavPill to="/admin" label={ui.adminZoneLabel || 'Админ'} icon={Settings} />}
             </nav>
 
