@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { motion } from '@/lib/motion';
-import { Tv, Users, Send, LogOut, Copy, Check, MessageCircle } from 'lucide-react';
+import { Check, Copy, LogOut, MessageCircle, Send, Trash2, Tv, Users } from 'lucide-react';
 import { api } from '../utils/api.js';
 import { useToastContext } from '../context/ToastContext';
 import PageBackground from '../components/PageBackground';
@@ -23,6 +23,7 @@ function CopyCodeButton({ code }) {
 
   return (
     <button
+      type="button"
       onClick={handleCopy}
       className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[var(--bg-tertiary)] hover:bg-[var(--bg-tertiary)]/80 text-sm font-mono text-[var(--text-secondary)] transition-colors cursor-pointer"
       title="Копирай кода"
@@ -34,7 +35,7 @@ function CopyCodeButton({ code }) {
 }
 
 function ParticipantList({ participants }) {
-  if (!participants || participants.length === 0) return null;
+  if (!participants?.length) return null;
 
   return (
     <div className="flex flex-wrap gap-3">
@@ -67,9 +68,46 @@ function ChatMessage({ message }) {
       <span className="text-xs font-semibold text-[var(--accent-gold)] whitespace-nowrap">
         {(message.display_name || message.username || 'Потребител')}:
       </span>
-      <span className="text-sm text-[var(--text-primary)] break-words">
-        {message.content}
-      </span>
+      <span className="text-sm text-[var(--text-primary)] break-words">{message.content}</span>
+    </div>
+  );
+}
+
+function HostedPartyCard({ party, opening, deleting, onOpen, onDelete }) {
+  if (!party) return null;
+
+  return (
+    <div className="mb-4 rounded-2xl border border-[var(--accent-gold)]/25 bg-[var(--accent-gold)]/8 p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="space-y-1">
+          <p className="text-xs uppercase tracking-[0.16em] text-[var(--accent-gold-light)]">Активен watch party</p>
+          <h3 className="text-lg font-semibold text-[var(--text-primary)]">{party.episode_title}</h3>
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-[var(--text-secondary)]">
+            <span>Код: <span className="font-mono text-[var(--text-primary)]">{party.invite_code}</span></span>
+            <span>Участници: <span className="text-[var(--text-primary)]">{party.participant_count}</span></span>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={onOpen}
+            disabled={opening || deleting}
+            className="btn-outline px-4 py-2 text-sm disabled:opacity-50"
+          >
+            {opening ? 'Отваряне...' : 'Отвори'}
+          </button>
+          <button
+            type="button"
+            onClick={onDelete}
+            disabled={opening || deleting}
+            className="inline-flex items-center gap-2 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-2 text-sm font-medium text-red-300 hover:bg-red-500/15 disabled:opacity-50"
+          >
+            <Trash2 className="w-4 h-4" />
+            {deleting ? 'Изтриване...' : 'Изтрий'}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -87,12 +125,43 @@ export default function WatchPartyPage() {
 
   const [partyCode, setPartyCode] = useState(null);
   const [party, setParty] = useState(null);
+  const [hostedParty, setHostedParty] = useState(null);
+  const [loadingHostedParty, setLoadingHostedParty] = useState(false);
+  const [deletingParty, setDeletingParty] = useState(false);
   const [messageText, setMessageText] = useState('');
   const [sending, setSending] = useState(false);
   const [leaving, setLeaving] = useState(false);
   const [ending, setEnding] = useState(false);
 
   const chatEndRef = useRef(null);
+
+  const clearPartyState = useCallback(() => {
+    setPartyCode(null);
+    setParty(null);
+    setInviteCode(null);
+    setMessageText('');
+  }, []);
+
+  const fetchHostedParty = useCallback(async () => {
+    setLoadingHostedParty(true);
+    try {
+      const data = await api.get('/watch-party/mine/active');
+      setHostedParty(data.party || null);
+      return data.party || null;
+    } catch (err) {
+      if (err?.status !== 404) {
+        console.error('Failed to fetch hosted watch party:', err);
+      }
+      setHostedParty(null);
+      return null;
+    } finally {
+      setLoadingHostedParty(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchHostedParty();
+  }, [fetchHostedParty]);
 
   useEffect(() => {
     if (chatEndRef.current) {
@@ -105,13 +174,6 @@ export default function WatchPartyPage() {
 
     let cancelled = false;
 
-    const clearPartyState = () => {
-      setPartyCode(null);
-      setParty(null);
-      setInviteCode(null);
-      setMessageText('');
-    };
-
     const fetchParty = () => {
       api.get(`/watch-party/${partyCode}`)
         .then((data) => {
@@ -119,6 +181,7 @@ export default function WatchPartyPage() {
           if (data.status && data.status !== 'active') {
             showToast('Watch party приключи.', 'success');
             clearPartyState();
+            fetchHostedParty();
             return;
           }
           setParty(data);
@@ -132,6 +195,7 @@ export default function WatchPartyPage() {
             showToast(err?.data?.error || err?.message || 'Неуспешно зареждане на watch party.', 'error');
           }
           clearPartyState();
+          fetchHostedParty();
         });
     };
 
@@ -142,7 +206,7 @@ export default function WatchPartyPage() {
       cancelled = true;
       clearInterval(intervalId);
     };
-  }, [partyCode, showToast]);
+  }, [partyCode, showToast, clearPartyState, fetchHostedParty]);
 
   const handleCreate = async (event) => {
     event.preventDefault();
@@ -157,7 +221,11 @@ export default function WatchPartyPage() {
       showToast('Watch party беше създаден успешно!', 'success');
       setInviteCode(code);
       setPartyCode(code);
+      await fetchHostedParty();
     } catch (err) {
+      if (err?.status === 400) {
+        await fetchHostedParty();
+      }
       const message = err?.data?.error || err?.message || 'Неуспешно създаване на watch party.';
       setFormError(message);
       showToast(message, 'error');
@@ -211,10 +279,8 @@ export default function WatchPartyPage() {
     try {
       const result = await api.post(`/watch-party/${partyCode}/leave`);
       showToast(result?.ended ? 'Watch party приключи.' : 'Напусна watch party.', 'success');
-      setPartyCode(null);
-      setParty(null);
-      setInviteCode(null);
-      setMessageText('');
+      clearPartyState();
+      await fetchHostedParty();
     } catch (err) {
       const message = err?.data?.error || err?.message || 'Неуспешно напускане.';
       showToast(message, 'error');
@@ -229,10 +295,8 @@ export default function WatchPartyPage() {
     try {
       await api.put(`/watch-party/${partyCode}/end`);
       showToast('Watch party беше приключен.', 'success');
-      setPartyCode(null);
-      setParty(null);
-      setInviteCode(null);
-      setMessageText('');
+      clearPartyState();
+      await fetchHostedParty();
     } catch (err) {
       const message = err?.data?.error || err?.message || 'Неуспешно приключване на watch party.';
       showToast(message, 'error');
@@ -241,8 +305,34 @@ export default function WatchPartyPage() {
     }
   };
 
+  const handleDelete = async (code = hostedParty?.invite_code) => {
+    if (!code) return;
+    setDeletingParty(true);
+    try {
+      await api.delete(`/watch-party/${code}`);
+      showToast('Watch party беше изтрит.', 'success');
+      if (partyCode === code) {
+        clearPartyState();
+      }
+      await fetchHostedParty();
+      setFormError(null);
+    } catch (err) {
+      const message = err?.data?.error || err?.message || 'Неуспешно изтриване на watch party.';
+      showToast(message, 'error');
+    } finally {
+      setDeletingParty(false);
+    }
+  };
+
+  const openHostedParty = () => {
+    if (!hostedParty?.invite_code) return;
+    setInviteCode(hostedParty.invite_code);
+    setPartyCode(hostedParty.invite_code);
+    setFormError(null);
+  };
+
   const inParty = Boolean(partyCode && party);
-  const isHost = party?.is_host || false;
+  const isHost = Boolean(party?.is_host);
   const messages = party?.messages || [];
   const participants = party?.participants || [];
 
@@ -272,6 +362,7 @@ export default function WatchPartyPage() {
                 return (
                   <button
                     key={tab.key}
+                    type="button"
                     onClick={() => { setMode(tab.key); setFormError(null); }}
                     className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium transition-all cursor-pointer ${
                       isActive
@@ -296,6 +387,17 @@ export default function WatchPartyPage() {
               {mode === 'create' ? (
                 <>
                   <h2 className="text-lg font-semibold mb-4">Създай нов watch party</h2>
+
+                  {!loadingHostedParty && (
+                    <HostedPartyCard
+                      party={hostedParty}
+                      opening={Boolean(hostedParty?.invite_code && partyCode === hostedParty.invite_code)}
+                      deleting={deletingParty}
+                      onOpen={openHostedParty}
+                      onDelete={() => handleDelete(hostedParty?.invite_code)}
+                    />
+                  )}
+
                   <form onSubmit={handleCreate} className="flex flex-col sm:flex-row gap-3">
                     <input
                       type="text"
@@ -408,17 +510,13 @@ export default function WatchPartyPage() {
                 Чат
               </h3>
 
-              <div
-                className="h-72 overflow-y-auto rounded-xl bg-[var(--bg-tertiary)] border border-[var(--border)] p-4 mb-3 flex flex-col gap-1"
-              >
+              <div className="h-72 overflow-y-auto rounded-xl bg-[var(--bg-tertiary)] border border-[var(--border)] p-4 mb-3 flex flex-col gap-1">
                 {messages.length === 0 ? (
                   <p className="text-sm text-[var(--text-secondary)] text-center my-auto">
                     Все още няма съобщения. Започни разговора!
                   </p>
                 ) : (
-                  messages.map((msg, index) => (
-                    <ChatMessage key={msg.id || index} message={msg} />
-                  ))
+                  messages.map((msg, index) => <ChatMessage key={msg.id || index} message={msg} />)
                 )}
                 <div ref={chatEndRef} />
               </div>
@@ -445,10 +543,11 @@ export default function WatchPartyPage() {
           </ScrollReveal>
 
           <ScrollReveal variant="fadeUp" delay={0.2}>
-            <div className="flex gap-3">
+            <div className="flex gap-3 flex-wrap">
               <button
+                type="button"
                 onClick={handleLeave}
-                disabled={leaving}
+                disabled={leaving || deletingParty}
                 className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-zinc-700 text-[var(--text-primary)] text-sm font-medium hover:bg-zinc-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
               >
                 <LogOut className="w-4 h-4" />
@@ -456,13 +555,25 @@ export default function WatchPartyPage() {
               </button>
 
               {isHost && (
-                <button
-                  onClick={handleEnd}
-                  disabled={ending}
-                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-red-600/80 text-white text-sm font-medium hover:bg-red-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-                >
-                  {ending ? 'Приключване...' : 'Приключи'}
-                </button>
+                <>
+                  <button
+                    type="button"
+                    onClick={handleEnd}
+                    disabled={ending || deletingParty}
+                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-red-600/80 text-white text-sm font-medium hover:bg-red-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                  >
+                    {ending ? 'Приключване...' : 'Приключи'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDelete(partyCode)}
+                    disabled={deletingParty || ending || leaving}
+                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl border border-red-500/30 bg-red-500/10 text-red-300 text-sm font-medium hover:bg-red-500/15 transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    {deletingParty ? 'Изтриване...' : 'Изтрий'}
+                  </button>
+                </>
               )}
             </div>
           </ScrollReveal>

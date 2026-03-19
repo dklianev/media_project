@@ -3128,6 +3128,27 @@ test('watch party: create a watch party', async () => {
   assert.equal(res.data.episode_title, episode.title);
 });
 
+test('watch party: host can fetch current active party summary', async () => {
+  const production = createProduction({ access_group: 'free' });
+  const episode = createEpisode({ production_id: production.id, access_group: 'free' });
+  const host = createUser();
+  const hostToken = createAccessToken(host);
+
+  const created = await apiRequest('/api/watch-party/create', {
+    method: 'POST',
+    token: hostToken,
+    body: { episode_id: episode.id },
+  });
+
+  const active = await apiRequest('/api/watch-party/mine/active', {
+    token: hostToken,
+  });
+  assert.equal(active.response.status, 200);
+  assert.equal(active.data.party.invite_code, created.data.invite_code);
+  assert.equal(active.data.party.episode_title, episode.title);
+  assert.equal(active.data.party.is_host, true);
+});
+
 test('watch party: join a watch party', async () => {
   const production = createProduction({ access_group: 'free' });
   const episode = createEpisode({ production_id: production.id, access_group: 'free' });
@@ -3239,6 +3260,67 @@ test('watch party: host leaving ends the party and allows creating a new one', a
   assert.equal(recreated.response.status, 201);
   assert.equal(recreated.data.success, true);
   assert.ok(recreated.data.invite_code);
+});
+
+test('watch party: host can delete their party and remove all related rows', async () => {
+  const production = createProduction({ access_group: 'free' });
+  const episode = createEpisode({ production_id: production.id, access_group: 'free' });
+  const host = createUser();
+  const hostToken = createAccessToken(host);
+  const guest = createUser();
+  const guestToken = createAccessToken(guest);
+
+  const created = await apiRequest('/api/watch-party/create', {
+    method: 'POST',
+    token: hostToken,
+    body: { episode_id: episode.id },
+  });
+
+  await apiRequest(`/api/watch-party/${created.data.invite_code}/join`, {
+    method: 'POST',
+    token: guestToken,
+  });
+
+  await apiRequest(`/api/watch-party/${created.data.invite_code}/message`, {
+    method: 'POST',
+    token: hostToken,
+    body: { message: 'Host message' },
+  });
+
+  const deleted = await apiRequest(`/api/watch-party/${created.data.invite_code}`, {
+    method: 'DELETE',
+    token: hostToken,
+  });
+  assert.equal(deleted.response.status, 200);
+  assert.equal(deleted.data.success, true);
+
+  const party = db.prepare('SELECT * FROM watch_parties WHERE id = ?').get(created.data.party_id);
+  const participants = db.prepare('SELECT COUNT(*) as count FROM watch_party_participants WHERE party_id = ?').get(created.data.party_id);
+  const messages = db.prepare('SELECT COUNT(*) as count FROM watch_party_messages WHERE party_id = ?').get(created.data.party_id);
+  assert.equal(party, undefined);
+  assert.equal(participants.count, 0);
+  assert.equal(messages.count, 0);
+});
+
+test('watch party: non-host cannot delete someone else party', async () => {
+  const production = createProduction({ access_group: 'free' });
+  const episode = createEpisode({ production_id: production.id, access_group: 'free' });
+  const host = createUser();
+  const hostToken = createAccessToken(host);
+  const guest = createUser();
+  const guestToken = createAccessToken(guest);
+
+  const created = await apiRequest('/api/watch-party/create', {
+    method: 'POST',
+    token: hostToken,
+    body: { episode_id: episode.id },
+  });
+
+  const deleted = await apiRequest(`/api/watch-party/${created.data.invite_code}`, {
+    method: 'DELETE',
+    token: guestToken,
+  });
+  assert.equal(deleted.response.status, 403);
 });
 
 test('watch party: info payload exposes normalized participant and message fields', async () => {
