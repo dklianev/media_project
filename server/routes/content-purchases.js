@@ -20,13 +20,34 @@ import {
 
 const router = Router();
 const PURCHASE_REQUEST_STATUSES = ['pending', 'confirmed', 'rejected', 'cancelled'];
+const TARGET_TITLE_SQL = `
+  COALESCE(
+    CASE WHEN cpr.target_type = 'production' THEN p.title ELSE e.title END,
+    cpr.target_title_snapshot,
+    cpr.production_title_snapshot
+  )
+`;
+const PRODUCTION_SLUG_SQL = `
+  COALESCE(
+    CASE WHEN cpr.target_type = 'production' THEN p.slug ELSE ep.slug END,
+    cpr.production_slug_snapshot
+  )
+`;
+const PRODUCTION_TITLE_SQL = `
+  COALESCE(
+    CASE WHEN cpr.target_type = 'production' THEN p.title ELSE ep.title END,
+    cpr.production_title_snapshot,
+    cpr.target_title_snapshot
+  )
+`;
+const EPISODE_NUMBER_SQL = 'COALESCE(e.episode_number, cpr.episode_number_snapshot)';
 const PURCHASE_SORT_MAP = {
   created_at: 'cpr.created_at',
   final_price: 'cpr.final_price',
   original_price: 'cpr.original_price',
   status: 'cpr.status',
   target_type: 'cpr.target_type',
-  target_title: `CASE WHEN cpr.target_type = 'production' THEN p.title ELSE e.title END`,
+  target_title: TARGET_TITLE_SQL,
 };
 
 const createPurchaseLimiter = rateLimit({
@@ -67,19 +88,10 @@ function getListSelect() {
       u.discord_username,
       confirmer.character_name as confirmed_by_name,
       rejecter.character_name as rejected_by_name,
-      CASE
-        WHEN cpr.target_type = 'production' THEN p.title
-        ELSE e.title
-      END as target_title,
-      CASE
-        WHEN cpr.target_type = 'production' THEN p.slug
-        ELSE ep.slug
-      END as production_slug,
-      CASE
-        WHEN cpr.target_type = 'production' THEN p.title
-        ELSE ep.title
-      END as production_title,
-      e.episode_number
+      ${TARGET_TITLE_SQL} as target_title,
+      ${PRODUCTION_SLUG_SQL} as production_slug,
+      ${PRODUCTION_TITLE_SQL} as production_title,
+      ${EPISODE_NUMBER_SQL} as episode_number
   `;
 }
 
@@ -271,10 +283,13 @@ function listPurchases(req, res) {
       OR p.title LIKE ? ESCAPE '\\'
       OR e.title LIKE ? ESCAPE '\\'
       OR ep.title LIKE ? ESCAPE '\\'
+      OR cpr.target_title_snapshot LIKE ? ESCAPE '\\'
+      OR cpr.production_title_snapshot LIKE ? ESCAPE '\\'
+      OR cpr.production_slug_snapshot LIKE ? ESCAPE '\\'
     )`);
     const escaped = q.replace(/[%_]/g, '\\$&');
     const pattern = `%${escaped}%`;
-    params.push(pattern, pattern, pattern, pattern, pattern, pattern);
+    params.push(pattern, pattern, pattern, pattern, pattern, pattern, pattern, pattern, pattern);
   }
 
   const whereSql = where.length > 0 ? `WHERE ${where.join(' AND ')}` : '';
@@ -324,9 +339,18 @@ router.post('/', requireAuth, createPurchaseLimiter, (req, res) => {
   const createRequest = db.transaction(() => {
     const insert = db.prepare(`
       INSERT INTO content_purchase_requests (
-        user_id, target_type, target_id, reference_code, original_price, final_price
+        user_id,
+        target_type,
+        target_id,
+        target_title_snapshot,
+        production_title_snapshot,
+        production_slug_snapshot,
+        episode_number_snapshot,
+        reference_code,
+        original_price,
+        final_price
       )
-      VALUES (?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     let referenceCode = null;
@@ -334,7 +358,18 @@ router.post('/', requireAuth, createPurchaseLimiter, (req, res) => {
     for (let attempt = 0; attempt < 15; attempt++) {
       referenceCode = generateReferenceCode(targetType);
       try {
-        const result = insert.run(req.user.id, targetType, targetId, referenceCode, resolved.price, resolved.price);
+        const result = insert.run(
+          req.user.id,
+          targetType,
+          targetId,
+          resolved.target.target_title,
+          resolved.target.production_title,
+          resolved.target.production_slug,
+          resolved.target.episode_number ?? null,
+          referenceCode,
+          resolved.price,
+          resolved.price
+        );
         insertedId = result.lastInsertRowid;
         break;
       } catch (err) {

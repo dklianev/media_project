@@ -2078,3 +2078,53 @@ test('episode purchase confirm rejects requests for deleted episode targets', as
   `).get(request.data.request_id).count;
   assert.equal(entitlementCount, 0);
 });
+
+test('deleted episode purchase requests keep snapshot metadata in admin list', async () => {
+  const production = createProduction({
+    title: 'Snapshot Metadata Production',
+    slug: 'snapshot-metadata-production',
+    required_tier: 2,
+    access_group: 'subscription',
+    purchase_mode: 'episodes',
+    is_active: 1,
+  });
+  const episode = createEpisode({
+    production_id: production.id,
+    title: 'Snapshot Metadata Episode',
+    access_group: 'inherit',
+    purchase_enabled: 1,
+    purchase_price: 7.5,
+    episode_number: 3,
+    youtube_video_id: 'dQw4w9WgXcQ',
+  });
+  const viewer = createUser({ character_name: 'Snapshot Viewer' });
+  const admin = createUser({ role: 'admin', character_name: 'Snapshot Admin' });
+  const viewerToken = createAccessToken(viewer);
+  const adminToken = createAccessToken(admin);
+
+  const request = await apiRequest('/api/content-purchases', {
+    method: 'POST',
+    token: viewerToken,
+    body: { target_type: 'episode', target_id: episode.id },
+  });
+  assert.equal(request.response.status, 201);
+
+  const deleted = await apiRequest(`/api/episodes/admin/${episode.id}`, {
+    method: 'DELETE',
+    token: adminToken,
+  });
+  assert.equal(deleted.response.status, 200);
+
+  const adminList = await apiRequest('/api/content-purchases/admin?q=Snapshot%20Metadata%20Episode', {
+    method: 'GET',
+    token: adminToken,
+  });
+  assert.equal(adminList.response.status, 200);
+
+  const listedRequest = adminList.data?.items?.find((item) => Number(item.id) === Number(request.data.request_id));
+  assert.ok(listedRequest);
+  assert.equal(listedRequest.target_title, 'Snapshot Metadata Episode');
+  assert.equal(listedRequest.production_title, 'Snapshot Metadata Production');
+  assert.equal(listedRequest.production_slug, 'snapshot-metadata-production');
+  assert.equal(Number(listedRequest.episode_number), 3);
+});

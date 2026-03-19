@@ -134,6 +134,10 @@ db.exec(`
     user_id INTEGER NOT NULL,
     target_type TEXT NOT NULL,
     target_id INTEGER NOT NULL,
+    target_title_snapshot TEXT,
+    production_title_snapshot TEXT,
+    production_slug_snapshot TEXT,
+    episode_number_snapshot INTEGER,
     reference_code TEXT UNIQUE NOT NULL,
     original_price REAL NOT NULL,
     final_price REAL NOT NULL,
@@ -329,6 +333,18 @@ if (!hasColumn('payment_references', 'cancelled_at')) {
 if (!hasColumn('payment_references', 'cancelled_reason')) {
   db.exec(`ALTER TABLE payment_references ADD COLUMN cancelled_reason TEXT`);
 }
+if (!hasColumn('content_purchase_requests', 'target_title_snapshot')) {
+  db.exec(`ALTER TABLE content_purchase_requests ADD COLUMN target_title_snapshot TEXT`);
+}
+if (!hasColumn('content_purchase_requests', 'production_title_snapshot')) {
+  db.exec(`ALTER TABLE content_purchase_requests ADD COLUMN production_title_snapshot TEXT`);
+}
+if (!hasColumn('content_purchase_requests', 'production_slug_snapshot')) {
+  db.exec(`ALTER TABLE content_purchase_requests ADD COLUMN production_slug_snapshot TEXT`);
+}
+if (!hasColumn('content_purchase_requests', 'episode_number_snapshot')) {
+  db.exec(`ALTER TABLE content_purchase_requests ADD COLUMN episode_number_snapshot INTEGER`);
+}
 
 if (!hasColumn('refresh_tokens', 'jti')) {
   db.exec(`ALTER TABLE refresh_tokens ADD COLUMN jti TEXT`);
@@ -419,6 +435,82 @@ db.exec(`
   SET purchase_price = NULL
   WHERE purchase_price IS NOT NULL
     AND CAST(purchase_price AS REAL) <= 0
+`);
+
+db.exec(`
+  UPDATE content_purchase_requests
+  SET target_title_snapshot = COALESCE(
+    NULLIF(target_title_snapshot, ''),
+    CASE
+      WHEN target_type = 'production' THEN (
+        SELECT title
+        FROM productions
+        WHERE productions.id = content_purchase_requests.target_id
+      )
+      ELSE (
+        SELECT title
+        FROM episodes
+        WHERE episodes.id = content_purchase_requests.target_id
+      )
+    END
+  )
+  WHERE target_title_snapshot IS NULL OR trim(target_title_snapshot) = ''
+`);
+
+db.exec(`
+  UPDATE content_purchase_requests
+  SET production_title_snapshot = COALESCE(
+    NULLIF(production_title_snapshot, ''),
+    CASE
+      WHEN target_type = 'production' THEN (
+        SELECT title
+        FROM productions
+        WHERE productions.id = content_purchase_requests.target_id
+      )
+      ELSE (
+        SELECT p.title
+        FROM episodes e
+        JOIN productions p ON p.id = e.production_id
+        WHERE e.id = content_purchase_requests.target_id
+      )
+    END
+  )
+  WHERE production_title_snapshot IS NULL OR trim(production_title_snapshot) = ''
+`);
+
+db.exec(`
+  UPDATE content_purchase_requests
+  SET production_slug_snapshot = COALESCE(
+    NULLIF(production_slug_snapshot, ''),
+    CASE
+      WHEN target_type = 'production' THEN (
+        SELECT slug
+        FROM productions
+        WHERE productions.id = content_purchase_requests.target_id
+      )
+      ELSE (
+        SELECT p.slug
+        FROM episodes e
+        JOIN productions p ON p.id = e.production_id
+        WHERE e.id = content_purchase_requests.target_id
+      )
+    END
+  )
+  WHERE production_slug_snapshot IS NULL OR trim(production_slug_snapshot) = ''
+`);
+
+db.exec(`
+  UPDATE content_purchase_requests
+  SET episode_number_snapshot = COALESCE(
+    episode_number_snapshot,
+    (
+      SELECT episode_number
+      FROM episodes
+      WHERE episodes.id = content_purchase_requests.target_id
+    )
+  )
+  WHERE target_type = 'episode'
+    AND episode_number_snapshot IS NULL
 `);
 
 db.exec(`
