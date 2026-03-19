@@ -7,9 +7,9 @@ import PageBackground from '../components/PageBackground';
 import ScrollReveal from '../components/ScrollReveal';
 
 const STATS_CARDS = [
-  { key: 'total_referrals', label: 'Общо поканени', icon: Users, color: 'var(--accent, #6366f1)' },
-  { key: 'total_reward_days', label: 'Спечелени дни', icon: CalendarCheck, color: 'var(--success, #22c55e)' },
-  { key: 'pending_reward_days', label: 'Чакащи дни', icon: Clock, color: 'var(--warning, #f59e0b)' },
+  { key: 'total_referred', label: 'Общо поканени', icon: Users, color: 'var(--accent, #6366f1)' },
+  { key: 'total_bonus_days', label: 'Спечелени дни', icon: CalendarCheck, color: 'var(--success, #22c55e)' },
+  { key: 'pending_rewards', label: 'Чакащи награди', icon: Clock, color: 'var(--warning, #f59e0b)' },
 ];
 
 function StatCardSkeleton() {
@@ -41,7 +41,7 @@ export default function ReferralsPage() {
           api.get('/referrals/stats'),
         ]);
         if (!cancelled) {
-          setReferralCode(codeRes.referral_code || '');
+          setReferralCode(codeRes.code || '');
           setStats(statsRes);
         }
       } catch (err) {
@@ -171,7 +171,7 @@ export default function ReferralsPage() {
         </ScrollReveal>
 
         {/* Apply rewards button */}
-        {stats?.pending_reward_days > 0 && (
+        {stats?.pending_rewards > 0 && (
           <ScrollReveal>
             <div className="text-center">
               <motion.button
@@ -182,7 +182,7 @@ export default function ReferralsPage() {
                 whileTap={{ scale: 0.97 }}
               >
                 <Gift className="w-5 h-5" />
-                {applying ? 'Активиране...' : `Активирай ${stats.pending_reward_days} бонус дни`}
+                {applying ? 'Активиране...' : `Активирай ${stats.pending_rewards} бонус награди`}
               </motion.button>
             </div>
           </ScrollReveal>

@@ -83,6 +83,7 @@ export default function WatchPartyPage() {
   const [creating, setCreating] = useState(false);
   const [joining, setJoining] = useState(false);
   const [inviteCode, setInviteCode] = useState(null);
+  const [formError, setFormError] = useState(null);
 
   // Party state
   const [partyCode, setPartyCode] = useState(null);
@@ -138,6 +139,7 @@ export default function WatchPartyPage() {
     if (!id) return;
 
     setCreating(true);
+    setFormError(null);
     try {
       const data = await api.post('/watch-party/create', { episode_id: id });
       showToast('Партито беше създадено успешно!', 'success');
@@ -145,6 +147,7 @@ export default function WatchPartyPage() {
       setPartyCode(data.code);
     } catch (err) {
       const message = err?.data?.error || err?.message || 'Грешка при създаване на парти.';
+      setFormError(message);
       showToast(message, 'error');
     } finally {
       setCreating(false);
@@ -157,12 +160,14 @@ export default function WatchPartyPage() {
     if (!code) return;
 
     setJoining(true);
+    setFormError(null);
     try {
       await api.post(`/watch-party/${code}/join`);
       showToast('Присъединихте се към партито!', 'success');
       setPartyCode(code);
     } catch (err) {
       const message = err?.data?.error || err?.message || 'Грешка при присъединяване.';
+      setFormError(message);
       showToast(message, 'error');
     } finally {
       setJoining(false);
@@ -256,7 +261,7 @@ export default function WatchPartyPage() {
                 return (
                   <button
                     key={tab.key}
-                    onClick={() => setMode(tab.key)}
+                    onClick={() => { setMode(tab.key); setFormError(null); }}
                     className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium transition-all cursor-pointer ${
                       isActive
                         ? 'bg-[var(--accent-gold)]/15 text-[var(--accent-gold)] border border-[var(--accent-gold)]/30'
@@ -299,6 +304,10 @@ export default function WatchPartyPage() {
                     </button>
                   </form>
 
+                  {formError && mode === 'create' && (
+                    <p className="mt-3 text-sm text-[var(--danger)]">{formError}</p>
+                  )}
+
                   {inviteCode && (
                     <motion.div
                       initial={{ opacity: 0, y: 8 }}
@@ -332,6 +341,9 @@ export default function WatchPartyPage() {
                       {joining ? 'Присъединяване...' : 'Присъедини се'}
                     </button>
                   </form>
+                  {formError && mode === 'join' && (
+                    <p className="mt-3 text-sm text-[var(--danger)]">{formError}</p>
+                  )}
                 </>
               )}
             </motion.div>
