@@ -16,7 +16,7 @@
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
-    "better-sqlite3": "^12.6.2",
+    "better-sqlite3": "^12.8.0",
     "compression": "^1.8.1",
     "cors": "^2.8.6",
     "dompurify": "^3.3.3",
@@ -27,7 +27,7 @@
     "framer-motion": "^12.38.0",
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.3",
-    "lucide-react": "^0.575.0",
+    "lucide-react": "^0.577.0",
     "multer": "^2.1.1",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
