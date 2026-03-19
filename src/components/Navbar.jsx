@@ -18,11 +18,11 @@ const DEFAULT_NAV = [
 ];
 
 const PROFILE_NAV = [
-  { to: '/profile', fallback: 'Профил', icon: User },
-  { to: '/my-purchases', fallback: 'Покупки', icon: ShoppingBag },
-  { to: '/gifts', fallback: 'Подаръци', icon: Gift },
-  { to: '/wishlist', fallback: 'Желания', icon: Heart },
-  { to: '/referrals', fallback: 'Покани', icon: Users },
+  { to: '/profile', key: 'nav_label_profile', fallback: 'Профил', icon: User },
+  { to: '/my-purchases', key: 'nav_label_purchases', fallback: 'Покупки', icon: ShoppingBag },
+  { to: '/gifts', key: 'nav_label_gifts', fallback: 'Подаръци', icon: Gift },
+  { to: '/wishlist', key: 'nav_label_wishlist', fallback: 'Желания', icon: Heart },
+  { to: '/referrals', key: 'nav_label_referrals', fallback: 'Покани', icon: Users },
 ];
 
 const EXTRA_NAV = [
@@ -347,13 +347,13 @@ export default function Navbar() {
             })),
             ...EXTRA_NAV.map((n) => ({
               to: n.to,
-              label: n.fallback,
+              label: settings?.[n.key] || n.fallback,
               icon: n.icon,
               extra: true,
             })),
           ]);
           setProfileLinks(
-            PROFILE_NAV.map((n) => ({ to: n.to, label: n.fallback, icon: n.icon })),
+            PROFILE_NAV.map((n) => ({ to: n.to, label: settings?.[n.key] || n.fallback, icon: n.icon })),
           );
         })
         .catch((err) => { console.error('Navbar settings load failed:', err); });
