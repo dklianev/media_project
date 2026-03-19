@@ -207,7 +207,10 @@ function getSiblingEpisode(productionId, episodeNumber, direction, user, { inclu
 
   const statement = db.prepare(`
     SELECT e.id, e.title, e.episode_number, e.access_group,
-           p.required_tier, p.access_group as production_access_group
+           e.production_id, e.purchase_enabled, e.purchase_price,
+           p.required_tier, p.access_group as production_access_group,
+           p.purchase_mode as production_purchase_mode,
+           p.purchase_price as production_purchase_price
     FROM episodes e
     JOIN productions p ON p.id = e.production_id
     WHERE e.production_id = ?
@@ -222,7 +225,8 @@ function getSiblingEpisode(productionId, episodeNumber, direction, user, { inclu
     ? statement.all(productionId, episodeNumber)
     : statement.all(productionId, episodeNumber, currentTimestamp);
 
-  return siblings.find((candidate) => resolveEpisodeAccess(candidate, user).hasAccess) || null;
+  const purchaseState = getUserPurchaseState(user?.id);
+  return siblings.find((candidate) => resolveEpisodeAccess(candidate, user, purchaseState).hasAccess) || null;
 }
 
 function hashUserAgent(userAgent) {
@@ -255,8 +259,8 @@ function getPlaybackUser(userId) {
   };
 }
 
-function resolveEpisodeAccess(episode, user) {
-  return evaluateEpisodeAccess(episode, user, getUserPurchaseState(user?.id));
+function resolveEpisodeAccess(episode, user, purchaseState) {
+  return evaluateEpisodeAccess(episode, user, purchaseState || getUserPurchaseState(user?.id));
 }
 
 function createPlaybackToken(episodeId, userId, userAgent, options = {}) {
@@ -1329,6 +1333,8 @@ router.delete('/admin/:id', requireAdmin, (req, res) => {
     db.prepare('DELETE FROM comments WHERE episode_id = ?').run(episodeId);
     db.prepare('DELETE FROM reactions WHERE episode_id = ?').run(episodeId);
     db.prepare('DELETE FROM watch_history WHERE episode_id = ?').run(episodeId);
+    db.prepare("DELETE FROM content_entitlements WHERE target_type = 'episode' AND target_id = ?").run(episodeId);
+    db.prepare("DELETE FROM content_purchase_requests WHERE target_type = 'episode' AND target_id = ?").run(episodeId);
     db.prepare('DELETE FROM episodes WHERE id = ?').run(episodeId);
   });
   remove(req.params.id);

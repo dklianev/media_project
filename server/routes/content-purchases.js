@@ -265,14 +265,15 @@ function listPurchases(req, res) {
 
   if (q) {
     where.push(`(
-      cpr.reference_code LIKE ?
-      OR u.character_name LIKE ?
-      OR u.discord_username LIKE ?
-      OR p.title LIKE ?
-      OR e.title LIKE ?
-      OR ep.title LIKE ?
+      cpr.reference_code LIKE ? ESCAPE '\\'
+      OR u.character_name LIKE ? ESCAPE '\\'
+      OR u.discord_username LIKE ? ESCAPE '\\'
+      OR p.title LIKE ? ESCAPE '\\'
+      OR e.title LIKE ? ESCAPE '\\'
+      OR ep.title LIKE ? ESCAPE '\\'
     )`);
-    const pattern = `%${q}%`;
+    const escaped = q.replace(/[%_]/g, '\\$&');
+    const pattern = `%${escaped}%`;
     params.push(pattern, pattern, pattern, pattern, pattern, pattern);
   }
 
@@ -422,11 +423,12 @@ router.put('/my/:id/cancel', requireAuth, (req, res) => {
   db.prepare(`
     UPDATE content_purchase_requests
     SET status = 'cancelled',
-        cancelled_at = datetime('now'),
+        cancelled_at = ?,
         cancelled_reason = ?
     WHERE id = ?
       AND status = 'pending'
   `).run(
+    getCurrentSofiaDbTimestamp(),
     req.body?.reason ? String(req.body.reason).slice(0, 300) : null,
     request.id
   );
@@ -478,7 +480,7 @@ function cancelCoveredEpisodeRequests(userId, productionId, sourceRequestId) {
   db.prepare(`
     UPDATE content_purchase_requests
     SET status = 'cancelled',
-        cancelled_at = datetime('now'),
+        cancelled_at = ?,
         cancelled_reason = COALESCE(NULLIF(cancelled_reason, ''), 'Покрито от потвърдена покупка на продукцията')
     WHERE user_id = ?
       AND status = 'pending'
@@ -487,7 +489,7 @@ function cancelCoveredEpisodeRequests(userId, productionId, sourceRequestId) {
       AND target_id IN (
         SELECT id FROM episodes WHERE production_id = ?
       )
-  `).run(userId, sourceRequestId, productionId);
+  `).run(getCurrentSofiaDbTimestamp(), userId, sourceRequestId, productionId);
 }
 
 function confirmPurchase(req, res) {
@@ -514,14 +516,15 @@ function confirmPurchase(req, res) {
         UPDATE content_purchase_requests
         SET status = 'confirmed',
             confirmed_by = ?,
-            confirmed_at = datetime('now'),
+            confirmed_at = ?,
             rejected_by = NULL,
             rejected_at = NULL,
             rejection_reason = NULL,
             cancelled_at = NULL,
             cancelled_reason = NULL
         WHERE id = ?
-      `).run(req.user.id, request.id);
+          AND status = 'pending'
+      `).run(req.user.id, getCurrentSofiaDbTimestamp(), request.id);
 
       if (request.target_type === 'production') {
         cancelCoveredEpisodeRequests(request.user_id, request.target_id, request.id);
@@ -542,7 +545,10 @@ function confirmPurchase(req, res) {
     });
     return res.json({ success: true });
   } catch (err) {
-    return res.status(400).json({ error: err.message || 'Заявката не можа да бъде потвърдена.' });
+    if (err.message === 'Съдържанието вече е отключено за този потребител.') {
+      return res.status(400).json({ error: err.message });
+    }
+    return res.status(400).json({ error: 'Заявката не можа да бъде потвърдена.' });
   }
 }
 
@@ -555,30 +561,39 @@ function rejectPurchase(req, res) {
     return res.status(400).json({ error: 'Само чакащи заявки могат да бъдат отказани.' });
   }
 
-  const reason = req.body?.reason ? String(req.body.reason).slice(0, 300) : null;
-  db.prepare(`
-    UPDATE content_purchase_requests
-    SET status = 'rejected',
-        rejected_by = ?,
-        rejected_at = datetime('now'),
-        rejection_reason = ?,
-        confirmed_by = NULL,
-        confirmed_at = NULL
-    WHERE id = ?
-  `).run(req.user.id, reason, request.id);
+  try {
+    const reason = req.body?.reason ? String(req.body.reason).slice(0, 300) : null;
+    const result = db.prepare(`
+      UPDATE content_purchase_requests
+      SET status = 'rejected',
+          rejected_by = ?,
+          rejected_at = ?,
+          rejection_reason = ?,
+          confirmed_by = NULL,
+          confirmed_at = NULL
+      WHERE id = ?
+        AND status = 'pending'
+    `).run(req.user.id, getCurrentSofiaDbTimestamp(), reason, request.id);
 
-  logAdminAction(req, {
-    action: 'content_purchase.reject',
-    entity_type: 'content_purchase_request',
-    entity_id: request.id,
-    target_user_id: request.user_id,
-    metadata: {
-      target_type: request.target_type,
-      target_id: request.target_id,
-      reason,
-    },
-  });
-  return res.json({ success: true });
+    if (result.changes === 0) {
+      return res.status(400).json({ error: 'Заявката вече е била обработена.' });
+    }
+
+    logAdminAction(req, {
+      action: 'content_purchase.reject',
+      entity_type: 'content_purchase_request',
+      entity_id: request.id,
+      target_user_id: request.user_id,
+      metadata: {
+        target_type: request.target_type,
+        target_id: request.target_id,
+        reason,
+      },
+    });
+    return res.json({ success: true });
+  } catch (err) {
+    return res.status(500).json({ error: 'Заявката не можа да бъде отказана.' });
+  }
 }
 
 function deletePurchase(req, res) {
@@ -587,32 +602,36 @@ function deletePurchase(req, res) {
     return res.status(404).json({ error: 'Заявката не е намерена.' });
   }
 
-  const remove = db.transaction(() => {
-    db.prepare(`
-      DELETE FROM content_entitlements
-      WHERE source_request_id = ?
-    `).run(request.id);
+  try {
+    const remove = db.transaction(() => {
+      db.prepare(`
+        DELETE FROM content_entitlements
+        WHERE source_request_id = ?
+      `).run(request.id);
 
-    db.prepare(`
-      DELETE FROM content_purchase_requests
-      WHERE id = ?
-    `).run(request.id);
-  });
-  remove();
+      db.prepare(`
+        DELETE FROM content_purchase_requests
+        WHERE id = ?
+      `).run(request.id);
+    });
+    remove();
 
-  logAdminAction(req, {
-    action: 'content_purchase.delete',
-    entity_type: 'content_purchase_request',
-    entity_id: request.id,
-    target_user_id: request.user_id,
-    metadata: {
-      target_type: request.target_type,
-      target_id: request.target_id,
-      status: request.status,
-    },
-  });
+    logAdminAction(req, {
+      action: 'content_purchase.delete',
+      entity_type: 'content_purchase_request',
+      entity_id: request.id,
+      target_user_id: request.user_id,
+      metadata: {
+        target_type: request.target_type,
+        target_id: request.target_id,
+        status: request.status,
+      },
+    });
 
-  return res.json({ success: true });
+    return res.json({ success: true });
+  } catch (err) {
+    return res.status(500).json({ error: 'Заявката не можа да бъде изтрита.' });
+  }
 }
 
 router.put('/admin/:id/confirm', requireAdmin, confirmPurchase);

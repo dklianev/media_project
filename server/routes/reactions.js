@@ -3,6 +3,7 @@ import rateLimit from 'express-rate-limit';
 import db from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
 import { getCurrentSofiaDbTimestamp } from '../utils/sofiaTime.js';
+import { isUserAdmin } from '../utils/access.js';
 import { evaluateEpisodeAccess, getUserPurchaseState } from '../utils/contentPurchases.js';
 
 const router = Router();
@@ -18,11 +19,8 @@ const reactionLimiter = rateLimit({
 const VALID_REACTIONS = ['like', 'love', 'haha', 'wow', 'sad', 'angry'];
 
 function validateEpisodeAccess(episodeId, user) {
-  const isAdmin = user.role === 'admin' || user.role === 'superadmin';
+  const admin = isUserAdmin(user);
   const currentTimestamp = getCurrentSofiaDbTimestamp();
-  const visibleFilter = isAdmin
-    ? ''
-    : 'AND (e.published_at IS NULL OR e.published_at <= ?)';
 
   const episode = db.prepare(`
     SELECT e.id,
@@ -33,10 +31,8 @@ function validateEpisodeAccess(episodeId, user) {
     FROM episodes e
     JOIN productions p ON e.production_id = p.id
     WHERE e.id = ?
-      AND e.is_active = 1
-      AND p.is_active = 1
-      ${visibleFilter}
-  `).get(...(isAdmin ? [episodeId] : [episodeId, currentTimestamp]));
+      ${admin ? '' : 'AND e.is_active = 1 AND p.is_active = 1 AND (e.published_at IS NULL OR e.published_at <= ?)'}
+  `).get(...(admin ? [episodeId] : [episodeId, currentTimestamp]));
 
   if (!episode) {
     return { ok: false, status: 404, error: 'Епизодът не е намерен' };

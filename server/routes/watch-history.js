@@ -3,6 +3,7 @@ import rateLimit from 'express-rate-limit';
 import db from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
 import { getCurrentSofiaDbTimestamp } from '../utils/sofiaTime.js';
+import { isUserAdmin } from '../utils/access.js';
 import { evaluateEpisodeAccess, getUserPurchaseState } from '../utils/contentPurchases.js';
 
 const router = Router();
@@ -17,11 +18,8 @@ const watchHistoryLimiter = rateLimit({
 });
 
 function validateEpisodeAccess(episodeId, user) {
-  const isAdmin = user.role === 'admin' || user.role === 'superadmin';
+  const admin = isUserAdmin(user);
   const currentTimestamp = getCurrentSofiaDbTimestamp();
-  const visibleFilter = isAdmin
-    ? ''
-    : 'AND (e.published_at IS NULL OR e.published_at <= ?)';
 
   const statement = db.prepare(`
     SELECT e.id,
@@ -32,12 +30,10 @@ function validateEpisodeAccess(episodeId, user) {
     FROM episodes e
     JOIN productions p ON p.id = e.production_id
     WHERE e.id = ?
-      AND e.is_active = 1
-      AND p.is_active = 1
-      ${visibleFilter}
+      ${admin ? '' : 'AND e.is_active = 1 AND p.is_active = 1 AND (e.published_at IS NULL OR e.published_at <= ?)'}
   `);
 
-  const episode = isAdmin ? statement.get(episodeId) : statement.get(episodeId, currentTimestamp);
+  const episode = admin ? statement.get(episodeId) : statement.get(episodeId, currentTimestamp);
 
   if (!episode) {
     return { ok: false, status: 404, error: 'Епизодът не е намерен' };
@@ -65,7 +61,7 @@ function validateEpisodeAccess(episodeId, user) {
 // GET /api/watch-history — Get continue watching list
 router.get('/', requireAuth, (req, res) => {
   const limit = Math.min(Math.max(1, Number(req.query.limit) || 12), 30);
-  const isAdmin = req.user.role === 'admin' || req.user.role === 'superadmin';
+  const isAdmin = isUserAdmin(req.user);
   const currentTimestamp = getCurrentSofiaDbTimestamp();
   const purchaseState = getUserPurchaseState(req.user.id);
   const publishedFilter = isAdmin ? '' : 'AND (e.published_at IS NULL OR e.published_at <= ?)';

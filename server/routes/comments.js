@@ -257,7 +257,7 @@ router.delete('/:id', requireAuth, (req, res) => {
     return res.status(404).json({ error: 'Коментарът не е намерен' });
   }
 
-  const isAdmin = req.user.role === 'admin' || req.user.role === 'superadmin';
+  const isAdmin = isUserAdmin(req.user);
   if (comment.user_id !== req.user.id && !isAdmin) {
     return res.status(403).json({ error: 'Нямате права да изтриете този коментар' });
   }
