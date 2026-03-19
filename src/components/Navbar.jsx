@@ -27,7 +27,6 @@ const PROFILE_NAV = [
 
 const EXTRA_NAV = [
   ...PROFILE_NAV,
-  { to: '/watch-party', fallback: 'Watch Party', icon: MonitorPlay },
 ];
 
 function NavPill({ to, label, icon: Icon, onClick }) {
