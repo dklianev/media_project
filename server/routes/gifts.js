@@ -21,7 +21,19 @@ function generateGiftCode() {
   return 'GIFT-' + crypto.randomBytes(4).toString('hex').toUpperCase();
 }
 
-// POST /create - Create a gift
+function generateReferenceCode(prefix) {
+  const random = crypto.randomBytes(3).toString('hex').toUpperCase();
+  return `GIFT-${prefix}-${random}`;
+}
+
+function getIbanAndPaymentInfo() {
+  const iban = db.prepare("SELECT value FROM site_settings WHERE key = 'iban'").get()?.value || '';
+  const paymentInfo =
+    db.prepare("SELECT value FROM site_settings WHERE key = 'payment_info'").get()?.value || '';
+  return { iban, paymentInfo };
+}
+
+// POST /create - Create a gift (requires payment)
 router.post('/create', requireAuth, giftLimiter, (req, res) => {
   try {
     const { gift_type, target_id, plan_id, message } = req.body || {};
@@ -33,57 +45,214 @@ router.post('/create', requireAuth, giftLimiter, (req, res) => {
     let resolvedTargetId = null;
     let resolvedPlanId = null;
     let planDurationDays = null;
+    let price = null;
+    let targetTitle = null;
+    let productionTitle = null;
+    let productionSlug = null;
+    let episodeNumber = null;
 
     if (gift_type === 'episode') {
       if (!target_id) return res.status(400).json({ error: 'Моля посочете епизод.' });
       const episode = db.prepare(`
-        SELECT id FROM episodes WHERE id = ? AND is_active = 1
+        SELECT e.id, e.title, e.episode_number, e.purchase_price,
+               p.title as production_title, p.slug as production_slug
+        FROM episodes e
+        JOIN productions p ON p.id = e.production_id
+        WHERE e.id = ? AND e.is_active = 1 AND p.is_active = 1
       `).get(target_id);
       if (!episode) return res.status(404).json({ error: 'Епизодът не е намерен или не е активен.' });
+      if (!episode.purchase_price || episode.purchase_price <= 0) {
+        return res.status(400).json({ error: 'Този епизод няма зададена цена и не може да бъде подарен.' });
+      }
       resolvedTargetId = episode.id;
+      price = episode.purchase_price;
+      targetTitle = episode.title;
+      productionTitle = episode.production_title;
+      productionSlug = episode.production_slug;
+      episodeNumber = episode.episode_number;
     } else if (gift_type === 'production') {
       if (!target_id) return res.status(400).json({ error: 'Моля посочете продукция.' });
       const production = db.prepare(`
-        SELECT id FROM productions WHERE id = ? AND is_active = 1
+        SELECT id, title, slug, purchase_price
+        FROM productions WHERE id = ? AND is_active = 1
       `).get(target_id);
       if (!production) return res.status(404).json({ error: 'Продукцията не е намерена или не е активна.' });
+      if (!production.purchase_price || production.purchase_price <= 0) {
+        return res.status(400).json({ error: 'Тази продукция няма зададена цена и не може да бъде подарена.' });
+      }
       resolvedTargetId = production.id;
+      price = production.purchase_price;
+      targetTitle = production.title;
+      productionTitle = production.title;
+      productionSlug = production.slug;
     } else if (gift_type === 'subscription') {
       if (!plan_id) return res.status(400).json({ error: 'Моля посочете абонаментен план.' });
       const plan = db.prepare(`
-        SELECT id, duration_days FROM subscription_plans WHERE id = ? AND is_active = 1
+        SELECT id, name, duration_days, price FROM subscription_plans WHERE id = ? AND is_active = 1
       `).get(plan_id);
       if (!plan) return res.status(404).json({ error: 'Абонаментният план не е намерен или не е активен.' });
+      if (!plan.price || plan.price <= 0) {
+        return res.status(400).json({ error: 'Този план няма зададена цена и не може да бъде подарен.' });
+      }
       resolvedPlanId = plan.id;
       planDurationDays = plan.duration_days;
+      price = plan.price;
+      targetTitle = plan.name;
     }
 
     const now = getCurrentSofiaDbTimestamp();
     const expiresAt = getShiftedSofiaDbTimestamp(30);
 
-    let code = null;
-    for (let attempt = 0; attempt < 10; attempt++) {
-      const candidate = generateGiftCode();
-      try {
-        db.prepare(`
-          INSERT INTO gift_codes (code, sender_id, gift_type, target_id, plan_id, plan_duration_days, message, status, expires_at, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
-        `).run(candidate, req.user.id, gift_type, resolvedTargetId, resolvedPlanId, planDurationDays, message || null, expiresAt, now);
-        code = candidate;
-        break;
-      } catch (err) {
-        if (err.code === 'SQLITE_CONSTRAINT_UNIQUE' || (err.message && err.message.includes('UNIQUE'))) {
-          continue;
+    if (gift_type === 'episode' || gift_type === 'production') {
+      // Create a content_purchase_requests row for payment tracking
+      const insertRequest = db.prepare(`
+        INSERT INTO content_purchase_requests (
+          user_id, target_type, target_id,
+          target_title_snapshot, production_title_snapshot, production_slug_snapshot,
+          episode_number_snapshot, reference_code, original_price, final_price
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+
+      let referenceCode = null;
+      let requestId = null;
+
+      for (let attempt = 0; attempt < 15; attempt++) {
+        referenceCode = generateReferenceCode(gift_type === 'episode' ? 'EPI' : 'PRO');
+        try {
+          const result = insertRequest.run(
+            req.user.id,
+            gift_type,
+            resolvedTargetId,
+            targetTitle,
+            productionTitle,
+            productionSlug,
+            episodeNumber ?? null,
+            referenceCode,
+            price,
+            price
+          );
+          requestId = result.lastInsertRowid;
+          break;
+        } catch (err) {
+          if (err.code === 'SQLITE_CONSTRAINT_UNIQUE' || err.message?.includes('UNIQUE')) {
+            continue;
+          }
+          throw err;
         }
-        throw err;
       }
-    }
 
-    if (!code) {
-      return res.status(500).json({ error: 'Неуспешно генериране на уникален код. Опитайте отново.' });
-    }
+      if (!requestId) {
+        return res.status(500).json({ error: 'Неуспешно генериране на заявка за покупка. Опитайте отново.' });
+      }
 
-    return res.json({ success: true, code, gift_type, expires_at: expiresAt });
+      // Create the gift code linked to the purchase request
+      let code = null;
+      for (let attempt = 0; attempt < 10; attempt++) {
+        const candidate = generateGiftCode();
+        try {
+          db.prepare(`
+            INSERT INTO gift_codes (code, sender_id, gift_type, target_id, plan_id, plan_duration_days, message, status, source_request_id, expires_at, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'pending_payment', ?, ?, ?)
+          `).run(candidate, req.user.id, gift_type, resolvedTargetId, resolvedPlanId, planDurationDays, message || null, requestId, expiresAt, now);
+          code = candidate;
+          break;
+        } catch (err) {
+          if (err.code === 'SQLITE_CONSTRAINT_UNIQUE' || (err.message && err.message.includes('UNIQUE'))) {
+            continue;
+          }
+          throw err;
+        }
+      }
+
+      if (!code) {
+        return res.status(500).json({ error: 'Неуспешно генериране на уникален код. Опитайте отново.' });
+      }
+
+      const { iban, paymentInfo } = getIbanAndPaymentInfo();
+
+      return res.status(201).json({
+        success: true,
+        code,
+        gift_type,
+        reference_code: referenceCode,
+        price,
+        iban,
+        payment_info: paymentInfo,
+        expires_at: expiresAt,
+      });
+
+    } else if (gift_type === 'subscription') {
+      // Create a payment_references row for subscription gift payment tracking
+      const insertRef = db.prepare(`
+        INSERT INTO payment_references
+          (user_id, plan_id, reference_code, original_price, discount_percent, final_price)
+        VALUES (?, ?, ?, ?, 0, ?)
+      `);
+
+      let referenceCode = null;
+      let paymentRefId = null;
+
+      for (let attempt = 0; attempt < 15; attempt++) {
+        referenceCode = generateReferenceCode('SUB');
+        try {
+          const result = insertRef.run(
+            req.user.id,
+            resolvedPlanId,
+            referenceCode,
+            price,
+            price
+          );
+          paymentRefId = result.lastInsertRowid;
+          break;
+        } catch (err) {
+          if (err.code === 'SQLITE_CONSTRAINT_UNIQUE' || err.message?.includes('UNIQUE')) {
+            continue;
+          }
+          throw err;
+        }
+      }
+
+      if (!paymentRefId) {
+        return res.status(500).json({ error: 'Неуспешно генериране на заявка за плащане. Опитайте отново.' });
+      }
+
+      // Create the gift code linked to the payment reference
+      let code = null;
+      for (let attempt = 0; attempt < 10; attempt++) {
+        const candidate = generateGiftCode();
+        try {
+          db.prepare(`
+            INSERT INTO gift_codes (code, sender_id, gift_type, target_id, plan_id, plan_duration_days, message, status, source_request_id, expires_at, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'pending_payment', ?, ?, ?)
+          `).run(candidate, req.user.id, gift_type, resolvedTargetId, resolvedPlanId, planDurationDays, message || null, paymentRefId, expiresAt, now);
+          code = candidate;
+          break;
+        } catch (err) {
+          if (err.code === 'SQLITE_CONSTRAINT_UNIQUE' || (err.message && err.message.includes('UNIQUE'))) {
+            continue;
+          }
+          throw err;
+        }
+      }
+
+      if (!code) {
+        return res.status(500).json({ error: 'Неуспешно генериране на уникален код. Опитайте отново.' });
+      }
+
+      const { iban, paymentInfo } = getIbanAndPaymentInfo();
+
+      return res.status(201).json({
+        success: true,
+        code,
+        gift_type,
+        reference_code: referenceCode,
+        price,
+        iban,
+        payment_info: paymentInfo,
+        expires_at: expiresAt,
+      });
+    }
   } catch (err) {
     return res.status(500).json({ error: err.message || 'Грешка при създаване на подарък.' });
   }
@@ -99,13 +268,38 @@ router.post('/redeem', requireAuth, giftLimiter, (req, res) => {
 
     const gift = db.prepare(`
       SELECT * FROM gift_codes
-      WHERE code = ? AND status = 'pending' AND expires_at > ?
+      WHERE code = ? AND status = 'redeemable' AND expires_at > ?
     `).get(String(code).trim().toUpperCase(), now);
 
     if (!gift) return res.status(404).json({ error: 'Невалиден или изтекъл код за подарък.' });
 
     if (gift.sender_id === req.user.id) {
       return res.status(400).json({ error: 'Не можете да използвате собствен подарък.' });
+    }
+
+    // Verify payment has been confirmed before allowing redemption
+    if (gift.gift_type === 'episode' || gift.gift_type === 'production') {
+      if (gift.source_request_id) {
+        const purchaseRequest = db.prepare(`
+          SELECT status FROM content_purchase_requests WHERE id = ?
+        `).get(gift.source_request_id);
+        if (!purchaseRequest || purchaseRequest.status !== 'confirmed') {
+          return res.status(400).json({ error: 'Подаръкът все още не е платен.' });
+        }
+      } else {
+        return res.status(400).json({ error: 'Подаръкът все още не е платен.' });
+      }
+    } else if (gift.gift_type === 'subscription') {
+      if (gift.source_request_id) {
+        const paymentRef = db.prepare(`
+          SELECT status FROM payment_references WHERE id = ?
+        `).get(gift.source_request_id);
+        if (!paymentRef || paymentRef.status !== 'confirmed') {
+          return res.status(400).json({ error: 'Подаръкът все още не е платен.' });
+        }
+      } else {
+        return res.status(400).json({ error: 'Подаръкът все още не е платен.' });
+      }
     }
 
     const redeem = db.transaction(() => {
@@ -121,9 +315,9 @@ router.post('/redeem', requireAuth, giftLimiter, (req, res) => {
         }
 
         db.prepare(`
-          INSERT INTO content_entitlements (user_id, target_type, target_id)
-          VALUES (?, ?, ?)
-        `).run(req.user.id, targetType, gift.target_id);
+          INSERT INTO content_entitlements (user_id, target_type, target_id, source_request_id)
+          VALUES (?, ?, ?, ?)
+        `).run(req.user.id, targetType, gift.target_id, gift.source_request_id);
       } else if (gift.gift_type === 'subscription') {
         const durationDays = Math.max(1, Number(gift.plan_duration_days) || 30);
         db.prepare(`
@@ -173,7 +367,7 @@ router.get('/sent', requireAuth, (req, res) => {
       SELECT
         gc.id, gc.code, gc.gift_type, gc.target_id, gc.plan_id, gc.plan_duration_days,
         gc.message, gc.status, gc.expires_at, gc.created_at, gc.redeemed_at,
-        gc.recipient_id,
+        gc.recipient_id, gc.source_request_id,
         u.discord_username AS recipient_username,
         u.character_name AS recipient_display_name
       FROM gift_codes gc

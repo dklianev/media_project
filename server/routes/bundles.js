@@ -5,6 +5,11 @@ import { requireAdmin, requireAuth } from '../middleware/auth.js';
 import { logAdminAction } from '../utils/audit.js';
 import { getCurrentSofiaDbTimestamp } from '../utils/sofiaTime.js';
 import { buildPageResult, parsePagination } from '../utils/pagination.js';
+import {
+  getUserPurchaseState,
+  hasPendingEpisodePurchase,
+  evaluateEpisodeAccess,
+} from '../utils/contentPurchases.js';
 
 const router = Router();
 
@@ -62,21 +67,53 @@ router.post('/purchase', requireAuth, (req, res) => {
     }
   }
 
-  // Calculate price
+  // Validate all selected episodes exist, are active, published, and within availability window
+  const placeholders = episodeIds.map(() => '?').join(',');
+  const currentTimestamp = getCurrentSofiaDbTimestamp();
+  const episodes = db.prepare(`
+    SELECT
+      e.id,
+      e.title,
+      e.episode_number,
+      e.purchase_price,
+      e.purchase_enabled,
+      e.production_id,
+      e.access_group,
+      e.available_from,
+      e.available_until,
+      p.title as production_title,
+      p.slug as production_slug,
+      p.required_tier,
+      p.access_group as production_access_group,
+      p.purchase_mode as production_purchase_mode,
+      p.purchase_price as production_purchase_price
+    FROM episodes e
+    JOIN productions p ON p.id = e.production_id
+    WHERE e.id IN (${placeholders}) AND e.is_active = 1 AND p.is_active = 1
+      AND (e.published_at IS NULL OR e.published_at <= ?)
+  `).all(...episodeIds, currentTimestamp);
+
+  if (episodes.length !== episodeIds.length) {
+    return res.status(400).json({ error: 'Някои от избраните епизоди не са налични.' });
+  }
+
+  // Check entitlements and pending requests for each episode
+  const purchaseState = getUserPurchaseState(req.user.id);
+  for (const ep of episodes) {
+    const access = evaluateEpisodeAccess(ep, req.user, purchaseState);
+    if (access.isPurchased) {
+      return res.status(409).json({ error: `Епизод "${ep.title}" вече е закупен.` });
+    }
+    if (hasPendingEpisodePurchase(purchaseState, ep.id)) {
+      return res.status(409).json({ error: `Вече има активна заявка за епизод "${ep.title}".` });
+    }
+  }
+
+  // Calculate total bundle price
   let totalPrice;
   if (bundle.fixed_price) {
     totalPrice = bundle.fixed_price;
   } else if (bundle.buy_count && bundle.pay_count) {
-    // Get individual prices for selected episodes
-    const placeholders = episodeIds.map(() => '?').join(',');
-    const episodes = db.prepare(`
-      SELECT id, purchase_price FROM episodes WHERE id IN (${placeholders}) AND is_active = 1
-    `).all(...episodeIds);
-
-    if (episodes.length !== episodeIds.length) {
-      return res.status(400).json({ error: 'Някои от избраните епизоди не са налични.' });
-    }
-
     // Sort by price descending, charge for pay_count most expensive
     const prices = episodes.map((e) => e.purchase_price || 0).sort((a, b) => b - a);
     totalPrice = prices.slice(0, bundle.pay_count).reduce((sum, p) => sum + p, 0);
@@ -84,14 +121,64 @@ router.post('/purchase', requireAuth, (req, res) => {
     return res.status(400).json({ error: 'Невалидна конфигурация на пакета.' });
   }
 
-  // Generate reference code for the bundle purchase
-  const referenceCode = 'BDL-' + crypto.randomBytes(3).toString('hex').toUpperCase();
+  // Distribute total price proportionally across episodes
+  const sumOriginalPrices = episodes.reduce((s, e) => s + (e.purchase_price || 0), 0);
+  const episodesWithPrices = episodes.map((ep) => {
+    const originalPrice = ep.purchase_price || 0;
+    const finalPrice = sumOriginalPrices > 0
+      ? Math.round((originalPrice / sumOriginalPrices) * totalPrice * 100) / 100
+      : Math.round((totalPrice / episodes.length) * 100) / 100;
+    return { ...ep, originalPrice, finalPrice };
+  });
 
-  // Create a single purchase request for the bundle
-  const result = db.prepare(`
-    INSERT INTO content_purchase_requests (user_id, target_type, target_id, target_title_snapshot, reference_code, original_price, final_price)
-    VALUES (?, 'bundle', ?, ?, ?, ?, ?)
-  `).run(req.user.id, bundleId, bundle.name, referenceCode, totalPrice, totalPrice);
+  // Adjust rounding so final prices sum to totalPrice exactly
+  const sumFinal = episodesWithPrices.reduce((s, e) => s + e.finalPrice, 0);
+  const diff = Math.round((totalPrice - sumFinal) * 100) / 100;
+  if (diff !== 0 && episodesWithPrices.length > 0) {
+    episodesWithPrices[0].finalPrice = Math.round((episodesWithPrices[0].finalPrice + diff) * 100) / 100;
+  }
+
+  // Generate shared bundle reference code prefix
+  const bundleRef = 'BDL-' + crypto.randomBytes(3).toString('hex').toUpperCase();
+
+  // Create individual episode purchase requests inside a transaction
+  const requestIds = [];
+  const createBundleRequests = db.transaction(() => {
+    const insert = db.prepare(`
+      INSERT INTO content_purchase_requests (
+        user_id,
+        target_type,
+        target_id,
+        target_title_snapshot,
+        production_title_snapshot,
+        production_slug_snapshot,
+        episode_number_snapshot,
+        reference_code,
+        original_price,
+        final_price
+      )
+      VALUES (?, 'episode', ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    for (let i = 0; i < episodesWithPrices.length; i++) {
+      const ep = episodesWithPrices[i];
+      const referenceCode = `${bundleRef}-${i + 1}`;
+      const result = insert.run(
+        req.user.id,
+        ep.id,
+        ep.title,
+        ep.production_title,
+        ep.production_slug,
+        ep.episode_number ?? null,
+        referenceCode,
+        ep.originalPrice,
+        ep.finalPrice
+      );
+      requestIds.push(result.lastInsertRowid);
+    }
+  });
+
+  createBundleRequests();
 
   // Get IBAN info
   const iban = db.prepare("SELECT value FROM site_settings WHERE key = 'iban'").get()?.value || '';
@@ -99,10 +186,18 @@ router.post('/purchase', requireAuth, (req, res) => {
 
   res.status(201).json({
     success: true,
-    request_id: result.lastInsertRowid,
-    reference_code: referenceCode,
+    request_ids: requestIds,
+    reference_code: bundleRef,
     total_price: totalPrice,
-    episode_count: episodeIds.length,
+    episode_count: episodesWithPrices.length,
+    episodes: episodesWithPrices.map((ep, i) => ({
+      request_id: requestIds[i],
+      episode_id: ep.id,
+      title: ep.title,
+      reference_code: `${bundleRef}-${i + 1}`,
+      original_price: ep.originalPrice,
+      final_price: ep.finalPrice,
+    })),
     iban,
     payment_info: paymentInfo,
   });

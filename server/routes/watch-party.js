@@ -21,6 +21,25 @@ function generateInviteCode() {
   return crypto.randomBytes(4).toString('hex').toUpperCase();
 }
 
+function checkPartyEpisodeAccess(episodeId, user) {
+  const currentTimestamp = getCurrentSofiaDbTimestamp();
+  const episode = db.prepare(`
+    SELECT e.id, e.production_id, e.access_group,
+           e.published_at, e.available_from, e.available_until,
+           p.required_tier, p.access_group as production_access_group,
+           p.purchase_mode as production_purchase_mode,
+           p.purchase_price as production_purchase_price,
+           e.purchase_enabled, e.purchase_price
+    FROM episodes e
+    JOIN productions p ON p.id = e.production_id
+    WHERE e.id = ? AND e.is_active = 1 AND p.is_active = 1
+      AND (e.published_at IS NULL OR e.published_at <= ?)
+  `).get(episodeId, currentTimestamp);
+  if (!episode) return false;
+  const purchaseState = getUserPurchaseState(user.id);
+  return evaluateEpisodeAccess(episode, user, purchaseState).hasAccess;
+}
+
 // Create a watch party
 router.post('/create', requireAuth, partyLimiter, (req, res) => {
   const { episode_id, max_participants } = req.body || {};
@@ -32,6 +51,7 @@ router.post('/create', requireAuth, partyLimiter, (req, res) => {
   // Verify episode exists and user has access
   const episode = db.prepare(`
     SELECT e.id, e.title, e.production_id, e.access_group,
+           e.published_at, e.available_from, e.available_until,
            p.required_tier, p.access_group as production_access_group,
            p.purchase_mode as production_purchase_mode,
            p.purchase_price as production_purchase_price,
@@ -39,7 +59,8 @@ router.post('/create', requireAuth, partyLimiter, (req, res) => {
     FROM episodes e
     JOIN productions p ON p.id = e.production_id
     WHERE e.id = ? AND e.is_active = 1 AND p.is_active = 1
-  `).get(episodeId);
+      AND (e.published_at IS NULL OR e.published_at <= ?)
+  `).get(episodeId, getCurrentSofiaDbTimestamp());
 
   if (!episode) {
     return res.status(404).json({ error: 'Епизодът не е намерен.' });
@@ -97,6 +118,8 @@ router.get('/:code', requireAuth, (req, res) => {
     return res.status(404).json({ error: 'Watch party не е намерена.' });
   }
 
+  const hasAccess = checkPartyEpisodeAccess(party.episode_id, req.user);
+
   const participants = db.prepare(`
     SELECT wpp.user_id, wpp.joined_at, u.character_name, u.discord_avatar
     FROM watch_party_participants wpp
@@ -113,7 +136,16 @@ router.get('/:code', requireAuth, (req, res) => {
     LIMIT 100
   `).all(party.id);
 
-  res.json({ ...party, participants, messages: messages.reverse() });
+  const response = { ...party, participants, messages: messages.reverse() };
+
+  if (!hasAccess) {
+    delete response.youtube_video_id;
+    delete response.video_source;
+    delete response.local_video_url;
+    response.has_access = false;
+  }
+
+  res.json(response);
 });
 
 // Join a watch party
@@ -124,6 +156,10 @@ router.post('/:code/join', requireAuth, partyLimiter, (req, res) => {
 
   if (!party) {
     return res.status(404).json({ error: 'Watch party не е намерена или е приключила.' });
+  }
+
+  if (!checkPartyEpisodeAccess(party.episode_id, req.user)) {
+    return res.status(403).json({ error: 'Нямаш достъп до този епизод.' });
   }
 
   // Check participant count

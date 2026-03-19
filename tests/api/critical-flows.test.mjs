@@ -2509,9 +2509,9 @@ test('wishlist: require auth', async () => {
 // GIFTS
 // ═══════════════════════════════════════════════════════════════════════════
 
-test('gifts: create a gift for an episode', async () => {
-  const production = createProduction({ access_group: 'free' });
-  const episode = createEpisode({ production_id: production.id, access_group: 'free' });
+test('gifts: create a gift for an episode creates pending purchase request', async () => {
+  const production = createProduction({ access_group: 'free', purchase_mode: 'episodes' });
+  const episode = createEpisode({ production_id: production.id, access_group: 'free', purchase_enabled: 1, purchase_price: 15 });
   const sender = createUser();
   const senderToken = createAccessToken(sender);
 
@@ -2520,27 +2520,68 @@ test('gifts: create a gift for an episode', async () => {
     token: senderToken,
     body: { gift_type: 'episode', target_id: episode.id, message: 'Enjoy!' },
   });
-  assert.equal(res.response.status, 200);
+  assert.equal(res.response.status, 201);
   assert.equal(res.data.success, true);
   assert.ok(res.data.code);
   assert.match(res.data.code, /^GIFT-/);
-  assert.equal(res.data.gift_type, 'episode');
+  assert.equal(res.data.price, 15);
+  assert.ok(res.data.reference_code);
+
+  // Gift should be pending_payment, not immediately redeemable
+  const gift = db.prepare('SELECT * FROM gift_codes WHERE code = ?').get(res.data.code);
+  assert.equal(gift.status, 'pending_payment');
+  assert.ok(gift.source_request_id);
+
+  // A purchase request should exist
+  const pr = db.prepare('SELECT * FROM content_purchase_requests WHERE id = ?').get(gift.source_request_id);
+  assert.equal(pr.status, 'pending');
+  assert.equal(pr.final_price, 15);
 });
 
-test('gifts: redeem a gift code creates entitlement', async () => {
-  const production = createProduction({ access_group: 'free' });
-  const episode = createEpisode({ production_id: production.id, access_group: 'free' });
+test('gifts: redeem requires payment confirmation', async () => {
+  const production = createProduction({ access_group: 'free', purchase_mode: 'episodes' });
+  const episode = createEpisode({ production_id: production.id, access_group: 'free', purchase_enabled: 1, purchase_price: 10 });
   const sender = createUser();
   const senderToken = createAccessToken(sender);
   const recipient = createUser();
   const recipientToken = createAccessToken(recipient);
+  const admin = createUser({ role: 'admin' });
+  const adminToken = createAccessToken(admin);
 
   const created = await apiRequest('/api/gifts/create', {
     method: 'POST',
     token: senderToken,
     body: { gift_type: 'episode', target_id: episode.id },
   });
+  assert.equal(created.response.status, 201);
 
+  // Attempt redeem before payment confirmation — should fail
+  const earlyRedeem = await apiRequest('/api/gifts/redeem', {
+    method: 'POST',
+    token: recipientToken,
+    body: { code: created.data.code },
+  });
+  assert.equal(earlyRedeem.response.status, 404);
+
+  // Admin confirms the purchase request
+  const gift = db.prepare('SELECT * FROM gift_codes WHERE code = ?').get(created.data.code);
+  const confirmRes = await apiRequest(`/api/content-purchases/admin/${gift.source_request_id}/confirm`, {
+    method: 'PUT',
+    token: adminToken,
+  });
+  assert.equal(confirmRes.response.status, 200);
+
+  // Gift should now be redeemable
+  const updatedGift = db.prepare('SELECT status FROM gift_codes WHERE code = ?').get(created.data.code);
+  assert.equal(updatedGift.status, 'redeemable');
+
+  // No entitlement for the sender (buyer) — it's a gift
+  const senderEntitlement = db.prepare(
+    'SELECT 1 FROM content_entitlements WHERE user_id = ? AND target_type = ? AND target_id = ?'
+  ).get(sender.id, 'episode', episode.id);
+  assert.equal(senderEntitlement, undefined);
+
+  // Now redeem succeeds
   const redeemed = await apiRequest('/api/gifts/redeem', {
     method: 'POST',
     token: recipientToken,
@@ -2548,8 +2589,8 @@ test('gifts: redeem a gift code creates entitlement', async () => {
   });
   assert.equal(redeemed.response.status, 200);
   assert.equal(redeemed.data.success, true);
-  assert.equal(redeemed.data.gift_type, 'episode');
 
+  // Recipient gets the entitlement
   const entitlement = db.prepare(
     'SELECT * FROM content_entitlements WHERE user_id = ? AND target_type = ? AND target_id = ?'
   ).get(recipient.id, 'episode', episode.id);
@@ -2557,8 +2598,8 @@ test('gifts: redeem a gift code creates entitlement', async () => {
 });
 
 test('gifts: list sent gifts', async () => {
-  const production = createProduction({ access_group: 'free' });
-  const episode = createEpisode({ production_id: production.id, access_group: 'free' });
+  const production = createProduction({ access_group: 'free', purchase_mode: 'episodes' });
+  const episode = createEpisode({ production_id: production.id, access_group: 'free', purchase_enabled: 1, purchase_price: 5 });
   const sender = createUser();
   const senderToken = createAccessToken(sender);
 
@@ -2573,15 +2614,18 @@ test('gifts: list sent gifts', async () => {
   assert.ok(Array.isArray(res.data));
   assert.equal(res.data.length, 1);
   assert.equal(res.data[0].gift_type, 'episode');
+  assert.equal(res.data[0].status, 'pending_payment');
 });
 
 test('gifts: list received gifts', async () => {
-  const production = createProduction({ access_group: 'free' });
-  const episode = createEpisode({ production_id: production.id, access_group: 'free' });
+  const production = createProduction({ access_group: 'free', purchase_mode: 'episodes' });
+  const episode = createEpisode({ production_id: production.id, access_group: 'free', purchase_enabled: 1, purchase_price: 5 });
   const sender = createUser();
   const senderToken = createAccessToken(sender);
   const recipient = createUser();
   const recipientToken = createAccessToken(recipient);
+  const admin = createUser({ role: 'admin' });
+  const adminToken = createAccessToken(admin);
 
   const created = await apiRequest('/api/gifts/create', {
     method: 'POST',
@@ -2589,9 +2633,13 @@ test('gifts: list received gifts', async () => {
     body: { gift_type: 'episode', target_id: episode.id },
   });
 
+  // Confirm payment and redeem
+  const gift = db.prepare('SELECT * FROM gift_codes WHERE code = ?').get(created.data.code);
+  await apiRequest(`/api/content-purchases/admin/${gift.source_request_id}/confirm`, {
+    method: 'PUT', token: adminToken,
+  });
   await apiRequest('/api/gifts/redeem', {
-    method: 'POST',
-    token: recipientToken,
+    method: 'POST', token: recipientToken,
     body: { code: created.data.code },
   });
 
@@ -2602,8 +2650,8 @@ test('gifts: list received gifts', async () => {
 });
 
 test('gifts: reject expired gift code', async () => {
-  const production = createProduction({ access_group: 'free' });
-  const episode = createEpisode({ production_id: production.id, access_group: 'free' });
+  const production = createProduction({ access_group: 'free', purchase_mode: 'episodes' });
+  const episode = createEpisode({ production_id: production.id, access_group: 'free', purchase_enabled: 1, purchase_price: 5 });
   const sender = createUser();
   const senderToken = createAccessToken(sender);
   const recipient = createUser();
@@ -2615,8 +2663,8 @@ test('gifts: reject expired gift code', async () => {
     body: { gift_type: 'episode', target_id: episode.id },
   });
 
-  // Manually expire the gift code in the database
-  db.prepare("UPDATE gift_codes SET expires_at = datetime('now', '-1 day') WHERE code = ?")
+  // Make it redeemable then expire it
+  db.prepare("UPDATE gift_codes SET status = 'redeemable', expires_at = datetime('now', '-1 day') WHERE code = ?")
     .run(created.data.code);
 
   const redeemed = await apiRequest('/api/gifts/redeem', {
@@ -2628,10 +2676,12 @@ test('gifts: reject expired gift code', async () => {
 });
 
 test('gifts: reject already-redeemed gift code', async () => {
-  const production = createProduction({ access_group: 'free' });
-  const episode = createEpisode({ production_id: production.id, access_group: 'free' });
+  const production = createProduction({ access_group: 'free', purchase_mode: 'episodes' });
+  const episode = createEpisode({ production_id: production.id, access_group: 'free', purchase_enabled: 1, purchase_price: 5 });
   const sender = createUser();
   const senderToken = createAccessToken(sender);
+  const admin = createUser({ role: 'admin' });
+  const adminToken = createAccessToken(admin);
   const recipient1 = createUser();
   const recipient1Token = createAccessToken(recipient1);
   const recipient2 = createUser();
@@ -2643,12 +2693,20 @@ test('gifts: reject already-redeemed gift code', async () => {
     body: { gift_type: 'episode', target_id: episode.id },
   });
 
+  // Confirm payment
+  const gift = db.prepare('SELECT * FROM gift_codes WHERE code = ?').get(created.data.code);
+  await apiRequest(`/api/content-purchases/admin/${gift.source_request_id}/confirm`, {
+    method: 'PUT', token: adminToken,
+  });
+
+  // First redeem succeeds
   await apiRequest('/api/gifts/redeem', {
     method: 'POST',
     token: recipient1Token,
     body: { code: created.data.code },
   });
 
+  // Second redeem fails
   const second = await apiRequest('/api/gifts/redeem', {
     method: 'POST',
     token: recipient2Token,

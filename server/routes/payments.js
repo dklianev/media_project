@@ -448,23 +448,33 @@ function confirmPayment(req, res) {
         WHERE id = ?
       `).run(req.user.id, payment.id);
 
-      // Calculate expiry: use plan.duration_days or default to 30
-      const durationDays = Math.max(1, Number(payment.duration_days) || 30);
-      db.prepare(`
-        UPDATE users SET
-          subscription_plan_id = ?,
-          subscription_expires_at = datetime(
-            CASE
-              WHEN subscription_expires_at IS NOT NULL
-                AND datetime(replace(replace(subscription_expires_at, 'T', ' '), 'Z', '')) > datetime('now')
-              THEN datetime(replace(replace(subscription_expires_at, 'T', ' '), 'Z', ''))
-              ELSE datetime('now')
-            END,
-            '+' || ? || ' days'
-          ),
-          updated_at = datetime('now')
-        WHERE id = ?
-      `).run(payment.plan_id, durationDays, payment.user_id);
+      // Check if this payment is linked to a gift code
+      const linkedGift = db.prepare(
+        "SELECT id FROM gift_codes WHERE source_request_id = ? AND gift_type = 'subscription' AND status = 'pending_payment'"
+      ).get(payment.id);
+
+      if (linkedGift) {
+        // Gift payment: don't apply subscription to buyer — mark gift as redeemable
+        db.prepare("UPDATE gift_codes SET status = 'redeemable' WHERE id = ?").run(linkedGift.id);
+      } else {
+        // Normal payment: apply subscription to buyer
+        const durationDays = Math.max(1, Number(payment.duration_days) || 30);
+        db.prepare(`
+          UPDATE users SET
+            subscription_plan_id = ?,
+            subscription_expires_at = datetime(
+              CASE
+                WHEN subscription_expires_at IS NOT NULL
+                  AND datetime(replace(replace(subscription_expires_at, 'T', ' '), 'Z', '')) > datetime('now')
+                THEN datetime(replace(replace(subscription_expires_at, 'T', ' '), 'Z', ''))
+                ELSE datetime('now')
+              END,
+              '+' || ? || ' days'
+            ),
+            updated_at = datetime('now')
+          WHERE id = ?
+        `).run(payment.plan_id, durationDays, payment.user_id);
+      }
     });
 
     apply();

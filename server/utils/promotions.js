@@ -8,9 +8,17 @@ import { getCurrentSofiaDbTimestamp } from './sofiaTime.js';
  */
 export function getActivePromotions(appliesTo = 'all') {
   const now = getCurrentSofiaDbTimestamp();
+  if (appliesTo === 'all') {
+    return db.prepare(`
+      SELECT * FROM promotions
+      WHERE is_active = 1
+        AND (starts_at IS NULL OR starts_at <= ?)
+        AND (ends_at IS NULL OR ends_at >= ?)
+        AND (max_uses IS NULL OR uses_count < max_uses)
+    `).all(now, now);
+  }
   return db.prepare(`
-    SELECT *
-    FROM promotions
+    SELECT * FROM promotions
     WHERE is_active = 1
       AND (starts_at IS NULL OR starts_at <= ?)
       AND (ends_at IS NULL OR ends_at >= ?)

@@ -588,13 +588,24 @@ function confirmPurchase(req, res) {
         throw new Error('Заявката вече е била обработена.');
       }
 
-      db.prepare(`
-        INSERT INTO content_entitlements (user_id, target_type, target_id, source_request_id)
-        VALUES (?, ?, ?, ?)
-      `).run(request.user_id, request.target_type, request.target_id, request.id);
+      // Check if this purchase is linked to a gift code
+      const linkedGift = db.prepare(
+        "SELECT id FROM gift_codes WHERE source_request_id = ? AND status = 'pending_payment'"
+      ).get(request.id);
 
-      if (request.target_type === 'production') {
-        cancelCoveredEpisodeRequests(request.user_id, request.target_id, request.id);
+      if (linkedGift) {
+        // Gift purchase: don't create entitlement for the buyer — mark gift as redeemable instead
+        db.prepare("UPDATE gift_codes SET status = 'redeemable' WHERE id = ?").run(linkedGift.id);
+      } else {
+        // Normal purchase: create entitlement for the buyer
+        db.prepare(`
+          INSERT INTO content_entitlements (user_id, target_type, target_id, source_request_id)
+          VALUES (?, ?, ?, ?)
+        `).run(request.user_id, request.target_type, request.target_id, request.id);
+
+        if (request.target_type === 'production') {
+          cancelCoveredEpisodeRequests(request.user_id, request.target_id, request.id);
+        }
       }
     });
 
