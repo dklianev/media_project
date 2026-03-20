@@ -173,15 +173,66 @@ export default function VideoPlayer({
     }
   };
 
+  const getPlayerCurrentTime = () => {
+    if (typeof playerRef.current?.getCurrentTime === 'function') {
+      return Number(playerRef.current.getCurrentTime()) || 0;
+    }
+    return Number(localVideoRef.current?.currentTime) || 0;
+  };
+
+  const getPlayerDuration = () => {
+    if (typeof playerRef.current?.getDuration === 'function') {
+      return Number(playerRef.current.getDuration()) || 0;
+    }
+    return Number(localVideoRef.current?.duration) || 0;
+  };
+
+  const seekPlayer = (seconds) => {
+    const targetTime = Math.max(0, Number(seconds) || 0);
+    if (typeof playerRef.current?.seekTo === 'function') {
+      playerRef.current.seekTo(targetTime, true);
+      return true;
+    }
+    if (localVideoRef.current) {
+      localVideoRef.current.currentTime = targetTime;
+      return true;
+    }
+    return false;
+  };
+
+  const playPlayer = () => {
+    if (typeof playerRef.current?.playVideo === 'function') {
+      playerRef.current.playVideo();
+      return true;
+    }
+    if (localVideoRef.current) {
+      localVideoRef.current.play().catch(() => {});
+      return true;
+    }
+    return false;
+  };
+
+  const pausePlayer = () => {
+    if (typeof playerRef.current?.pauseVideo === 'function') {
+      pausePlayer();
+      return true;
+    }
+    if (localVideoRef.current) {
+      localVideoRef.current.pause();
+      return true;
+    }
+    return false;
+  };
+
   const emitSyncEvent = useCallback((nextState, currentTimeOverride = null, durationOverride = null) => {
     if (typeof onSyncEvent !== 'function' || suppressSyncEventRef.current) return;
 
     const currentTime = currentTimeOverride != null
       ? Number(currentTimeOverride)
-      : Number(typeof playerRef.current?.getCurrentTime === 'function' ? playerRef.current.getCurrentTime() : progress);
+      : getPlayerCurrentTime();
     const totalDuration = durationOverride != null
       ? Number(durationOverride)
-      : Number(typeof playerRef.current?.getDuration === 'function' ? playerRef.current.getDuration() : duration);
+      : getPlayerDuration();
 
     onSyncEvent({
       playbackState: nextState,
@@ -640,23 +691,22 @@ export default function VideoPlayer({
       ? Math.max(0, (Date.now() - updatedAtMs) / 1000)
       : 0;
     const targetTime = Math.max(0, basePosition + elapsedSeconds);
-    const currentTime = Number(typeof playerRef.current.getCurrentTime === 'function' ? playerRef.current.getCurrentTime() : progress) || 0;
+    const currentTime = getPlayerCurrentTime();
 
     suppressSyncEventRef.current = true;
     appliedSyncVersionRef.current = playbackVersion;
 
-    if (Math.abs(currentTime - targetTime) > 1.25 && typeof playerRef.current.seekTo === 'function') {
-      playerRef.current.seekTo(targetTime, true);
+    if (Math.abs(currentTime - targetTime) > 1.25 && seekPlayer(targetTime)) {
       setProgress(targetTime);
       reportProgress(targetTime, duration);
     }
 
     if (playbackState === 'playing') {
-      playerRef.current.playVideo?.();
+      playPlayer();
       setHasEnded(false);
       setPlayerStatus('playing');
     } else {
-      playerRef.current.pauseVideo?.();
+      pausePlayer();
       if (playbackState === 'ended') {
         setHasEnded(true);
         setPlayerStatus('ended');
@@ -694,12 +744,12 @@ export default function VideoPlayer({
       emitSyncEvent('paused');
     } else {
       if (hasEnded) {
-        playerRef.current.seekTo(0, true);
+        seekPlayer(0);
         setProgress(0);
         reportProgress(0, duration);
         setHasEnded(false);
       }
-      playerRef.current.playVideo();
+      playPlayer();
       triggerAnimation('play');
       setPlayerStatus('playing');
       emitSyncEvent('playing', hasEnded ? 0 : null);
@@ -711,9 +761,9 @@ export default function VideoPlayer({
     if (e) e.stopPropagation();
     if (!canControlPlayback) return;
     if (!playerRef.current || !playerReady) return;
-    const current = playerRef.current.getCurrentTime();
+    const current = getPlayerCurrentTime();
     const newTime = Math.max(0, current - 10);
-    playerRef.current.seekTo(newTime, true);
+    seekPlayer(newTime);
     setProgress(newTime);
     reportProgress(newTime, duration);
     triggerAnimation('rewind');
@@ -725,9 +775,9 @@ export default function VideoPlayer({
     if (e) e.stopPropagation();
     if (!canControlPlayback) return;
     if (!playerRef.current || !playerReady) return;
-    const current = playerRef.current.getCurrentTime();
+    const current = getPlayerCurrentTime();
     const newTime = Math.min(duration, current + 10);
-    playerRef.current.seekTo(newTime, true);
+    seekPlayer(newTime);
     setProgress(newTime);
     reportProgress(newTime, duration);
     triggerAnimation('forward');
@@ -775,10 +825,10 @@ export default function VideoPlayer({
     setAutoplayCountdown(null);
     setHasEnded(false);
     if (!playerRef.current || !playerReady) return;
-    playerRef.current.seekTo(0, true);
+    seekPlayer(0);
     setProgress(0);
     reportProgress(0, duration);
-    playerRef.current.playVideo();
+    playPlayer();
     emitSyncEvent('playing', 0);
     revealControls();
   };
@@ -876,7 +926,7 @@ export default function VideoPlayer({
     const percentage = Math.max(0, Math.min(1, x / rect.width));
     const newTime = percentage * duration;
 
-    playerRef.current.seekTo(newTime, true);
+    seekPlayer(newTime);
     setProgress(newTime);
     reportProgress(newTime, duration);
     emitSyncEvent(isPlaying ? 'playing' : 'paused', newTime);
@@ -1089,8 +1139,8 @@ export default function VideoPlayer({
           break;
         case 'arrowleft': {
           if (!canControlPlayback) break;
-          const newTime = Math.max(0, playerRef.current.getCurrentTime() - 5);
-          playerRef.current.seekTo(newTime, true);
+          const newTime = Math.max(0, getPlayerCurrentTime() - 5);
+          seekPlayer(newTime);
           setProgress(newTime);
           reportProgress(newTime, duration);
           emitSyncEvent(isPlaying ? 'playing' : 'paused', newTime);
@@ -1099,8 +1149,8 @@ export default function VideoPlayer({
         }
         case 'arrowright': {
           if (!canControlPlayback) break;
-          const newTime = Math.min(duration, playerRef.current.getCurrentTime() + 5);
-          playerRef.current.seekTo(newTime, true);
+          const newTime = Math.min(duration, getPlayerCurrentTime() + 5);
+          seekPlayer(newTime);
           setProgress(newTime);
           reportProgress(newTime, duration);
           emitSyncEvent(isPlaying ? 'playing' : 'paused', newTime);
@@ -1493,8 +1543,8 @@ export default function VideoPlayer({
                   onClick={(e) => {
                     e.stopPropagation();
                     if (!playerRef.current || !playerReady) return;
-                    playerRef.current.seekTo(initialProgressSeconds, true);
-                    playerRef.current.playVideo();
+                    seekPlayer(initialProgressSeconds);
+                    playPlayer();
                     setProgress(initialProgressSeconds);
                     reportProgress(initialProgressSeconds, duration);
                     revealControls();
