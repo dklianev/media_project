@@ -468,7 +468,7 @@ if (!hasColumn('watch_parties', 'playback_position_seconds')) {
   db.exec(`ALTER TABLE watch_parties ADD COLUMN playback_position_seconds REAL DEFAULT 0`);
 }
 if (!hasColumn('watch_parties', 'playback_updated_at')) {
-  db.exec(`ALTER TABLE watch_parties ADD COLUMN playback_updated_at TEXT DEFAULT (datetime('now'))`);
+  db.exec(`ALTER TABLE watch_parties ADD COLUMN playback_updated_at TEXT`);
   db.exec(`UPDATE watch_parties SET playback_updated_at = COALESCE(started_at, created_at, datetime('now')) WHERE playback_updated_at IS NULL`);
 }
 if (!hasColumn('watch_parties', 'playback_version')) {

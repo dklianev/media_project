@@ -180,11 +180,21 @@ router.post('/create', requireAuth, partyLimiter, (req, res) => {
 
   const inviteCode = generateInviteCode();
   const maxPart = Math.min(Math.max(2, Number(max_participants) || 10), 20);
+  const createdAt = getCurrentSofiaDbTimestamp();
 
   const result = db.prepare(`
-    INSERT INTO watch_parties (host_id, episode_id, invite_code, max_participants)
-    VALUES (?, ?, ?, ?)
-  `).run(req.user.id, episodeId, inviteCode, maxPart);
+    INSERT INTO watch_parties (
+      host_id,
+      episode_id,
+      invite_code,
+      max_participants,
+      playback_state,
+      playback_position_seconds,
+      playback_updated_at,
+      playback_version
+    )
+    VALUES (?, ?, ?, ?, 'paused', 0, ?, 0)
+  `).run(req.user.id, episodeId, inviteCode, maxPart, createdAt);
 
   db.prepare(`
     INSERT INTO watch_party_participants (party_id, user_id)
