@@ -167,31 +167,31 @@ export default function VideoPlayer({
     }
   };
 
-  const reportProgress = (currentTime, totalDuration) => {
+  const reportProgress = useCallback((currentTime, totalDuration) => {
     if (typeof onProgressSample === 'function') {
       onProgressSample(currentTime, totalDuration);
     }
-  };
+  }, [onProgressSample]);
 
-  const resolveMediaTarget = (target = playerRef.current) => target || localVideoRef.current || null;
+  const resolveMediaTarget = useCallback((target = playerRef.current) => target || localVideoRef.current || null, []);
 
-  const getPlayerCurrentTime = (target) => {
+  const getPlayerCurrentTime = useCallback((target) => {
     const mediaTarget = resolveMediaTarget(target);
     if (typeof mediaTarget?.getCurrentTime === 'function') {
       return Number(mediaTarget.getCurrentTime()) || 0;
     }
     return Number(mediaTarget?.currentTime) || 0;
-  };
+  }, [resolveMediaTarget]);
 
-  const getPlayerDuration = (target) => {
+  const getPlayerDuration = useCallback((target) => {
     const mediaTarget = resolveMediaTarget(target);
     if (typeof mediaTarget?.getDuration === 'function') {
       return Number(mediaTarget.getDuration()) || 0;
     }
     return Number(mediaTarget?.duration) || 0;
-  };
+  }, [resolveMediaTarget]);
 
-  const seekPlayer = (seconds, target) => {
+  const seekPlayer = useCallback((seconds, target) => {
     const targetTime = Math.max(0, Number(seconds) || 0);
     const mediaTarget = resolveMediaTarget(target);
     if (typeof mediaTarget?.seekTo === 'function') {
@@ -203,9 +203,9 @@ export default function VideoPlayer({
       return true;
     }
     return false;
-  };
+  }, [resolveMediaTarget]);
 
-  const playPlayer = (target) => {
+  const playPlayer = useCallback((target) => {
     const mediaTarget = resolveMediaTarget(target);
     if (typeof mediaTarget?.playVideo === 'function') {
       mediaTarget.playVideo();
@@ -216,9 +216,9 @@ export default function VideoPlayer({
       return true;
     }
     return false;
-  };
+  }, [resolveMediaTarget]);
 
-  const pausePlayer = (target) => {
+  const pausePlayer = useCallback((target) => {
     const mediaTarget = resolveMediaTarget(target);
     if (typeof mediaTarget?.pauseVideo === 'function') {
       mediaTarget.pauseVideo();
@@ -229,7 +229,7 @@ export default function VideoPlayer({
       return true;
     }
     return false;
-  };
+  }, [resolveMediaTarget]);
 
   const emitSyncEvent = useCallback((nextState, currentTimeOverride = null, durationOverride = null) => {
     if (typeof onSyncEvent !== 'function' || suppressSyncEventRef.current) return;
@@ -246,7 +246,7 @@ export default function VideoPlayer({
       playbackPositionSeconds: Number.isFinite(currentTime) ? Math.max(0, currentTime) : 0,
       durationSeconds: Number.isFinite(totalDuration) ? Math.max(0, totalDuration) : 0,
     });
-  }, [duration, onSyncEvent, progress]);
+  }, [getPlayerCurrentTime, getPlayerDuration, onSyncEvent]);
 
   const syncPlayerDiagnostics = (player = playerRef.current) => {
     if (!player) return;
