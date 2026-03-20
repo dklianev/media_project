@@ -5,6 +5,11 @@ import db from '../db.js';
 import { requireAuth, requireAdmin } from '../middleware/auth.js';
 import { getCurrentSofiaDbTimestamp } from '../utils/sofiaTime.js';
 import { evaluateEpisodeAccess, getUserPurchaseState } from '../utils/contentPurchases.js';
+import {
+  broadcastWatchPartySnapshotByInviteCode,
+  emitWatchPartyDeleted,
+  emitWatchPartyEnded,
+} from '../utils/watchPartyRealtime.js';
 
 const router = Router();
 
@@ -271,6 +276,8 @@ router.post('/create', requireAuth, partyLimiter, (req, res) => {
     VALUES (?, ?)
   `).run(result.lastInsertRowid, req.user.id);
 
+  broadcastWatchPartySnapshotByInviteCode(inviteCode);
+
   res.status(201).json({
     success: true,
     party_id: result.lastInsertRowid,
@@ -391,6 +398,8 @@ router.post('/:code/join', requireAuth, partyLimiter, (req, res) => {
     }
   }
 
+  broadcastWatchPartySnapshotByInviteCode(req.params.code);
+
   res.json({ success: true, party_id: party.id });
 });
 
@@ -405,8 +414,11 @@ router.post('/:code/leave', requireAuth, (req, res) => {
 
   if (party.status === 'active' && party.host_id === req.user.id) {
     endParty(party.id);
+    emitWatchPartyEnded(req.params.code);
     return res.json({ success: true, ended: true });
   }
+
+  broadcastWatchPartySnapshotByInviteCode(req.params.code);
 
   res.json({ success: true });
 });
@@ -418,6 +430,7 @@ router.delete('/:code', requireAuth, (req, res) => {
     return res.status(403).json({ error: 'Само домакинът може да изтрие watch party.' });
   }
 
+  emitWatchPartyDeleted(req.params.code, party.id);
   deleteParty(party.id);
   res.json({ success: true });
 });
@@ -440,6 +453,8 @@ router.post('/:code/message', requireAuth, partyLimiter, (req, res) => {
     INSERT INTO watch_party_messages (party_id, user_id, message)
     VALUES (?, ?, ?)
   `).run(party.id, req.user.id, message);
+
+  broadcastWatchPartySnapshotByInviteCode(req.params.code);
 
   res.status(201).json({
     success: true,
@@ -494,6 +509,8 @@ router.put('/:code/playback', requireAuth, playbackLimiter, (req, res) => {
     WHERE id = ?
   `).get(party.id);
 
+  broadcastWatchPartySnapshotByInviteCode(req.params.code);
+
   res.json({
     success: true,
     ...normalizePlaybackState(updatedParty),
@@ -510,6 +527,7 @@ router.put('/:code/end', requireAuth, (req, res) => {
   }
 
   endParty(party.id);
+  emitWatchPartyEnded(req.params.code);
   res.json({ success: true });
 });
 

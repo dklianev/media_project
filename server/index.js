@@ -2,6 +2,7 @@ import 'dotenv/config';
 import { createApp } from './app.js';
 import { initializeTranscoder } from './utils/transcoder.js';
 import { startNotificationCron } from './utils/notificationCron.js';
+import { attachWatchPartyRealtime } from './utils/watchPartyRealtime.js';
 
 const app = createApp();
 const PORT = process.env.PORT || 3001;
@@ -16,6 +17,8 @@ const stopNotificationCron = startNotificationCron();
 const server = app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
 });
+
+attachWatchPartyRealtime(server);
 
 server.requestTimeout = SERVER_REQUEST_TIMEOUT_MS;
 server.headersTimeout = Math.max(SERVER_HEADERS_TIMEOUT_MS, SERVER_REQUEST_TIMEOUT_MS + 1_000);

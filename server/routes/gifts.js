@@ -450,10 +450,24 @@ router.get('/sent', requireAuth, (req, res) => {
         gc.id, gc.code, gc.gift_type, gc.target_id, gc.plan_id, gc.plan_duration_days,
         gc.message, gc.status, gc.expires_at, gc.created_at, gc.redeemed_at,
         gc.recipient_id, gc.source_request_id,
+        CASE
+          WHEN gc.gift_type = 'episode' THEN COALESCE(prod_for_episode.title || ' - ' || ep.title, ep.title)
+          WHEN gc.gift_type = 'production' THEN prod.title
+          WHEN gc.gift_type = 'subscription' THEN sp.name
+          ELSE NULL
+        END AS target_title,
         u.discord_username AS recipient_username,
         u.character_name AS recipient_display_name
       FROM gift_codes gc
       LEFT JOIN users u ON u.id = gc.recipient_id
+      LEFT JOIN episodes ep
+        ON gc.gift_type = 'episode' AND ep.id = gc.target_id
+      LEFT JOIN productions prod_for_episode
+        ON prod_for_episode.id = ep.production_id
+      LEFT JOIN productions prod
+        ON gc.gift_type = 'production' AND prod.id = gc.target_id
+      LEFT JOIN subscription_plans sp
+        ON gc.gift_type = 'subscription' AND sp.id = gc.plan_id
       WHERE gc.sender_id = ?
       ORDER BY gc.created_at DESC
       LIMIT 50
@@ -473,10 +487,24 @@ router.get('/received', requireAuth, (req, res) => {
         gc.id, gc.code, gc.gift_type, gc.target_id, gc.plan_id, gc.plan_duration_days,
         gc.message, gc.status, gc.expires_at, gc.created_at, gc.redeemed_at,
         gc.sender_id,
+        CASE
+          WHEN gc.gift_type = 'episode' THEN COALESCE(prod_for_episode.title || ' - ' || ep.title, ep.title)
+          WHEN gc.gift_type = 'production' THEN prod.title
+          WHEN gc.gift_type = 'subscription' THEN sp.name
+          ELSE NULL
+        END AS target_title,
         u.discord_username AS sender_username,
         u.character_name AS sender_display_name
       FROM gift_codes gc
       LEFT JOIN users u ON u.id = gc.sender_id
+      LEFT JOIN episodes ep
+        ON gc.gift_type = 'episode' AND ep.id = gc.target_id
+      LEFT JOIN productions prod_for_episode
+        ON prod_for_episode.id = ep.production_id
+      LEFT JOIN productions prod
+        ON gc.gift_type = 'production' AND prod.id = gc.target_id
+      LEFT JOIN subscription_plans sp
+        ON gc.gift_type = 'subscription' AND sp.id = gc.plan_id
       WHERE gc.recipient_id = ?
       ORDER BY gc.redeemed_at DESC
       LIMIT 50

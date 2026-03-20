@@ -38,6 +38,7 @@ import {
   getUserPurchaseState,
   normalizePurchasePrice,
 } from '../utils/contentPurchases.js';
+import { emitWatchPartyDeleted } from '../utils/watchPartyRealtime.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const uploadsDir = pathResolve(__dirname, '..', '..', 'public', 'uploads');
@@ -1347,7 +1348,20 @@ router.delete('/admin/:id', requireAdmin, (req, res) => {
     return res.status(404).json({ error: 'Епизодът не е намерен' });
   }
 
+  const linkedWatchParties = db.prepare(`
+    SELECT id, invite_code
+    FROM watch_parties
+    WHERE episode_id = ?
+  `).all(req.params.id);
+
+  for (const party of linkedWatchParties) {
+    emitWatchPartyDeleted(party.invite_code, party.id);
+  }
+
   const remove = db.transaction((episodeId) => {
+    db.prepare('DELETE FROM watch_party_messages WHERE party_id IN (SELECT id FROM watch_parties WHERE episode_id = ?)').run(episodeId);
+    db.prepare('DELETE FROM watch_party_participants WHERE party_id IN (SELECT id FROM watch_parties WHERE episode_id = ?)').run(episodeId);
+    db.prepare('DELETE FROM watch_parties WHERE episode_id = ?').run(episodeId);
     db.prepare('DELETE FROM comments WHERE episode_id = ?').run(episodeId);
     db.prepare('DELETE FROM reactions WHERE episode_id = ?').run(episodeId);
     db.prepare('DELETE FROM watch_history WHERE episode_id = ?').run(episodeId);

@@ -6,8 +6,9 @@ import { useToastContext } from '../context/ToastContext';
 import PageBackground from '../components/PageBackground';
 import ScrollReveal from '../components/ScrollReveal';
 import VideoPlayer from '../components/VideoPlayer';
+import useWatchPartySocket from '../hooks/useWatchPartySocket';
 
-const POLL_INTERVAL_MS = 1500;
+const FALLBACK_POLL_INTERVAL_MS = 5000;
 const HOST_SYNC_HEARTBEAT_MS = 3000;
 
 function CopyCodeButton({ code }) {
@@ -139,6 +140,7 @@ export default function WatchPartyPage() {
   const [hostedParty, setHostedParty] = useState(null);
   const [loadingHostedParty, setLoadingHostedParty] = useState(false);
   const [deletingParty, setDeletingParty] = useState(false);
+  const [socketError, setSocketError] = useState(null);
   const [messageText, setMessageText] = useState('');
   const [sending, setSending] = useState(false);
   const [leaving, setLeaving] = useState(false);
@@ -156,6 +158,7 @@ export default function WatchPartyPage() {
     setPartyVideoError(null);
     setInviteCode(null);
     setMessageText('');
+    setSocketError(null);
     setPlayerSyncState('paused');
     lastMessageCountRef.current = 0;
     lastHostSyncRef.current = { state: null, position: null, sentAt: 0 };
@@ -181,6 +184,54 @@ export default function WatchPartyPage() {
   useEffect(() => {
     fetchHostedParty();
   }, [fetchHostedParty]);
+
+  const refreshParty = useCallback(() => {
+    if (!partyCode) return Promise.resolve();
+
+    return api.get(`/watch-party/${partyCode}`)
+      .then((data) => {
+        if (data.status && data.status !== 'active') {
+          showToast('Watch party приключи.', 'success');
+          clearPartyState();
+          fetchHostedParty();
+          return;
+        }
+        setParty(data);
+      })
+      .catch((err) => {
+        console.error('Failed to fetch party:', err);
+        if (err.status === 404) {
+          showToast('Watch party вече не е наличен.', 'error');
+        } else {
+          showToast(err?.data?.error || err?.message || 'Не успяхме да заредим watch party.', 'error');
+        }
+        clearPartyState();
+        fetchHostedParty();
+      });
+  }, [clearPartyState, fetchHostedParty, partyCode, showToast]);
+
+  const { isConnected: isSocketConnected } = useWatchPartySocket({
+    inviteCode: partyCode,
+    enabled: Boolean(partyCode),
+    onSnapshot: useCallback((nextParty) => {
+      setSocketError(null);
+      setParty(nextParty);
+    }, []),
+    onEnded: useCallback(() => {
+      showToast('Watch party приключи.', 'success');
+      clearPartyState();
+      fetchHostedParty();
+    }, [clearPartyState, fetchHostedParty, showToast]),
+    onDeleted: useCallback(() => {
+      showToast('Watch party беше изтрит.', 'success');
+      clearPartyState();
+      fetchHostedParty();
+    }, [clearPartyState, fetchHostedParty, showToast]),
+    onError: useCallback((payload) => {
+      const message = payload?.error || 'Realtime връзката за watch party прекъсна.';
+      setSocketError(message);
+    }, []),
+  });
 
   const publishPlaybackUpdate = useCallback(async (payload, options = {}) => {
     if (!partyCode || !party?.is_host) return;
@@ -310,13 +361,18 @@ export default function WatchPartyPage() {
     };
 
     fetchParty();
-    const intervalId = setInterval(fetchParty, POLL_INTERVAL_MS);
+    if (isSocketConnected) {
+      return () => {
+        cancelled = true;
+      };
+    }
+    const intervalId = setInterval(fetchParty, FALLBACK_POLL_INTERVAL_MS);
 
     return () => {
       cancelled = true;
       clearInterval(intervalId);
     };
-  }, [partyCode, showToast, clearPartyState, fetchHostedParty]);
+  }, [isSocketConnected, partyCode, showToast, clearPartyState, fetchHostedParty]);
 
   const handlePlayerSyncEvent = useCallback((payload) => {
     setPlayerSyncState(payload.playbackState || 'paused');
@@ -386,8 +442,9 @@ export default function WatchPartyPage() {
     try {
       await api.post(`/watch-party/${partyCode}/message`, { message: content });
       setMessageText('');
-      const data = await api.get(`/watch-party/${partyCode}`);
-      setParty(data);
+      if (!isSocketConnected) {
+        await refreshParty();
+      }
     } catch (err) {
       const message = err?.data?.error || err?.message || 'Не успяхме да изпратим съобщението.';
       showToast(message, 'error');
@@ -644,6 +701,11 @@ export default function WatchPartyPage() {
                   Участници
                 </h3>
                 <ParticipantList participants={participants} />
+                {socketError && (
+                  <p className="mt-3 text-xs text-[var(--text-secondary)]">
+                    {socketError}
+                  </p>
+                )}
               </div>
             </motion.div>
           </ScrollReveal>

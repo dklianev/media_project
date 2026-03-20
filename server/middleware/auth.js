@@ -27,7 +27,7 @@ const REFRESH_TTL_MS = parseDuration(REFRESH_TOKEN_EXPIRY);
 
 if (process.env.NODE_ENV === 'production') {
   if (!process.env.JWT_SECRET || !process.env.JWT_REFRESH_SECRET) {
-    throw new Error('Липсват JWT_SECRET и/или JWT_REFRESH_SECRET в production среда');
+    throw new Error('Missing JWT secrets in production environment');
   }
 }
 
@@ -89,13 +89,7 @@ export function revokeAllRefreshTokens(userId) {
   db.prepare('DELETE FROM refresh_tokens WHERE user_id = ?').run(userId);
 }
 
-export function requireAuth(req, res, next) {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'Необходима е автентикация' });
-  }
-
-  const token = authHeader.split(' ')[1];
+export function resolveAuthenticatedUser(token) {
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
     const user = db.prepare(`
@@ -106,15 +100,14 @@ export function requireAuth(req, res, next) {
     `).get(decoded.id);
 
     if (!user) {
-      return res.status(401).json({ error: 'Потребителят не съществува' });
+      return { ok: false, status: 401, error: 'missing_user' };
     }
 
     if (user.role === 'banned') {
-      return res.status(403).json({ error: 'Профилът е ограничен от администратор' });
+      return { ok: false, status: 403, error: 'banned_user' };
     }
 
     if (user.subscription_expires_at) {
-      // Normalize: DB may store as 'YYYY-MM-DD HH:MM:SS' (no Z) — treat as UTC
       const raw = String(user.subscription_expires_at).trim();
       const isoStr = raw.includes('T') || raw.includes('Z') ? raw : raw.replace(' ', 'T') + 'Z';
       const expiresAt = new Date(isoStr);
@@ -135,17 +128,38 @@ export function requireAuth(req, res, next) {
       }
     }
 
-    req.user = user;
-    next();
-  } catch (err) {
-    return res.status(401).json({ error: 'Невалиден токен' });
+    return { ok: true, user };
+  } catch {
+    return { ok: false, status: 401, error: 'invalid_token' };
   }
+}
+
+export function requireAuth(req, res, next) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Липсва удостоверяване.' });
+  }
+
+  const token = authHeader.split(' ')[1];
+  const resolved = resolveAuthenticatedUser(token);
+  if (!resolved.ok) {
+    if (resolved.error === 'missing_user') {
+      return res.status(401).json({ error: 'Потребителят не е намерен.' });
+    }
+    if (resolved.error === 'banned_user') {
+      return res.status(403).json({ error: 'Профилът е ограничен и няма достъп.' });
+    }
+    return res.status(401).json({ error: 'Невалиден токен.' });
+  }
+
+  req.user = resolved.user;
+  next();
 }
 
 export function requireAdmin(req, res, next) {
   requireAuth(req, res, () => {
     if (req.user.role !== 'admin' && req.user.role !== 'superadmin') {
-      return res.status(403).json({ error: 'Нямате администраторски достъп' });
+      return res.status(403).json({ error: 'Нямате административни права.' });
     }
     next();
   });
@@ -154,7 +168,7 @@ export function requireAdmin(req, res, next) {
 export function requireSuperAdmin(req, res, next) {
   requireAuth(req, res, () => {
     if (req.user.role !== 'superadmin') {
-      return res.status(403).json({ error: 'Нямате суперадмин достъп' });
+      return res.status(403).json({ error: 'Нямате superadmin права.' });
     }
     next();
   });
@@ -166,7 +180,7 @@ export function requireTier(minTier) {
       const userTier = req.user.tier_level || 0;
       if (userTier < minTier && req.user.role !== 'admin' && req.user.role !== 'superadmin') {
         return res.status(403).json({
-          error: 'Нямаш достъп до тази страница. Моля, провери дали имаш необходимия абонамент.',
+          error: 'Нямате достатъчно ниво на достъп. Моля, изберете по-висок абонаментен план.',
           required_tier: minTier,
           user_tier: userTier,
         });

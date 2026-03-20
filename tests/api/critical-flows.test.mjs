@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import os from 'node:os';
 import Database from 'better-sqlite3';
 import jwt from 'jsonwebtoken';
+import WebSocket from 'ws';
 
 const JWT_SECRET = 'test-jwt-secret';
 const JWT_REFRESH_SECRET = 'test-refresh-secret';
@@ -231,6 +232,58 @@ async function apiFormRequest(path, { method = 'POST', token, formData, headers:
   return { response, data };
 }
 
+async function openWatchPartySocket({ token, inviteCode }) {
+  const wsBaseUrl = baseUrl.replace(/^http/, 'ws');
+  const ws = new WebSocket(`${wsBaseUrl}/api/watch-party/ws?token=${encodeURIComponent(token)}`);
+  ws.__messageQueue = [];
+
+  ws.on('message', (raw) => {
+    ws.__messageQueue.push(raw.toString());
+  });
+
+  await new Promise((resolve, reject) => {
+    ws.once('open', resolve);
+    ws.once('error', reject);
+  });
+
+  return ws;
+}
+
+async function waitForWebSocketMessage(ws, predicate, timeoutMs = 5000) {
+  const queuedMessages = Array.isArray(ws.__messageQueue) ? ws.__messageQueue : [];
+  for (let index = 0; index < queuedMessages.length; index += 1) {
+    try {
+      const payload = JSON.parse(queuedMessages[index]);
+      if (!predicate(payload)) continue;
+      queuedMessages.splice(index, 1);
+      return payload;
+    } catch {
+      // ignore malformed buffered frames in tests
+    }
+  }
+
+  return await new Promise((resolve, reject) => {
+    const timeoutId = setTimeout(() => {
+      ws.off('message', handleMessage);
+      reject(new Error('Timed out waiting for websocket message'));
+    }, timeoutMs);
+
+    const handleMessage = (raw) => {
+      try {
+        const payload = JSON.parse(raw.toString());
+        if (!predicate(payload)) return;
+        clearTimeout(timeoutId);
+        ws.off('message', handleMessage);
+        resolve(payload);
+      } catch {
+        // ignore malformed frames in tests
+      }
+    };
+
+    ws.on('message', handleMessage);
+  });
+}
+
 function createTinyPngBlob() {
   return new Blob([Buffer.from(TINY_PNG_BASE64, 'base64')], { type: 'image/png' });
 }
@@ -291,11 +344,13 @@ before(async () => {
   process.env.ADMIN_DISCORD_ID = 'admin-test-discord-id';
 
   const { createApp } = await import(new URL('../../server/app.js', import.meta.url));
+  const { attachWatchPartyRealtime } = await import(new URL('../../server/utils/watchPartyRealtime.js', import.meta.url));
   const app = createApp();
 
   await new Promise((resolvePromise) => {
     server = app.listen(0, () => resolvePromise());
   });
+  attachWatchPartyRealtime(server);
 
   const address = server.address();
   const port = typeof address === 'object' && address ? address.port : 0;
@@ -308,6 +363,11 @@ before(async () => {
 after(async () => {
   try {
     db?.close();
+  } catch {}
+
+  try {
+    const { getWatchPartyRealtimeHub } = await import(new URL('../../server/utils/watchPartyRealtime.js', import.meta.url));
+    getWatchPartyRealtimeHub()?.close();
   } catch {}
 
   if (server) {
@@ -3103,6 +3163,7 @@ test('gifts: list sent gifts', async () => {
   assert.equal(res.data.length, 1);
   assert.equal(res.data[0].gift_type, 'episode');
   assert.equal(res.data[0].status, 'pending_payment');
+  assert.equal(res.data[0].target_title, `${production.title} - ${episode.title}`);
 });
 
 test('gifts: list received gifts', async () => {
@@ -3135,6 +3196,7 @@ test('gifts: list received gifts', async () => {
   assert.equal(res.response.status, 200);
   assert.ok(Array.isArray(res.data));
   assert.equal(res.data.length, 1);
+  assert.equal(res.data[0].target_title, `${production.title} - ${episode.title}`);
 });
 
 test('gifts: reject expired gift code', async () => {
@@ -3454,6 +3516,67 @@ test('watch party: join a watch party', async () => {
   assert.equal(joined.data.party_id, created.data.party_id);
 });
 
+test('watch party: websocket subscribers receive live snapshot updates', async () => {
+  const production = createProduction({ access_group: 'free' });
+  const episode = createEpisode({ production_id: production.id, access_group: 'free' });
+  const host = createUser({ character_name: 'Socket Host' });
+  const hostToken = createAccessToken(host);
+  const guest = createUser({ character_name: 'Socket Guest' });
+  const guestToken = createAccessToken(guest);
+
+  const created = await apiRequest('/api/watch-party/create', {
+    method: 'POST',
+    token: hostToken,
+    body: { episode_id: episode.id },
+  });
+  assert.equal(created.response.status, 201);
+
+  const ws = await openWatchPartySocket({
+    token: hostToken,
+    inviteCode: created.data.invite_code,
+  });
+
+  try {
+    const initialSnapshotPromise = waitForWebSocketMessage(ws, (payload) => payload.type === 'watch_party:snapshot');
+    ws.send(JSON.stringify({
+      type: 'watch_party:subscribe',
+      invite_code: created.data.invite_code,
+    }));
+    const initialSnapshot = await initialSnapshotPromise;
+    assert.equal(initialSnapshot.party.episode_id, episode.id);
+    assert.equal(initialSnapshot.party.participants.length, 1);
+
+    const joinedSnapshotPromise = waitForWebSocketMessage(
+      ws,
+      (payload) => payload.type === 'watch_party:snapshot' && payload.party.participants.length === 2
+    );
+
+    await apiRequest(`/api/watch-party/${created.data.invite_code}/join`, {
+      method: 'POST',
+      token: guestToken,
+    });
+
+    const joinedSnapshot = await joinedSnapshotPromise;
+    assert.equal(joinedSnapshot.party.participants.length, 2);
+
+    const messageSnapshotPromise = waitForWebSocketMessage(
+      ws,
+      (payload) => payload.type === 'watch_party:snapshot' && payload.party.messages.some((item) => item.message === 'Realtime hello')
+    );
+
+    await apiRequest(`/api/watch-party/${created.data.invite_code}/message`, {
+      method: 'POST',
+      token: hostToken,
+      body: { message: 'Realtime hello' },
+    });
+
+    const messageSnapshot = await messageSnapshotPromise;
+    assert.equal(messageSnapshot.party.messages.at(-1)?.message, 'Realtime hello');
+  } finally {
+    ws.close();
+  }
+});
+
 test('watch party: party details require active participation before revealing participants and chat', async () => {
   const production = createProduction({ access_group: 'free' });
   const episode = createEpisode({ production_id: production.id, access_group: 'free' });
@@ -3615,6 +3738,54 @@ test('watch party: host can delete their party and remove all related rows', asy
   assert.equal(party, undefined);
   assert.equal(participants.count, 0);
   assert.equal(messages.count, 0);
+});
+
+test('watch party: deleting an episode removes related watch party rows', async () => {
+  const production = createProduction({ access_group: 'free' });
+  const episode = createEpisode({ production_id: production.id, access_group: 'free' });
+  const host = createUser();
+  const guest = createUser();
+  const admin = createUser({ role: 'admin' });
+
+  const created = await apiRequest('/api/watch-party/create', {
+    method: 'POST',
+    token: createAccessToken(host),
+    body: { episode_id: episode.id },
+  });
+  assert.equal(created.response.status, 201);
+
+  await apiRequest(`/api/watch-party/${created.data.invite_code}/join`, {
+    method: 'POST',
+    token: createAccessToken(guest),
+  });
+
+  await apiRequest(`/api/watch-party/${created.data.invite_code}/message`, {
+    method: 'POST',
+    token: createAccessToken(host),
+    body: { message: 'Cleanup me' },
+  });
+
+  const deletedEpisode = await apiRequest(`/api/episodes/admin/${episode.id}`, {
+    method: 'DELETE',
+    token: createAccessToken(admin),
+  });
+  assert.equal(deletedEpisode.response.status, 200);
+
+  const partyCount = db.prepare('SELECT COUNT(*) AS count FROM watch_parties WHERE episode_id = ?').get(episode.id).count;
+  const participantCount = db.prepare(`
+    SELECT COUNT(*) AS count
+    FROM watch_party_participants
+    WHERE party_id = ?
+  `).get(created.data.party_id).count;
+  const messageCount = db.prepare(`
+    SELECT COUNT(*) AS count
+    FROM watch_party_messages
+    WHERE party_id = ?
+  `).get(created.data.party_id).count;
+
+  assert.equal(partyCount, 0);
+  assert.equal(participantCount, 0);
+  assert.equal(messageCount, 0);
 });
 
 test('watch party: non-host cannot delete someone else party', async () => {
