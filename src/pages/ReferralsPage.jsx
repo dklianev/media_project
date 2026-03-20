@@ -102,9 +102,11 @@ export default function ReferralsPage() {
             <h1 className="text-3xl sm:text-4xl font-bold text-[var(--text-primary)]">
               Препоръчай приятел
             </h1>
-            <p className="text-[var(--text-secondary)] text-sm sm:text-base max-w-lg mx-auto text-center leading-relaxed">
-              Сподели своя реферален код и печели бонус дни за всеки нов потребител.
-            </p>
+            <div className="mx-auto flex max-w-xl justify-center px-2">
+              <p className="text-[var(--text-secondary)] text-sm sm:text-base max-w-[32rem] text-center leading-relaxed text-balance">
+                Сподели своя реферален код и печели бонус дни за всеки нов потребител.
+              </p>
+            </div>
           </div>
         </ScrollReveal>
 

@@ -2082,6 +2082,63 @@ test('support, notifications и audit happy path работят за реале�
   assert.equal(audit.data?.items?.[0]?.metadata?.reply, adminReplyText);
 });
 
+test('notifications delete endpoints remove only the owner notifications', async () => {
+  const user = createUser({ character_name: 'Notification Owner' });
+  const otherUser = createUser({ character_name: 'Other Notification Owner' });
+  const userToken = createAccessToken(user);
+
+  const removableNotification = db.prepare(`
+    INSERT INTO notifications (user_id, title, message, link)
+    VALUES (?, ?, ?, ?)
+  `).run(user.id, 'Премахваемо известие', 'Това ще бъде изтрито', '/support');
+
+  db.prepare(`
+    INSERT INTO notifications (user_id, title, message, link)
+    VALUES (?, ?, ?, ?)
+  `).run(user.id, 'Оставащо известие', 'Ще бъде изчистено по-късно', '/profile');
+
+  const foreignNotification = db.prepare(`
+    INSERT INTO notifications (user_id, title, message, link)
+    VALUES (?, ?, ?, ?)
+  `).run(otherUser.id, 'Чуждо известие', 'Не трябва да се трие', '/profile');
+
+  const deleteOne = await apiRequest(`/api/notifications/${removableNotification.lastInsertRowid}`, {
+    method: 'DELETE',
+    token: userToken,
+  });
+  assert.equal(deleteOne.response.status, 200);
+  assert.equal(deleteOne.data?.success, true);
+  assert.equal(
+    db.prepare('SELECT COUNT(*) as count FROM notifications WHERE id = ?').get(removableNotification.lastInsertRowid).count,
+    0
+  );
+
+  const deleteForeign = await apiRequest(`/api/notifications/${foreignNotification.lastInsertRowid}`, {
+    method: 'DELETE',
+    token: userToken,
+  });
+  assert.equal(deleteForeign.response.status, 404);
+  assert.equal(
+    db.prepare('SELECT COUNT(*) as count FROM notifications WHERE id = ?').get(foreignNotification.lastInsertRowid).count,
+    1
+  );
+
+  const clearAll = await apiRequest('/api/notifications', {
+    method: 'DELETE',
+    token: userToken,
+  });
+  assert.equal(clearAll.response.status, 200);
+  assert.equal(clearAll.data?.success, true);
+  assert.equal(
+    db.prepare('SELECT COUNT(*) as count FROM notifications WHERE user_id = ?').get(user.id).count,
+    0
+  );
+  assert.equal(
+    db.prepare('SELECT COUNT(*) as count FROM notifications WHERE user_id = ?').get(otherUser.id).count,
+    1
+  );
+});
+
 test('support status update връща 404 за липсващ ticket', async () => {
   const admin = createUser({ role: 'admin', character_name: 'Support Admin' });
   const adminToken = createAccessToken(admin);
@@ -3135,6 +3192,42 @@ test('gifts: reject already-redeemed gift code', async () => {
   assert.equal(second.response.status, 404);
 });
 
+test('referrals: apply rewards assigns a usable active subscription plan when user has none', async () => {
+  const basicPlan = createPlan({ name: 'Referral Basic', tier_level: 1, price: 19, duration_days: 30, sort_order: 1 });
+  createPlan({ name: 'Referral Premium', tier_level: 3, price: 99, duration_days: 30, sort_order: 2 });
+  const user = createUser();
+  const token = createAccessToken(user);
+
+  db.prepare(`
+    INSERT INTO referral_rewards (referrer_id, referred_id, reward_type, reward_value, applied)
+    VALUES (?, ?, ?, ?, 0)
+  `).run(user.id, createUser().id, 'bonus_days', 7);
+
+  const applied = await apiRequest('/api/referrals/apply-rewards', {
+    method: 'POST',
+    token,
+  });
+  assert.equal(applied.response.status, 200);
+  assert.equal(applied.data.success, true);
+  assert.equal(applied.data.bonus_days, 7);
+
+  const updatedUser = db.prepare(`
+    SELECT subscription_plan_id, subscription_expires_at
+    FROM users
+    WHERE id = ?
+  `).get(user.id);
+  assert.equal(updatedUser.subscription_plan_id, basicPlan.id);
+  assert.ok(updatedUser.subscription_expires_at);
+  assert.ok(parseDbTimestamp(updatedUser.subscription_expires_at) > new Date());
+
+  const pendingCount = db.prepare(`
+    SELECT COUNT(*) AS count
+    FROM referral_rewards
+    WHERE referrer_id = ? AND applied = 0
+  `).get(user.id).count;
+  assert.equal(pendingCount, 0);
+});
+
 // ═══════════════════════════════════════════════════════════════════════════
 // BUNDLES
 // ═══════════════════════════════════════════════════════════════════════════
@@ -3311,6 +3404,39 @@ test('watch party: join a watch party', async () => {
   assert.equal(joined.response.status, 200);
   assert.equal(joined.data.success, true);
   assert.equal(joined.data.party_id, created.data.party_id);
+});
+
+test('watch party: party details require active participation before revealing participants and chat', async () => {
+  const production = createProduction({ access_group: 'free' });
+  const episode = createEpisode({ production_id: production.id, access_group: 'free' });
+  const host = createUser();
+  const hostToken = createAccessToken(host);
+  const outsider = createUser();
+  const outsiderToken = createAccessToken(outsider);
+
+  const created = await apiRequest('/api/watch-party/create', {
+    method: 'POST',
+    token: hostToken,
+    body: { episode_id: episode.id },
+  });
+
+  const beforeJoin = await apiRequest(`/api/watch-party/${created.data.invite_code}`, {
+    token: outsiderToken,
+  });
+  assert.equal(beforeJoin.response.status, 403);
+  assert.equal(beforeJoin.data?.error, 'Трябва първо да се присъедините към watch party.');
+
+  await apiRequest(`/api/watch-party/${created.data.invite_code}/join`, {
+    method: 'POST',
+    token: outsiderToken,
+  });
+
+  const afterJoin = await apiRequest(`/api/watch-party/${created.data.invite_code}`, {
+    token: outsiderToken,
+  });
+  assert.equal(afterJoin.response.status, 200);
+  assert.ok(Array.isArray(afterJoin.data?.participants));
+  assert.ok(Array.isArray(afterJoin.data?.messages));
 });
 
 test('watch party: send messages', async () => {

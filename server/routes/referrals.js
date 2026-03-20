@@ -59,11 +59,37 @@ router.post('/apply-rewards', requireAuth, (req, res) => {
 
   const totalDays = pendingRewards.reduce((sum, r) => sum + r.reward_value, 0);
   const now = getCurrentSofiaDbTimestamp();
+  const currentUser = db.prepare(`
+    SELECT subscription_plan_id
+    FROM users
+    WHERE id = ?
+  `).get(req.user.id);
+
+  const activeCurrentPlan = currentUser?.subscription_plan_id
+    ? db.prepare(`
+        SELECT id
+        FROM subscription_plans
+        WHERE id = ? AND is_active = 1
+      `).get(currentUser.subscription_plan_id)
+    : null;
+
+  const fallbackPlan = activeCurrentPlan || db.prepare(`
+    SELECT id
+    FROM subscription_plans
+    WHERE is_active = 1
+    ORDER BY tier_level ASC, sort_order ASC, price ASC, id ASC
+    LIMIT 1
+  `).get();
+
+  if (!fallbackPlan?.id) {
+    return res.status(400).json({ error: 'Няма активен абонаментен план, към който да приложим бонус дните.' });
+  }
 
   const apply = db.transaction(() => {
     // Extend subscription
     db.prepare(`
       UPDATE users SET
+        subscription_plan_id = ?,
         subscription_expires_at = datetime(
           CASE
             WHEN subscription_expires_at IS NOT NULL
@@ -75,7 +101,7 @@ router.post('/apply-rewards', requireAuth, (req, res) => {
         ),
         updated_at = ?
       WHERE id = ?
-    `).run(totalDays, now, req.user.id);
+    `).run(fallbackPlan.id, totalDays, now, req.user.id);
 
     // Mark rewards as applied
     const markApplied = db.prepare(

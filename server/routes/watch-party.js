@@ -229,6 +229,16 @@ router.get('/:code', requireAuth, (req, res) => {
     return res.status(404).json({ error: 'Watch party не е намерен.' });
   }
 
+  const isParticipant = db.prepare(`
+    SELECT 1
+    FROM watch_party_participants
+    WHERE party_id = ? AND user_id = ? AND left_at IS NULL
+  `).get(party.id, req.user.id);
+
+  if (!isParticipant) {
+    return res.status(403).json({ error: 'Трябва първо да се присъедините към watch party.' });
+  }
+
   const hasAccess = checkPartyEpisodeAccess(party.episode_id, req.user);
 
   const participants = db.prepare(`

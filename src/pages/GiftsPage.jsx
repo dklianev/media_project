@@ -15,6 +15,8 @@ const GIFT_TYPE_LABELS = {
 
 const STATUS_CONFIG = {
   pending: { label: 'Очакващ', className: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30' },
+  pending_payment: { label: 'Чака одобрение', className: 'bg-amber-500/20 text-amber-300 border-amber-500/30' },
+  redeemable: { label: 'Одобрен', className: 'bg-sky-500/20 text-sky-300 border-sky-500/30' },
   redeemed: { label: 'Използван', className: 'bg-green-500/20 text-green-400 border-green-500/30' },
   expired: { label: 'Изтекъл', className: 'bg-zinc-500/20 text-zinc-400 border-zinc-500/30' },
 };
@@ -97,7 +99,7 @@ function SentGiftCard({ gift }) {
         {gift.created_at && (
           <span>Създаден: {formatDate(gift.created_at)}</span>
         )}
-        {gift.expires_at && gift.status === 'pending' && (
+        {gift.expires_at && gift.status !== 'redeemed' && (
           <span>Изтича: {formatDate(gift.expires_at)}</span>
         )}
         {gift.redeemed_at && (

@@ -146,10 +146,10 @@ export default function GiftModal({ open, onClose, giftType, targetId, planId, t
                     Подаръкът е създаден! Сподели кода с получателя.
                   </p>
                   <div className="flex items-center gap-2">
-                    <span className="font-mono text-lg font-bold text-[var(--text-primary)]">{result.gift_code}</span>
+                    <span className="font-mono text-lg font-bold text-[var(--text-primary)]">{result.code}</span>
                     <button
                       type="button"
-                      onClick={() => handleCopy(result.gift_code)}
+                      onClick={() => handleCopy(result.code)}
                       className="btn-outline inline-flex items-center gap-1.5 px-3 py-1.5 text-xs"
                     >
                       <Copy className="h-3.5 w-3.5" />
