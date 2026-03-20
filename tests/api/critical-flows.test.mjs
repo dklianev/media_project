@@ -2876,6 +2876,147 @@ test('gifts: redeem requires payment confirmation', async () => {
   assert.ok(entitlement);
 });
 
+test('gifts: subscription gift code becomes redeemable after payment confirmation and activates the plan for the recipient', async () => {
+  const plan = createPlan({ name: 'Gift Gold', tier_level: 2, price: 79, duration_days: 45 });
+  const sender = createUser();
+  const senderToken = createAccessToken(sender);
+  const recipient = createUser();
+  const recipientToken = createAccessToken(recipient);
+  const admin = createUser({ role: 'admin' });
+  const adminToken = createAccessToken(admin);
+
+  const created = await apiRequest('/api/gifts/create', {
+    method: 'POST',
+    token: senderToken,
+    body: { gift_type: 'subscription', plan_id: plan.id, message: 'Подарък за теб' },
+  });
+
+  assert.equal(created.response.status, 201);
+  assert.match(created.data.code, /^GIFT-[A-F0-9]{8}$/);
+  assert.match(created.data.reference_code, /^GIFT-SUB-[A-F0-9]{6}$/);
+
+  const gift = db.prepare('SELECT * FROM gift_codes WHERE code = ?').get(created.data.code);
+  assert.ok(gift);
+  assert.equal(gift.status, 'pending_payment');
+  assert.equal(gift.plan_id, plan.id);
+  assert.ok(gift.source_request_id);
+
+  const earlyRedeem = await apiRequest('/api/gifts/redeem', {
+    method: 'POST',
+    token: recipientToken,
+    body: { code: created.data.code },
+  });
+  assert.equal(earlyRedeem.response.status, 404);
+
+  const confirm = await apiRequest(`/api/admin/payments/${gift.source_request_id}/confirm`, {
+    method: 'PUT',
+    token: adminToken,
+  });
+  assert.equal(confirm.response.status, 200);
+
+  const redeemableGift = db.prepare('SELECT status FROM gift_codes WHERE id = ?').get(gift.id);
+  assert.equal(redeemableGift.status, 'redeemable');
+
+  const redeemed = await apiRequest('/api/gifts/redeem', {
+    method: 'POST',
+    token: recipientToken,
+    body: { code: created.data.code },
+  });
+  assert.equal(redeemed.response.status, 200);
+  assert.equal(redeemed.data.success, true);
+  assert.equal(redeemed.data.gift_type, 'subscription');
+
+  const updatedRecipient = db.prepare('SELECT subscription_plan_id, subscription_expires_at FROM users WHERE id = ?').get(recipient.id);
+  assert.equal(updatedRecipient.subscription_plan_id, plan.id);
+  assert.ok(updatedRecipient.subscription_expires_at);
+
+  const redeemedGift = db.prepare('SELECT status, recipient_id, redeemed_at FROM gift_codes WHERE id = ?').get(gift.id);
+  assert.equal(redeemedGift.status, 'redeemed');
+  assert.equal(redeemedGift.recipient_id, recipient.id);
+  assert.ok(redeemedGift.redeemed_at);
+});
+
+test('gifts: subscription gift redeem rejects inactive plans after payment confirmation', async () => {
+  const plan = createPlan({ name: 'Retired Gift Plan', tier_level: 1, price: 59, duration_days: 30 });
+  const sender = createUser();
+  const senderToken = createAccessToken(sender);
+  const recipient = createUser();
+  const recipientToken = createAccessToken(recipient);
+  const admin = createUser({ role: 'admin' });
+  const adminToken = createAccessToken(admin);
+
+  const created = await apiRequest('/api/gifts/create', {
+    method: 'POST',
+    token: senderToken,
+    body: { gift_type: 'subscription', plan_id: plan.id },
+  });
+  assert.equal(created.response.status, 201);
+
+  const gift = db.prepare('SELECT * FROM gift_codes WHERE code = ?').get(created.data.code);
+  await apiRequest(`/api/admin/payments/${gift.source_request_id}/confirm`, {
+    method: 'PUT',
+    token: adminToken,
+  });
+
+  db.prepare('UPDATE subscription_plans SET is_active = 0 WHERE id = ?').run(plan.id);
+
+  const redeemed = await apiRequest('/api/gifts/redeem', {
+    method: 'POST',
+    token: recipientToken,
+    body: { code: created.data.code },
+  });
+  assert.equal(redeemed.response.status, 400);
+  assert.equal(redeemed.data?.error, 'Подареният абонаментен план вече не е активен.');
+
+  const updatedRecipient = db.prepare('SELECT subscription_plan_id FROM users WHERE id = ?').get(recipient.id);
+  assert.equal(updatedRecipient.subscription_plan_id, null);
+
+  const updatedGift = db.prepare('SELECT status FROM gift_codes WHERE id = ?').get(gift.id);
+  assert.equal(updatedGift.status, 'redeemable');
+});
+
+test('gifts: subscription gift redeem does not downgrade an active higher-tier subscriber', async () => {
+  const lowerPlan = createPlan({ name: 'Gift Silver', tier_level: 1, price: 39, duration_days: 30 });
+  const higherPlan = createPlan({ name: 'Current Platinum', tier_level: 3, price: 129, duration_days: 30 });
+  const sender = createUser();
+  const senderToken = createAccessToken(sender);
+  const recipient = createUser({
+    subscription_plan_id: higherPlan.id,
+    subscription_expires_at: '2099-01-01T00:00:00.000Z',
+  });
+  const recipientToken = createAccessToken(recipient);
+  const admin = createUser({ role: 'admin' });
+  const adminToken = createAccessToken(admin);
+
+  const created = await apiRequest('/api/gifts/create', {
+    method: 'POST',
+    token: senderToken,
+    body: { gift_type: 'subscription', plan_id: lowerPlan.id },
+  });
+  assert.equal(created.response.status, 201);
+
+  const gift = db.prepare('SELECT * FROM gift_codes WHERE code = ?').get(created.data.code);
+  await apiRequest(`/api/admin/payments/${gift.source_request_id}/confirm`, {
+    method: 'PUT',
+    token: adminToken,
+  });
+
+  const redeemed = await apiRequest('/api/gifts/redeem', {
+    method: 'POST',
+    token: recipientToken,
+    body: { code: created.data.code },
+  });
+  assert.equal(redeemed.response.status, 400);
+  assert.equal(redeemed.data?.error, 'Вече имате по-висок активен абонамент и не можете да използвате този подарък.');
+
+  const updatedRecipient = db.prepare('SELECT subscription_plan_id, subscription_expires_at FROM users WHERE id = ?').get(recipient.id);
+  assert.equal(updatedRecipient.subscription_plan_id, higherPlan.id);
+  assert.equal(updatedRecipient.subscription_expires_at, '2099-01-01T00:00:00.000Z');
+
+  const updatedGift = db.prepare('SELECT status FROM gift_codes WHERE id = ?').get(gift.id);
+  assert.equal(updatedGift.status, 'redeemable');
+});
+
 test('gifts: list sent gifts', async () => {
   const production = createProduction({ access_group: 'free', purchase_mode: 'episodes' });
   const episode = createEpisode({ production_id: production.id, access_group: 'free', purchase_enabled: 1, purchase_price: 5 });

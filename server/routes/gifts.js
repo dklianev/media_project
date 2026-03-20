@@ -365,6 +365,42 @@ router.post('/redeem', requireAuth, giftLimiter, (req, res) => {
           VALUES (?, ?, ?, ?)
         `).run(req.user.id, targetType, gift.target_id, gift.source_request_id);
       } else if (gift.gift_type === 'subscription') {
+        const giftedPlan = db.prepare(`
+          SELECT id, is_active, tier_level
+          FROM subscription_plans
+          WHERE id = ?
+        `).get(gift.plan_id);
+
+        if (!giftedPlan || Number(giftedPlan.is_active) !== 1) {
+          throw new Error('Подареният абонаментен план вече не е активен.');
+        }
+
+        const recipientSubscription = db.prepare(`
+          SELECT
+            u.subscription_plan_id,
+            u.subscription_expires_at,
+            sp.tier_level AS current_tier_level
+          FROM users u
+          LEFT JOIN subscription_plans sp ON sp.id = u.subscription_plan_id
+          WHERE u.id = ?
+        `).get(req.user.id);
+
+        const currentExpiryRaw = recipientSubscription?.subscription_expires_at;
+        const hasActiveSubscription = Boolean(
+          recipientSubscription?.subscription_plan_id
+          && currentExpiryRaw
+          && db.prepare(`
+            SELECT datetime(replace(replace(?, 'T', ' '), 'Z', '')) > datetime('now') AS is_active
+          `).get(currentExpiryRaw)?.is_active
+        );
+
+        const currentTierLevel = Number(recipientSubscription?.current_tier_level || 0);
+        const giftedTierLevel = Number(giftedPlan.tier_level || 0);
+
+        if (hasActiveSubscription && currentTierLevel > giftedTierLevel) {
+          throw new Error('Вече имате по-висок активен абонамент и не можете да използвате този подарък.');
+        }
+
         const durationDays = Math.max(1, Number(gift.plan_duration_days) || 30);
         db.prepare(`
           UPDATE users SET
