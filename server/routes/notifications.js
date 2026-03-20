@@ -35,4 +35,28 @@ router.put('/read-all', requireAuth, (req, res) => {
     res.json({ success: true });
 });
 
+// Delete a notification
+router.delete('/:id', requireAuth, (req, res) => {
+    const result = db.prepare(`
+    DELETE FROM notifications
+    WHERE id = ? AND user_id = ?
+  `).run(req.params.id, req.user.id);
+
+    if (!result.changes) {
+        return res.status(404).json({ error: 'Известието не е намерено.' });
+    }
+
+    return res.json({ success: true });
+});
+
+// Delete all notifications for the current user
+router.delete('/', requireAuth, (req, res) => {
+    const result = db.prepare(`
+    DELETE FROM notifications
+    WHERE user_id = ?
+  `).run(req.user.id);
+
+    res.json({ success: true, deleted: result.changes });
+});
+
 export default router;
