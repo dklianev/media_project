@@ -214,7 +214,7 @@ export default function VideoPlayer({
 
   const pausePlayer = () => {
     if (typeof playerRef.current?.pauseVideo === 'function') {
-      pausePlayer();
+      playerRef.current.pauseVideo();
       return true;
     }
     if (localVideoRef.current) {
