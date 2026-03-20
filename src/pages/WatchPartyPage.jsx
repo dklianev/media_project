@@ -8,7 +8,7 @@ import ScrollReveal from '../components/ScrollReveal';
 import VideoPlayer from '../components/VideoPlayer';
 
 const POLL_INTERVAL_MS = 1500;
-const HOST_SYNC_HEARTBEAT_MS = 1000;
+const HOST_SYNC_HEARTBEAT_MS = 3000;
 
 function CopyCodeButton({ code }) {
   const [copied, setCopied] = useState(false);

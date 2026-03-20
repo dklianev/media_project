@@ -17,6 +17,15 @@ const partyLimiter = rateLimit({
   message: { error: 'Твърде много заявки. Опитайте отново след малко.' },
 });
 
+const playbackLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 180,
+  keyGenerator: (req) => `wp-playback-${req.user?.id || 'anon'}`,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Твърде много playback sync заявки. Опитай отново след малко.' },
+});
+
 function generateInviteCode() {
   return crypto.randomBytes(4).toString('hex').toUpperCase();
 }
@@ -372,7 +381,7 @@ router.post('/:code/message', requireAuth, partyLimiter, (req, res) => {
   });
 });
 
-router.put('/:code/playback', requireAuth, partyLimiter, (req, res) => {
+router.put('/:code/playback', requireAuth, playbackLimiter, (req, res) => {
   const party = db.prepare(
     "SELECT id, host_id, status FROM watch_parties WHERE invite_code = ? AND status = 'active'"
   ).get(req.params.code);
