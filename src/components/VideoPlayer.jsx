@@ -173,52 +173,59 @@ export default function VideoPlayer({
     }
   };
 
-  const getPlayerCurrentTime = () => {
-    if (typeof playerRef.current?.getCurrentTime === 'function') {
-      return Number(playerRef.current.getCurrentTime()) || 0;
+  const resolveMediaTarget = (target = playerRef.current) => target || localVideoRef.current || null;
+
+  const getPlayerCurrentTime = (target) => {
+    const mediaTarget = resolveMediaTarget(target);
+    if (typeof mediaTarget?.getCurrentTime === 'function') {
+      return Number(mediaTarget.getCurrentTime()) || 0;
     }
-    return Number(localVideoRef.current?.currentTime) || 0;
+    return Number(mediaTarget?.currentTime) || 0;
   };
 
-  const getPlayerDuration = () => {
-    if (typeof playerRef.current?.getDuration === 'function') {
-      return Number(playerRef.current.getDuration()) || 0;
+  const getPlayerDuration = (target) => {
+    const mediaTarget = resolveMediaTarget(target);
+    if (typeof mediaTarget?.getDuration === 'function') {
+      return Number(mediaTarget.getDuration()) || 0;
     }
-    return Number(localVideoRef.current?.duration) || 0;
+    return Number(mediaTarget?.duration) || 0;
   };
 
-  const seekPlayer = (seconds) => {
+  const seekPlayer = (seconds, target) => {
     const targetTime = Math.max(0, Number(seconds) || 0);
-    if (typeof playerRef.current?.seekTo === 'function') {
-      playerRef.current.seekTo(targetTime, true);
+    const mediaTarget = resolveMediaTarget(target);
+    if (typeof mediaTarget?.seekTo === 'function') {
+      mediaTarget.seekTo(targetTime, true);
       return true;
     }
-    if (localVideoRef.current) {
-      localVideoRef.current.currentTime = targetTime;
-      return true;
-    }
-    return false;
-  };
-
-  const playPlayer = () => {
-    if (typeof playerRef.current?.playVideo === 'function') {
-      playerRef.current.playVideo();
-      return true;
-    }
-    if (localVideoRef.current) {
-      localVideoRef.current.play().catch(() => {});
+    if (mediaTarget && 'currentTime' in mediaTarget) {
+      mediaTarget.currentTime = targetTime;
       return true;
     }
     return false;
   };
 
-  const pausePlayer = () => {
-    if (typeof playerRef.current?.pauseVideo === 'function') {
-      playerRef.current.pauseVideo();
+  const playPlayer = (target) => {
+    const mediaTarget = resolveMediaTarget(target);
+    if (typeof mediaTarget?.playVideo === 'function') {
+      mediaTarget.playVideo();
       return true;
     }
-    if (localVideoRef.current) {
-      localVideoRef.current.pause();
+    if (typeof mediaTarget?.play === 'function') {
+      mediaTarget.play().catch(() => {});
+      return true;
+    }
+    return false;
+  };
+
+  const pausePlayer = (target) => {
+    const mediaTarget = resolveMediaTarget(target);
+    if (typeof mediaTarget?.pauseVideo === 'function') {
+      mediaTarget.pauseVideo();
+      return true;
+    }
+    if (typeof mediaTarget?.pause === 'function') {
+      mediaTarget.pause();
       return true;
     }
     return false;
@@ -284,14 +291,7 @@ export default function VideoPlayer({
     if (!player || resumeAppliedRef.current) return false;
 
     const requestedResume = Math.max(0, Number(initialProgressSeconds) || 0);
-    const resolvedDuration = Math.max(
-      0,
-      Number(
-        detectedDuration ||
-        (typeof player.getDuration === 'function' ? player.getDuration() : 0) ||
-        0
-      )
-    );
+    const resolvedDuration = Math.max(0, Number(detectedDuration || getPlayerDuration(player) || 0));
 
     if (requestedResume <= 5) {
       if (resolvedDuration > 0) resumeAppliedRef.current = true;
@@ -309,12 +309,12 @@ export default function VideoPlayer({
       return false;
     }
 
-    player.seekTo(safeResumePoint, true);
+    seekPlayer(safeResumePoint, player);
     setProgress(safeResumePoint);
     reportProgress(safeResumePoint, resolvedDuration);
     resumeAppliedRef.current = true;
     return true;
-  }, [initialProgressSeconds]);
+  }, [getPlayerDuration, initialProgressSeconds, seekPlayer]);
 
   const applyVolume = (nextVolume, { muteAtZero = true } = {}) => {
     const normalized = clamp(Number(nextVolume) || 0, 0, 100);
@@ -738,7 +738,7 @@ export default function VideoPlayer({
     if (!playerRef.current || !playerReady) return;
 
     if (isPlaying) {
-      playerRef.current.pauseVideo();
+      pausePlayer();
       triggerAnimation('pause');
       setPlayerStatus('paused');
       emitSyncEvent('paused');
@@ -1656,4 +1656,3 @@ export default function VideoPlayer({
     </motion.div>
   );
 }
-

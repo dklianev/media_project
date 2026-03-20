@@ -139,11 +139,7 @@ function resolveHostedActiveParty(userId) {
 
 router.get('/mine/active', requireAuth, (req, res) => {
   const party = resolveHostedActiveParty(req.user.id);
-  if (!party) {
-    return res.status(404).json({ error: 'Нямате активен watch party.' });
-  }
-
-  res.json({ success: true, party });
+  res.json({ success: true, party: party || null });
 });
 
 router.post('/create', requireAuth, partyLimiter, (req, res) => {
