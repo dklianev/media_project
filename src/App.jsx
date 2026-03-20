@@ -50,6 +50,7 @@ const ManageSupport = lazy(() => import('./pages/admin/ManageSupport'));
 const ManageMediaLibrary = lazy(() => import('./pages/admin/ManageMediaLibrary'));
 const ManagePromotions = lazy(() => import('./pages/admin/ManagePromotions'));
 const ManageBundles = lazy(() => import('./pages/admin/ManageBundles'));
+const ManageWatchParties = lazy(() => import('./pages/admin/ManageWatchParties'));
 
 import { Crown } from 'lucide-react';
 
@@ -267,6 +268,7 @@ export default function App() {
                   <Route path="support" element={<ManageSupport />} />
                   <Route path="promotions" element={<ManagePromotions />} />
                   <Route path="bundles" element={<ManageBundles />} />
+                  <Route path="watch-parties" element={<ManageWatchParties />} />
                 </Route>
 
                 {/* Fallback */}

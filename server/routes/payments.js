@@ -493,7 +493,7 @@ function confirmPayment(req, res) {
     createNotification(payment.user_id, {
       type: 'subscription_confirmed',
       title: 'Абонаментът ви е активиран',
-      message: 'Плащането е потвърдено. Приятно гледане!',
+      message: 'Плащането е потвърдено. Абонаментът ви е активиран успешно.',
       link: '/profile',
       metadata: { plan_id: payment.plan_id, payment_id: payment.id },
     });

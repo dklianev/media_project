@@ -797,6 +797,17 @@ test('admin confirm на плащане активира абонамент и �
   assert.equal(audit.entity_type, 'payment_reference');
   assert.equal(Number(audit.entity_id), Number(payment.lastInsertRowid));
   assert.equal(audit.admin_user_id, admin.id);
+
+  const notification = db.prepare(`
+    SELECT title, message, link
+    FROM notifications
+    WHERE user_id = ?
+    ORDER BY id DESC
+    LIMIT 1
+  `).get(customer.id);
+  assert.equal(notification?.title, 'Абонаментът ви е активиран');
+  assert.equal(notification?.message, 'Плащането е потвърдено. Абонаментът ви е активиран успешно.');
+  assert.equal(notification?.link, '/profile');
 });
 
 test('admin reject на плащане променя статус и записва причина', async () => {
@@ -3383,6 +3394,43 @@ test('watch party: host can fetch current active party summary', async () => {
   assert.equal(active.data.party.is_host, true);
 });
 
+test('watch party: admin can list all parties with filters', async () => {
+  const production = createProduction({ access_group: 'free' });
+  const activeEpisode = createEpisode({ production_id: production.id, access_group: 'free', title: 'Active Party Episode' });
+  const endedEpisode = createEpisode({ production_id: production.id, access_group: 'free', title: 'Ended Party Episode', episode_number: 2 });
+  const admin = createUser({ role: 'admin', character_name: 'Watch Party Admin' });
+  const adminToken = createAccessToken(admin);
+  const host = createUser({ character_name: 'Party Host' });
+  const hostToken = createAccessToken(host);
+
+  const activeParty = await apiRequest('/api/watch-party/create', {
+    method: 'POST',
+    token: hostToken,
+    body: { episode_id: activeEpisode.id },
+  });
+  assert.equal(activeParty.response.status, 201);
+
+  const endedCode = randomBytes(4).toString('hex').toUpperCase();
+  const endedPartyInsert = db.prepare(`
+    INSERT INTO watch_parties (host_id, episode_id, invite_code, status, ended_at)
+    VALUES (?, ?, ?, 'ended', datetime('now'))
+  `).run(host.id, endedEpisode.id, endedCode);
+  db.prepare(`
+    INSERT INTO watch_party_participants (party_id, user_id, left_at)
+    VALUES (?, ?, datetime('now'))
+  `).run(endedPartyInsert.lastInsertRowid, host.id);
+
+  const listed = await apiRequest('/api/watch-party/admin/list?status=active&search=Active Party', {
+    method: 'GET',
+    token: adminToken,
+  });
+  assert.equal(listed.response.status, 200);
+  assert.equal(Array.isArray(listed.data?.items), true);
+  assert.equal(listed.data?.items?.length, 1);
+  assert.equal(listed.data?.items?.[0]?.invite_code, activeParty.data.invite_code);
+  assert.equal(listed.data?.items?.[0]?.status, 'active');
+});
+
 test('watch party: join a watch party', async () => {
   const production = createProduction({ access_group: 'free' });
   const episode = createEpisode({ production_id: production.id, access_group: 'free' });
@@ -3588,6 +3636,33 @@ test('watch party: non-host cannot delete someone else party', async () => {
     token: guestToken,
   });
   assert.equal(deleted.response.status, 403);
+});
+
+test('watch party: admin can delete someone else party', async () => {
+  const production = createProduction({ access_group: 'free' });
+  const episode = createEpisode({ production_id: production.id, access_group: 'free' });
+  const host = createUser();
+  const hostToken = createAccessToken(host);
+  const admin = createUser({ role: 'admin', character_name: 'Admin Moderator' });
+  const adminToken = createAccessToken(admin);
+
+  const created = await apiRequest('/api/watch-party/create', {
+    method: 'POST',
+    token: hostToken,
+    body: { episode_id: episode.id },
+  });
+  assert.equal(created.response.status, 201);
+
+  const deleted = await apiRequest(`/api/watch-party/${created.data.invite_code}`, {
+    method: 'DELETE',
+    token: adminToken,
+  });
+  assert.equal(deleted.response.status, 200);
+  assert.equal(deleted.data?.success, true);
+  assert.equal(
+    db.prepare('SELECT COUNT(*) AS count FROM watch_parties WHERE invite_code = ?').get(created.data.invite_code).count,
+    0
+  );
 });
 
 test('watch party: info payload exposes normalized participant and message fields', async () => {

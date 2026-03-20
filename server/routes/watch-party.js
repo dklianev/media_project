@@ -2,7 +2,7 @@ import { Router } from 'express';
 import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
 import db from '../db.js';
-import { requireAuth } from '../middleware/auth.js';
+import { requireAuth, requireAdmin } from '../middleware/auth.js';
 import { getCurrentSofiaDbTimestamp } from '../utils/sofiaTime.js';
 import { evaluateEpisodeAccess, getUserPurchaseState } from '../utils/contentPurchases.js';
 
@@ -140,6 +140,71 @@ function resolveHostedActiveParty(userId) {
 router.get('/mine/active', requireAuth, (req, res) => {
   const party = resolveHostedActiveParty(req.user.id);
   res.json({ success: true, party: party || null });
+});
+
+router.get('/admin/list', requireAdmin, (req, res) => {
+  const requestedStatus = String(req.query?.status || 'all').trim().toLowerCase();
+  const statusFilter = ['all', 'active', 'ended'].includes(requestedStatus) ? requestedStatus : 'all';
+  const searchTerm = String(req.query?.search || '').trim();
+
+  const items = db.prepare(`
+    SELECT wp.id,
+           wp.host_id,
+           wp.episode_id,
+           wp.invite_code,
+           wp.status,
+           wp.max_participants,
+           wp.playback_state,
+           wp.playback_position_seconds,
+           wp.playback_updated_at,
+           wp.playback_version,
+           wp.started_at,
+           wp.ended_at,
+           wp.created_at,
+           e.title AS episode_title,
+           host.character_name AS host_name,
+           host.discord_username AS host_discord_username,
+           COALESCE(active_participants.count, 0) AS participant_count,
+           COALESCE(message_stats.count, 0) AS message_count
+    FROM watch_parties wp
+    JOIN episodes e ON e.id = wp.episode_id
+    JOIN users host ON host.id = wp.host_id
+    LEFT JOIN (
+      SELECT party_id, COUNT(*) AS count
+      FROM watch_party_participants
+      WHERE left_at IS NULL
+      GROUP BY party_id
+    ) active_participants ON active_participants.party_id = wp.id
+    LEFT JOIN (
+      SELECT party_id, COUNT(*) AS count
+      FROM watch_party_messages
+      GROUP BY party_id
+    ) message_stats ON message_stats.party_id = wp.id
+    WHERE (? = 'all' OR wp.status = ?)
+      AND (
+        ? = ''
+        OR wp.invite_code LIKE '%' || ? || '%'
+        OR e.title LIKE '%' || ? || '%'
+        OR host.character_name LIKE '%' || ? || '%'
+        OR host.discord_username LIKE '%' || ? || '%'
+      )
+    ORDER BY
+      CASE WHEN wp.status = 'active' THEN 0 ELSE 1 END,
+      wp.created_at DESC
+  `).all(
+    statusFilter,
+    statusFilter,
+    searchTerm,
+    searchTerm,
+    searchTerm,
+    searchTerm,
+    searchTerm,
+  );
+
+  res.json({
+    items,
+    total: items.length,
+  });
 });
 
 router.post('/create', requireAuth, partyLimiter, (req, res) => {
@@ -349,7 +414,7 @@ router.post('/:code/leave', requireAuth, (req, res) => {
 router.delete('/:code', requireAuth, (req, res) => {
   const party = db.prepare('SELECT * FROM watch_parties WHERE invite_code = ?').get(req.params.code);
   if (!party) return res.status(404).json({ error: 'Watch party не е намерен.' });
-  if (party.host_id !== req.user.id) {
+  if (party.host_id !== req.user.id && req.user.role !== 'admin' && req.user.role !== 'superadmin') {
     return res.status(403).json({ error: 'Само домакинът може да изтрие watch party.' });
   }
 

@@ -5,12 +5,12 @@ import {
   ArrowLeft,
   CreditCard,
   Film,
-  Gift,
   Headphones,
   History,
   Images,
   LayoutDashboard,
   MessageSquare,
+  MonitorPlay,
   Package,
   Percent,
   Settings,
@@ -24,13 +24,13 @@ import PageBackground from '../../components/PageBackground';
 
 const linkGroups = [
   {
-    title: 'Обзор',
+    title: 'Общо',
     links: [
       { to: '/admin', icon: LayoutDashboard, label: 'Табло', exact: true },
     ],
   },
   {
-    title: 'Каталог',
+    title: 'Съдържание',
     links: [
       { to: '/admin/productions', icon: Film, label: 'Продукции' },
       { to: '/admin/episodes', icon: Tv, label: 'Епизоди' },
@@ -43,10 +43,11 @@ const linkGroups = [
       { to: '/admin/users', icon: Users, label: 'Потребители' },
       { to: '/admin/comments', icon: MessageSquare, label: 'Коментари' },
       { to: '/admin/support', icon: Headphones, label: 'Поддръжка' },
+      { to: '/admin/watch-parties', icon: MonitorPlay, label: 'Watch Parties' },
     ],
   },
   {
-    title: 'Монетизация',
+    title: 'Търговия',
     links: [
       { to: '/admin/plans', icon: Tags, label: 'Планове' },
       { to: '/admin/promo-codes', icon: Ticket, label: 'Промо кодове' },
@@ -59,7 +60,7 @@ const linkGroups = [
   {
     title: 'Система',
     links: [
-      { to: '/admin/audit', icon: History, label: 'Одит лог' },
+      { to: '/admin/audit', icon: History, label: 'Audit лог' },
       { to: '/admin/settings', icon: Settings, label: 'Настройки' },
     ],
   },
@@ -77,37 +78,37 @@ export default function AdminLayout() {
   };
 
   return (
-    <div className="relative min-h-[calc(100vh-72px)] max-w-[1700px] mx-auto px-3 sm:px-4 py-4 sm:py-6 overflow-hidden">
+    <div className="relative mx-auto min-h-[calc(100vh-72px)] max-w-[1700px] overflow-hidden px-3 py-4 sm:px-4 sm:py-6">
       <PageBackground />
-      <div className="relative grid grid-cols-1 xl:grid-cols-[270px_1fr] gap-4">
+      <div className="relative grid grid-cols-1 gap-4 xl:grid-cols-[270px_1fr]">
         <motion.aside
           initial={{ opacity: 0, x: -20 }}
           animate={{ opacity: 1, x: 0 }}
           transition={{ duration: 0.4, ease }}
-          className="premium-panel p-4 h-fit xl:sticky"
+          className="premium-panel h-fit p-4 xl:sticky"
           style={{ top: 'calc(var(--app-chrome-offset, 72px) + 1rem)' }}
         >
           <Link
             to="/"
-            className="inline-flex items-center gap-2 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] no-underline mb-4"
+            className="mb-4 inline-flex items-center gap-2 text-sm text-[var(--text-secondary)] no-underline hover:text-[var(--text-primary)]"
           >
-            <ArrowLeft className="w-4 h-4" />
+            <ArrowLeft className="h-4 w-4" />
             Към платформата
           </Link>
 
           <div className="mb-4">
             <div className="pill-chip mb-3 w-fit">
-              <ShieldCheck className="w-3.5 h-3.5" />
+              <ShieldCheck className="h-3.5 w-3.5" />
               Admin Panel
             </div>
-            <h2 className="text-lg font-semibold text-[var(--accent-gold-light)]">Управление</h2>
-            <p className="text-xs text-[var(--text-muted)] mt-1">Съдържание, покупки и настройки</p>
+            <h2 className="text-lg font-semibold text-[var(--accent-gold-light)]">Администрация</h2>
+            <p className="mt-1 text-xs text-[var(--text-muted)]">Управление, контрол и модерация</p>
           </div>
 
-          <nav className="hidden xl:flex flex-col gap-5 mt-4">
+          <nav className="mt-4 hidden flex-col gap-5 xl:flex">
             {linkGroups.map((group) => (
               <div key={group.title}>
-                <p className="text-[10px] uppercase tracking-widest text-[var(--text-muted)] mt-1 mb-2 px-3 font-semibold">
+                <p className="mb-2 mt-1 px-3 text-[10px] font-semibold uppercase tracking-widest text-[var(--text-muted)]">
                   {group.title}
                 </p>
                 <div className="flex flex-col gap-1.5">
@@ -123,13 +124,13 @@ export default function AdminLayout() {
                       >
                         <Link
                           to={link.to}
-                          className={`no-underline flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-medium transition-all ${
+                          className={`flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-medium no-underline transition-all ${
                             active
                               ? 'border border-[var(--border-light)] bg-[linear-gradient(135deg,var(--accent-gold-light)_0%,var(--accent-gold)_100%)]/10 text-[var(--accent-gold-light)] shadow-sm'
-                              : 'text-[var(--text-secondary)] border border-transparent hover:text-[var(--text-primary)] hover:bg-white/5 hover:translate-x-1'
+                              : 'border border-transparent text-[var(--text-secondary)] hover:translate-x-1 hover:bg-white/5 hover:text-[var(--text-primary)]'
                           }`}
                         >
-                          <Icon className={`w-4 h-4 ${active ? 'text-[var(--accent-gold-light)]' : ''}`} />
+                          <Icon className={`h-4 w-4 ${active ? 'text-[var(--accent-gold-light)]' : ''}`} />
                           {link.label}
                         </Link>
                       </motion.div>
@@ -140,9 +141,9 @@ export default function AdminLayout() {
             ))}
           </nav>
 
-          <div className="xl:hidden mt-3 relative">
-            <div className="absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-[var(--bg-secondary)] to-transparent pointer-events-none z-10 rounded-r-2xl" />
-            <nav className="flex gap-2 overflow-x-auto pb-2 custom-scrollbar snap-x snap-mandatory pr-6">
+          <div className="relative mt-3 xl:hidden">
+            <div className="pointer-events-none absolute bottom-0 right-0 top-0 z-10 w-8 rounded-r-2xl bg-gradient-to-l from-[var(--bg-secondary)] to-transparent" />
+            <nav className="custom-scrollbar flex snap-x snap-mandatory gap-2 overflow-x-auto pb-2 pr-6">
               {allLinks.map((link) => {
                 const Icon = link.icon;
                 const active = isActive(link);
@@ -150,13 +151,13 @@ export default function AdminLayout() {
                   <Link
                     key={link.to}
                     to={link.to}
-                    className={`snap-start no-underline inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-[13px] font-medium whitespace-nowrap transition-colors ${
+                    className={`inline-flex snap-start items-center gap-1.5 whitespace-nowrap rounded-xl px-3.5 py-2 text-[13px] font-medium no-underline transition-colors ${
                       active
-                        ? 'bg-[var(--accent-gold)]/10 text-[var(--accent-gold-light)] border border-[var(--accent-gold)]/30'
-                        : 'bg-[var(--bg-tertiary)] text-[var(--text-secondary)] border border-[var(--border)] hover:text-[var(--text-primary)]'
+                        ? 'border border-[var(--accent-gold)]/30 bg-[var(--accent-gold)]/10 text-[var(--accent-gold-light)]'
+                        : 'border border-[var(--border)] bg-[var(--bg-tertiary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
                     }`}
                   >
-                    <Icon className={`w-3.5 h-3.5 ${active ? 'text-[var(--accent-gold)]' : 'text-[var(--text-muted)]'}`} />
+                    <Icon className={`h-3.5 w-3.5 ${active ? 'text-[var(--accent-gold)]' : 'text-[var(--text-muted)]'}`} />
                     {link.label}
                   </Link>
                 );
