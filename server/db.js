@@ -406,6 +406,10 @@ db.exec(`
     invite_code TEXT UNIQUE NOT NULL,
     status TEXT DEFAULT 'active',
     max_participants INTEGER DEFAULT 10,
+    playback_state TEXT DEFAULT 'paused',
+    playback_position_seconds REAL DEFAULT 0,
+    playback_updated_at TEXT DEFAULT (datetime('now')),
+    playback_version INTEGER DEFAULT 0,
     started_at TEXT DEFAULT (datetime('now')),
     ended_at TEXT,
     created_at TEXT DEFAULT (datetime('now')),
@@ -456,6 +460,19 @@ if (!hasColumn('episodes', 'purchase_enabled')) {
 }
 if (!hasColumn('episodes', 'purchase_price')) {
   db.exec(`ALTER TABLE episodes ADD COLUMN purchase_price REAL`);
+}
+if (!hasColumn('watch_parties', 'playback_state')) {
+  db.exec(`ALTER TABLE watch_parties ADD COLUMN playback_state TEXT DEFAULT 'paused'`);
+}
+if (!hasColumn('watch_parties', 'playback_position_seconds')) {
+  db.exec(`ALTER TABLE watch_parties ADD COLUMN playback_position_seconds REAL DEFAULT 0`);
+}
+if (!hasColumn('watch_parties', 'playback_updated_at')) {
+  db.exec(`ALTER TABLE watch_parties ADD COLUMN playback_updated_at TEXT DEFAULT (datetime('now'))`);
+  db.exec(`UPDATE watch_parties SET playback_updated_at = COALESCE(started_at, created_at, datetime('now')) WHERE playback_updated_at IS NULL`);
+}
+if (!hasColumn('watch_parties', 'playback_version')) {
+  db.exec(`ALTER TABLE watch_parties ADD COLUMN playback_version INTEGER DEFAULT 0`);
 }
 if (!hasColumn('payment_references', 'rejected_by')) {
   db.exec(`ALTER TABLE payment_references ADD COLUMN rejected_by INTEGER`);

@@ -37,6 +37,15 @@ function deleteParty(partyId) {
   db.prepare('DELETE FROM watch_parties WHERE id = ?').run(partyId);
 }
 
+function normalizePlaybackState(row) {
+  return {
+    playback_state: row?.playback_state || 'paused',
+    playback_position_seconds: Number(row?.playback_position_seconds || 0),
+    playback_updated_at: row?.playback_updated_at || null,
+    playback_version: Number(row?.playback_version || 0),
+  };
+}
+
 function checkPartyEpisodeAccess(episodeId, user) {
   const currentTimestamp = getCurrentSofiaDbTimestamp();
   const episode = db.prepare(`
@@ -67,6 +76,10 @@ function getHostedActiveParty(userId) {
            wp.invite_code,
            wp.status,
            wp.max_participants,
+           wp.playback_state,
+           wp.playback_position_seconds,
+           wp.playback_updated_at,
+           wp.playback_version,
            wp.started_at,
            wp.created_at,
            e.title as episode_title,
@@ -111,6 +124,7 @@ function resolveHostedActiveParty(userId) {
     episode_title: party.episode_title,
     participant_count: Number(party.active_count || 0),
     is_host: true,
+    ...normalizePlaybackState(party),
   };
 }
 
@@ -238,6 +252,7 @@ router.get('/:code', requireAuth, (req, res) => {
     is_host: party.host_id === req.user.id,
     participants,
     messages: messages.reverse(),
+    ...normalizePlaybackState(party),
   };
 
   if (!hasAccess) {
@@ -344,6 +359,54 @@ router.post('/:code/message', requireAuth, partyLimiter, (req, res) => {
     character_name: req.user.character_name,
     message,
     content: message,
+  });
+});
+
+router.put('/:code/playback', requireAuth, partyLimiter, (req, res) => {
+  const party = db.prepare(
+    "SELECT id, host_id, status FROM watch_parties WHERE invite_code = ? AND status = 'active'"
+  ).get(req.params.code);
+
+  if (!party) {
+    return res.status(404).json({ error: 'Watch party не е намерен.' });
+  }
+
+  if (party.host_id !== req.user.id) {
+    return res.status(403).json({ error: 'Само домакинът може да управлява възпроизвеждането.' });
+  }
+
+  const requestedState = String(req.body?.playback_state || '').trim().toLowerCase();
+  const playbackState = ['playing', 'paused', 'ended'].includes(requestedState)
+    ? requestedState
+    : null;
+  if (!playbackState) {
+    return res.status(400).json({ error: 'Невалидно playback състояние.' });
+  }
+
+  const rawPosition = Number(req.body?.playback_position_seconds);
+  const playbackPositionSeconds = Number.isFinite(rawPosition)
+    ? Math.max(0, rawPosition)
+    : 0;
+  const updatedAt = getCurrentSofiaDbTimestamp();
+
+  db.prepare(`
+    UPDATE watch_parties
+    SET playback_state = ?,
+        playback_position_seconds = ?,
+        playback_updated_at = ?,
+        playback_version = COALESCE(playback_version, 0) + 1
+    WHERE id = ? AND status = 'active'
+  `).run(playbackState, playbackPositionSeconds, updatedAt, party.id);
+
+  const updatedParty = db.prepare(`
+    SELECT playback_state, playback_position_seconds, playback_updated_at, playback_version
+    FROM watch_parties
+    WHERE id = ?
+  `).get(party.id);
+
+  res.json({
+    success: true,
+    ...normalizePlaybackState(updatedParty),
   });
 });
 

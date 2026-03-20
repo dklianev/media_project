@@ -3383,6 +3383,82 @@ test('watch party: end party (host only)', async () => {
   assert.equal(party.status, 'ended');
 });
 
+test('watch party: host can sync playback state and guests receive normalized playback payload', async () => {
+  const production = createProduction({ access_group: 'free' });
+  const episode = createEpisode({ production_id: production.id, access_group: 'free' });
+  const host = createUser();
+  const hostToken = createAccessToken(host);
+  const guest = createUser();
+  const guestToken = createAccessToken(guest);
+
+  const created = await apiRequest('/api/watch-party/create', {
+    method: 'POST',
+    token: hostToken,
+    body: { episode_id: episode.id },
+  });
+
+  await apiRequest(`/api/watch-party/${created.data.invite_code}/join`, {
+    method: 'POST',
+    token: guestToken,
+  });
+
+  const synced = await apiRequest(`/api/watch-party/${created.data.invite_code}/playback`, {
+    method: 'PUT',
+    token: hostToken,
+    body: {
+      playback_state: 'playing',
+      playback_position_seconds: 42.5,
+    },
+  });
+
+  assert.equal(synced.response.status, 200);
+  assert.equal(synced.data.playback_state, 'playing');
+  assert.equal(synced.data.playback_position_seconds, 42.5);
+  assert.ok(Number.isInteger(synced.data.playback_version));
+  assert.ok(synced.data.playback_updated_at);
+
+  const info = await apiRequest(`/api/watch-party/${created.data.invite_code}`, {
+    token: guestToken,
+  });
+
+  assert.equal(info.response.status, 200);
+  assert.equal(info.data.playback_state, 'playing');
+  assert.equal(info.data.playback_position_seconds, 42.5);
+  assert.equal(info.data.playback_version, synced.data.playback_version);
+  assert.ok(info.data.playback_updated_at);
+});
+
+test('watch party: only the host can sync playback state', async () => {
+  const production = createProduction({ access_group: 'free' });
+  const episode = createEpisode({ production_id: production.id, access_group: 'free' });
+  const host = createUser();
+  const hostToken = createAccessToken(host);
+  const guest = createUser();
+  const guestToken = createAccessToken(guest);
+
+  const created = await apiRequest('/api/watch-party/create', {
+    method: 'POST',
+    token: hostToken,
+    body: { episode_id: episode.id },
+  });
+
+  await apiRequest(`/api/watch-party/${created.data.invite_code}/join`, {
+    method: 'POST',
+    token: guestToken,
+  });
+
+  const synced = await apiRequest(`/api/watch-party/${created.data.invite_code}/playback`, {
+    method: 'PUT',
+    token: guestToken,
+    body: {
+      playback_state: 'playing',
+      playback_position_seconds: 18,
+    },
+  });
+
+  assert.equal(synced.response.status, 403);
+});
+
 // ═══════════════════════════════════════════════════════════════════════════
 // TIME-LIMITED CONTENT
 // ═══════════════════════════════════════════════════════════════════════════

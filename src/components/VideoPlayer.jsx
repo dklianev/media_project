@@ -36,6 +36,9 @@ export default function VideoPlayer({
   videoSource = 'youtube',
   localVideoUrl = null,
   transcodingStatus = null,
+  playbackMode = 'standard',
+  syncState = null,
+  onSyncEvent = null,
 }) {
   const navigate = useNavigate();
   const DOUBLE_TAP_DELAY_MS = 260;
@@ -77,6 +80,8 @@ export default function VideoPlayer({
   const touchGestureRef = useRef(null);
   const resumeAppliedRef = useRef(false);
   const progressDragRef = useRef(null);
+  const appliedSyncVersionRef = useRef(null);
+  const suppressSyncEventRef = useRef(false);
 
   const isLocalVideo = videoSource === 'local';
   const isTranscoding = isLocalVideo && (transcodingStatus === 'pending' || transcodingStatus === 'processing');
@@ -97,6 +102,7 @@ export default function VideoPlayer({
   const isFullscreen = fullscreenMode !== 'none';
   const shouldShowControls = controlsVisible || !isPlaying || hasEnded || showSpeedMenu || showInfoPanel;
   const currentVolume = isMuted ? 0 : volume;
+  const canControlPlayback = playbackMode !== 'follower';
   const isMobile = typeof window !== 'undefined'
     ? Boolean(window.matchMedia?.('(pointer: coarse)')?.matches)
     : false;
@@ -166,6 +172,23 @@ export default function VideoPlayer({
       onProgressSample(currentTime, totalDuration);
     }
   };
+
+  const emitSyncEvent = useCallback((nextState, currentTimeOverride = null, durationOverride = null) => {
+    if (typeof onSyncEvent !== 'function' || suppressSyncEventRef.current) return;
+
+    const currentTime = currentTimeOverride != null
+      ? Number(currentTimeOverride)
+      : Number(typeof playerRef.current?.getCurrentTime === 'function' ? playerRef.current.getCurrentTime() : progress);
+    const totalDuration = durationOverride != null
+      ? Number(durationOverride)
+      : Number(typeof playerRef.current?.getDuration === 'function' ? playerRef.current.getDuration() : duration);
+
+    onSyncEvent({
+      playbackState: nextState,
+      playbackPositionSeconds: Number.isFinite(currentTime) ? Math.max(0, currentTime) : 0,
+      durationSeconds: Number.isFinite(totalDuration) ? Math.max(0, totalDuration) : 0,
+    });
+  }, [duration, onSyncEvent, progress]);
 
   const syncPlayerDiagnostics = (player = playerRef.current) => {
     if (!player) return;
@@ -326,6 +349,9 @@ export default function VideoPlayer({
         setDuration(vid.duration || 0);
         reportProgress(vid.currentTime, vid.duration || 0);
       }, 500);
+      if (canControlPlayback) {
+        emitSyncEvent('playing', vid.currentTime, vid.duration || 0);
+      }
       revealControls();
     };
 
@@ -335,6 +361,9 @@ export default function VideoPlayer({
       setProgress(vid.currentTime);
       reportProgress(vid.currentTime, vid.duration || 0);
       setPlayerStatus('paused');
+      if (canControlPlayback) {
+        emitSyncEvent('paused', vid.currentTime, vid.duration || 0);
+      }
       revealControls(true);
     };
 
@@ -346,6 +375,9 @@ export default function VideoPlayer({
       setProgress(finalDuration);
       reportProgress(finalDuration, finalDuration);
       setPlayerStatus('ended');
+      if (canControlPlayback) {
+        emitSyncEvent('ended', finalDuration, finalDuration);
+      }
       revealControls(true);
     };
 
@@ -376,7 +408,7 @@ export default function VideoPlayer({
       vid.removeEventListener('waiting', onWaiting);
       vid.removeEventListener('canplay', onCanPlay);
     };
-  }, [isLocalVideo, localVideoUrl, isTranscoding, initialProgressSeconds, maybeApplyResume]);
+  }, [canControlPlayback, emitSyncEvent, initialProgressSeconds, isLocalVideo, isTranscoding, localVideoUrl, maybeApplyResume]);
 
   // ─── YOUTUBE: original player init ───
   useEffect(() => {
@@ -461,6 +493,9 @@ export default function VideoPlayer({
                 reportProgress(currentTime, totalDuration);
                 syncPlayerDiagnostics(event.target);
               }, 500);
+              if (canControlPlayback) {
+                emitSyncEvent('playing', event.target.getCurrentTime?.() || 0, totalDuration);
+              }
               revealControls();
             } else if (event.data === window.YT.PlayerState.PAUSED) {
               const currentTime = event.target.getCurrentTime?.() || 0;
@@ -468,6 +503,9 @@ export default function VideoPlayer({
               setProgress(currentTime);
               reportProgress(currentTime, totalDuration);
               setPlayerStatus('paused');
+              if (canControlPlayback) {
+                emitSyncEvent('paused', currentTime, totalDuration);
+              }
               revealControls(true);
             } else if (event.data === window.YT.PlayerState.ENDED) {
               const finalDuration = totalDuration;
@@ -476,6 +514,9 @@ export default function VideoPlayer({
               setProgress(finalDuration);
               reportProgress(finalDuration, finalDuration);
               setPlayerStatus('ended');
+              if (canControlPlayback) {
+                emitSyncEvent('ended', finalDuration, finalDuration);
+              }
               revealControls(true);
             } else if (event.data === window.YT.PlayerState.BUFFERING) {
               setIsPlaying(false);
@@ -508,7 +549,7 @@ export default function VideoPlayer({
         playerRef.current.destroy();
       }
     };
-  }, [isLocalVideo, initialProgressSeconds, maybeApplyResume, videoId]);
+  }, [canControlPlayback, emitSyncEvent, initialProgressSeconds, isLocalVideo, maybeApplyResume, videoId]);
 
   useEffect(() => {
     const handleFullscreenChange = () => {
@@ -583,6 +624,55 @@ export default function VideoPlayer({
     return () => clearAutoplayTimer();
   }, [hasEnded, nextEpisode, nextEpisodeId]);
 
+  useEffect(() => {
+    if (!syncState || !playerReady || !playerRef.current) return;
+
+    const playbackVersion = syncState.playbackVersion ?? syncState.playback_version;
+    if (playbackVersion == null || playbackVersion === appliedSyncVersionRef.current) return;
+
+    const playbackState = String(syncState.playbackState ?? syncState.playback_state ?? 'paused').toLowerCase();
+    const basePosition = Math.max(0, Number(syncState.playbackPositionSeconds ?? syncState.playback_position_seconds ?? 0) || 0);
+    const updatedAtRaw = syncState.playbackUpdatedAt ?? syncState.playback_updated_at ?? null;
+    const updatedAtMs = updatedAtRaw
+      ? Date.parse(String(updatedAtRaw).includes('T') ? String(updatedAtRaw) : String(updatedAtRaw).replace(' ', 'T') + 'Z')
+      : NaN;
+    const elapsedSeconds = playbackState === 'playing' && Number.isFinite(updatedAtMs)
+      ? Math.max(0, (Date.now() - updatedAtMs) / 1000)
+      : 0;
+    const targetTime = Math.max(0, basePosition + elapsedSeconds);
+    const currentTime = Number(typeof playerRef.current.getCurrentTime === 'function' ? playerRef.current.getCurrentTime() : progress) || 0;
+
+    suppressSyncEventRef.current = true;
+    appliedSyncVersionRef.current = playbackVersion;
+
+    if (Math.abs(currentTime - targetTime) > 1.25 && typeof playerRef.current.seekTo === 'function') {
+      playerRef.current.seekTo(targetTime, true);
+      setProgress(targetTime);
+      reportProgress(targetTime, duration);
+    }
+
+    if (playbackState === 'playing') {
+      playerRef.current.playVideo?.();
+      setHasEnded(false);
+      setPlayerStatus('playing');
+    } else {
+      playerRef.current.pauseVideo?.();
+      if (playbackState === 'ended') {
+        setHasEnded(true);
+        setPlayerStatus('ended');
+      } else {
+        setHasEnded(false);
+        setPlayerStatus('paused');
+      }
+    }
+
+    const timeoutId = setTimeout(() => {
+      suppressSyncEventRef.current = false;
+    }, 250);
+
+    return () => clearTimeout(timeoutId);
+  }, [duration, playerReady, progress, syncState]);
+
   const triggerAnimation = (type) => {
     setAnimState(type);
     setAnimKey((prev) => prev + 1);
@@ -594,12 +684,14 @@ export default function VideoPlayer({
 
   const togglePlay = (e) => {
     if (e) e.stopPropagation();
+    if (!canControlPlayback) return;
     if (!playerRef.current || !playerReady) return;
 
     if (isPlaying) {
       playerRef.current.pauseVideo();
       triggerAnimation('pause');
       setPlayerStatus('paused');
+      emitSyncEvent('paused');
     } else {
       if (hasEnded) {
         playerRef.current.seekTo(0, true);
@@ -610,12 +702,14 @@ export default function VideoPlayer({
       playerRef.current.playVideo();
       triggerAnimation('play');
       setPlayerStatus('playing');
+      emitSyncEvent('playing', hasEnded ? 0 : null);
     }
     revealControls();
   };
 
   const handleRewind = (e) => {
     if (e) e.stopPropagation();
+    if (!canControlPlayback) return;
     if (!playerRef.current || !playerReady) return;
     const current = playerRef.current.getCurrentTime();
     const newTime = Math.max(0, current - 10);
@@ -623,11 +717,13 @@ export default function VideoPlayer({
     setProgress(newTime);
     reportProgress(newTime, duration);
     triggerAnimation('rewind');
+    emitSyncEvent(isPlaying ? 'playing' : 'paused', newTime);
     revealControls();
   };
 
   const handleSkipForward = (e) => {
     if (e) e.stopPropagation();
+    if (!canControlPlayback) return;
     if (!playerRef.current || !playerReady) return;
     const current = playerRef.current.getCurrentTime();
     const newTime = Math.min(duration, current + 10);
@@ -635,6 +731,7 @@ export default function VideoPlayer({
     setProgress(newTime);
     reportProgress(newTime, duration);
     triggerAnimation('forward');
+    emitSyncEvent(isPlaying ? 'playing' : 'paused', newTime);
     revealControls();
   };
 
@@ -673,6 +770,7 @@ export default function VideoPlayer({
 
   const replayEpisode = (e) => {
     if (e) e.stopPropagation();
+    if (!canControlPlayback) return;
     clearAutoplayTimer();
     setAutoplayCountdown(null);
     setHasEnded(false);
@@ -681,6 +779,7 @@ export default function VideoPlayer({
     setProgress(0);
     reportProgress(0, duration);
     playerRef.current.playVideo();
+    emitSyncEvent('playing', 0);
     revealControls();
   };
 
@@ -769,6 +868,7 @@ export default function VideoPlayer({
   };
 
   const seekToClientPosition = (clientX, target) => {
+    if (!canControlPlayback) return;
     if (!playerRef.current || !playerReady || !duration || !target) return;
 
     const rect = target.getBoundingClientRect();
@@ -779,6 +879,7 @@ export default function VideoPlayer({
     playerRef.current.seekTo(newTime, true);
     setProgress(newTime);
     reportProgress(newTime, duration);
+    emitSyncEvent(isPlaying ? 'playing' : 'paused', newTime);
   };
 
   const handleSeek = (e) => {
@@ -840,6 +941,7 @@ export default function VideoPlayer({
   };
 
   const handleOverlayDoubleAction = (x, width) => {
+    if (!canControlPlayback) return;
     if (x < width / 3) {
       handleRewind();
     } else if (x > (width / 3) * 2) {
@@ -853,6 +955,7 @@ export default function VideoPlayer({
     focusPlayerSurface();
     revealControls();
 
+    if (!canControlPlayback) return;
     if (e.pointerType !== 'touch' || !e.isPrimary) return;
 
     touchGestureRef.current = {
@@ -901,6 +1004,7 @@ export default function VideoPlayer({
   };
 
   const handleOverlayPointerUp = (e) => {
+    if (!canControlPlayback) return;
     if ((e.pointerType === 'mouse' && e.button !== 0) || !e.isPrimary) return;
 
     focusPlayerSurface();
@@ -972,27 +1076,34 @@ export default function VideoPlayer({
       switch (key) {
         case ' ':
         case 'k':
+          if (!canControlPlayback) break;
           togglePlay();
           break;
         case 'j':
+          if (!canControlPlayback) break;
           handleRewind();
           break;
         case 'l':
+          if (!canControlPlayback) break;
           handleSkipForward();
           break;
         case 'arrowleft': {
+          if (!canControlPlayback) break;
           const newTime = Math.max(0, playerRef.current.getCurrentTime() - 5);
           playerRef.current.seekTo(newTime, true);
           setProgress(newTime);
           reportProgress(newTime, duration);
+          emitSyncEvent(isPlaying ? 'playing' : 'paused', newTime);
           revealControls();
           break;
         }
         case 'arrowright': {
+          if (!canControlPlayback) break;
           const newTime = Math.min(duration, playerRef.current.getCurrentTime() + 5);
           playerRef.current.seekTo(newTime, true);
           setProgress(newTime);
           reportProgress(newTime, duration);
+          emitSyncEvent(isPlaying ? 'playing' : 'paused', newTime);
           revealControls();
           break;
         }
@@ -1017,9 +1128,11 @@ export default function VideoPlayer({
           toggleFullscreen();
           break;
         case 'n':
+          if (!canControlPlayback) break;
           navigateToEpisode(nextEpisode);
           break;
         case 'p':
+          if (!canControlPlayback) break;
           navigateToEpisode(previousEpisode);
           break;
         default:
@@ -1030,8 +1143,10 @@ export default function VideoPlayer({
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [
+    canControlPlayback,
     currentVolume,
     duration,
+    emitSyncEvent,
     isFullscreen,
     fullscreenMode,
     nextEpisode,
@@ -1047,9 +1162,9 @@ export default function VideoPlayer({
     event.preventDefault();
   }, []);
 
-  if (!embedUrl && !videoId) return null;
+  if (!embedUrl && !videoId && !isLocalVideo) return null;
 
-  if (!videoId && embedUrl) {
+  if (!isLocalVideo && !videoId && embedUrl) {
     return (
       <motion.div
         initial={{ opacity: 0, scale: 0.98 }}
